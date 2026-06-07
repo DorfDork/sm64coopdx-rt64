@@ -24,6 +24,7 @@ struct TextLabel {
  * Stores the text to be rendered on screen
  * and how they are to be rendered.
  */
+static struct TextLabel sTextLabelStorage[256];
 struct TextLabel *sTextLabels[256];
 s16 sTextLabelsCount = 0;
 
@@ -178,9 +179,10 @@ void print_text_fmt_int(s32 x, s32 y, const char *str, s32 n) {
     s32 srcIndex = 0;
 
     // Don't continue if there is no memory to do so.
-    if ((sTextLabels[sTextLabelsCount] = growing_pool_alloc(gDisplayListHeap, sizeof(struct TextLabel))) == NULL) {
+    if (sTextLabelsCount >= 256) {
         return;
     }
+    sTextLabels[sTextLabelsCount] = &sTextLabelStorage[sTextLabelsCount];
 
     sTextLabels[sTextLabelsCount]->x = x;
     sTextLabels[sTextLabelsCount]->y = y;
@@ -228,9 +230,10 @@ void print_text(s32 x, s32 y, const char *str) {
     s32 srcIndex = 0;
 
     // Don't continue if there is no memory to do so.
-    if ((sTextLabels[sTextLabelsCount] = growing_pool_alloc(gDisplayListHeap, sizeof(struct TextLabel))) == NULL) {
+    if (sTextLabelsCount >= 256) {
         return;
     }
+    sTextLabels[sTextLabelsCount] = &sTextLabelStorage[sTextLabelsCount];
 
     sTextLabels[sTextLabelsCount]->x = x;
     sTextLabels[sTextLabelsCount]->y = y;
@@ -260,9 +263,10 @@ void print_text_centered(s32 x, s32 y, const char *str) {
     s32 srcIndex = 0;
 
     // Don't continue if there is no memory to do so.
-    if ((sTextLabels[sTextLabelsCount] = growing_pool_alloc(gDisplayListHeap, sizeof(struct TextLabel))) == NULL) {
+    if (sTextLabelsCount >= 256) {
         return;
     }
+    sTextLabels[sTextLabelsCount] = &sTextLabelStorage[sTextLabelsCount];
 
     c = str[srcIndex];
 
