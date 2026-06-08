@@ -61,6 +61,7 @@ static struct GdColour sClrYellow = { 1.0, 1.0, 0.0 };           // @ 801A80DC
 static struct GdColour sLightColours[1] = { { 1.0, 1.0, 0.0 } }; // @ 801A80E8
 static struct GdColour *sSelectedColour = &sClrRed;              // @ 801A80F4
 struct ObjCamera *gViewUpdateCamera = NULL;                      // @ 801A80F8
+static void *sUnref801A80FC = NULL;
 static s32 sUnreadShapeFlag = 0;       // @ 801A8100
 struct GdColour *sColourPalette[5] = { // @ 801A8104
     &sClrWhite, &sClrYellow, &sClrRed, &sClrBlack, &sClrBlack
@@ -70,12 +71,20 @@ struct GdColour *sWhiteBlack[2] = {
     &sClrWhite,
     &sClrBlack,
 };
+static Mat4f sUnref801A8120 = {
+    { 1.0, 0.0, 0.0, 0.0 }, { 0.0, 0.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0, 0.0 }, { 0.0, 0.0, 0.0, 1.0 }
+};
+static Mat4f sUnrefIden801A8160 = {
+    { 1.0, 0.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0, 0.0 }, { 0.0, 0.0, 0.0, 1.0 }
+};
 static s32 sLightDlCounter = 1; // @ 801A81A0
+static s32 sUnref801A81A4[4] = { 0 };
 
 // bss
 u8 gUnref_801B9B30[0x88];
 struct ObjGroup *gGdLightGroup; // @ 801B9BB8; is this the main light group? only light group?
 
+static u8 sUnref_801B9BBC[0x40];
 static enum SceneType sSceneProcessType; // @ 801B9C00
 static s32 sUseSelectedColor;            // @ 801B9C04
 static s16 sPickBuffer[100];             ///< buffer of objects near click
@@ -1148,11 +1157,11 @@ create_shape_gddl(struct ObjShape *s) {
     shape->dlNums[0] = shapedl;
     shape->dlNums[1] = shapedl;
 
-    if (shape->name[0] != '\0') {
+    /*if (shape->name[0] != '\0') {
         printf("Generated '%s' (%d) display list ok.(%d)\n", shape->name, shapedl, enddl);
     } else {
         printf("Generated 'UNKNOWN' (%d) display list ok.(%d)\n", shapedl, enddl);
-    }
+    }*/
 }
 
 /**
@@ -1166,7 +1175,7 @@ create_shape_gddl(struct ObjShape *s) {
 void create_gddl_for_shapes(struct ObjGroup *grp) {
     UNUSED s32 shapedls =
         apply_to_obj_types_in_group(OBJ_TYPE_SHAPES, (applyproc_t) create_shape_gddl, grp);
-    printf("made %d display lists\n", shapedls);
+        //printf("made %d display lists\n", shapedls);
 }
 
 /**

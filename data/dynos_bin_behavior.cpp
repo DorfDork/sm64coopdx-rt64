@@ -1913,8 +1913,23 @@ s64 DynOS_Bhv_ParseBehaviorScriptConstants(const String &_Arg, bool *found) {
     return 0;
 }
 
+template <typename T>
+DataNode<T> *FindDataNode(DataNodes<T> &aDataNodes, String &aName, u32 aDataIdentifier) {
+    DataNode<T> *best = NULL;
+    for (auto& node : aDataNodes) {
+        if (aName == node->mName) {
+            if (aDataIdentifier == node->mDataIdentifier) {
+                return node;
+            }
+            best = node;
+        }
+    }
+    return best;
+}
+
 static BehaviorScript ParseBehaviorScriptSymbolArgInternal(GfxData *aGfxData, DataNode<BehaviorScript> *aNode, u64 &aTokenIndex, bool *found) {
     String _Arg = aNode->mTokens[aTokenIndex++];
+    u64 _ModelIdentifier = aNode->mDataIdentifier;
     *found = true;
 
     // Remove (de-)referencing
@@ -2488,6 +2503,7 @@ DataNode<BehaviorScript> *DynOS_Bhv_Parse(GfxData *aGfxData, DataNode<BehaviorSc
         ParseBehaviorScriptSymbol(aGfxData, aNode, _Head, _TokenIndex, _SwitchNodes);
         if (aDisplayPercent && aGfxData->mErrorCount == 0) { PrintNoNewLine("%3d%%\b\b\b\b", (s32) (_TokenIndex * 100) / aNode->mTokens.Count()); }
     }
+    if (aDisplayPercent && aGfxData->mErrorCount == 0) { Print("100%%"); }
     aNode->mSize = (u32)(_Head - aNode->mData);
     aNode->mLoadIndex = aGfxData->mLoadIndex++;
 
@@ -2496,6 +2512,15 @@ DataNode<BehaviorScript> *DynOS_Bhv_Parse(GfxData *aGfxData, DataNode<BehaviorSc
 
     if (aDisplayPercent && aGfxData->mErrorCount == 0) { Print("100%%"); }
     return aNode;
+}
+
+static DataNode<BehaviorScript> *GetBehaviorScript(GfxData *aGfxData, const String &aBhvRoot) {
+    for (DataNode<BehaviorScript> *_Node : aGfxData->mBehaviorScripts) {
+        if (_Node->mName == aBhvRoot) {
+            return _Node;
+        }
+    }
+    return NULL;
 }
 
   /////////////

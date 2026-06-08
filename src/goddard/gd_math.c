@@ -7,6 +7,7 @@
 #include "gd_types.h"
 #include "macros.h"
 #include "renderer.h"
+#include <stdio.h>
 
 /**
  * Finds the square root of a float by treating

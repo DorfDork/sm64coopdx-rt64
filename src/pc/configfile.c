@@ -936,6 +936,8 @@ static void configfile_save_option(FILE *file, const struct ConfigOption *option
     }
 }
 
+extern void DynOS_Goddard_RecomputeActiveMarioHeadBin(void);
+
 // Writes the config file to 'filename'
 void configfile_save(const char *filename) {
     FILE *file;
@@ -962,6 +964,9 @@ void configfile_save(const char *filename) {
     for (unsigned int i = 0; i < ARRAY_LEN(functionOptions); i++) {
         functionOptions[i].write(file);
     }
+
+    // Recompute Goddard head for the new character
+    DynOS_Goddard_RecomputeActiveMarioHeadBin();
 
     fclose(file);
 }

@@ -45,10 +45,26 @@ void DynOS_Mod_Update() {
         DynOS_Bhv_ModShutdown();
         DynOS_MovtexQC_ModShutdown();
         DynOS_Tex_ModShutdown();
+        DynOS_Goddard_ModShutdown();
         DynOS_Gfx_ModShutdown();
     }
 }
 
 void DynOS_Mod_Shutdown() {
     sDynosModShutdown = true;
+}
+
+void DynOS_Restart_Reset() {
+    sDynosIsLevelEntry = false;
+    if (sDynosModShutdown) {
+        sDynosModShutdown = false;
+        DynOS_Actor_ModShutdown();
+        DynOS_Col_ModShutdown();
+        DynOS_Lvl_ModShutdown();
+        DynOS_Bhv_ModShutdown();
+        DynOS_MovtexQC_ModShutdown();
+        DynOS_Tex_ModShutdown();
+        DynOS_Goddard_ModShutdown();
+        DynOS_Gfx_ModShutdown();
+    }
 }

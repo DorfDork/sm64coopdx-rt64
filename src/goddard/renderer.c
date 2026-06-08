@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include "pc/rom_assets.h"
 #include <ultra64.h>
 #include <stdarg.h>
@@ -26,6 +27,12 @@
 
 #include "config.h"
 #include "gfx_dimensions.h"
+#include "gd_config.h"
+
+#include "pc/controller/controller_mouse.h"
+#include "pc/djui/djui.h"
+#include "pc/gfx/gfx.h"
+#include "pc/configfile.h"
 
 #define MAX_GD_DLS 1000
 #define OS_MESG_SI_COMPLETE 0x33333333
@@ -110,9 +117,11 @@ static OSContPad sPrevFrameCont[4]; // @ 801BAE88
 static u8 D_801BAEA0;
 static struct ObjGadget *sTimerGadgets[GD_NUM_TIMERS]; // @ 801BAEA8
 static u32 D_801BAF28;                                 // RAM addr offset?
-static s16 sTriangleBuf[13][8];                          // [[s16; 8]; 13]? vert indices?
+static s16 sTriangleBuf[GD_CFG_TRIANGLE_BUF_SIZE][8];
+static u32 unref_801bb000[3];
 static u8 *sMemBlockPoolBase; // @ 801BB00C
 static u32 sAllocMemory;      // @ 801BB010; malloc-ed bytes
+static u32 unref_801bb014;
 static s32 D_801BB018;
 static s32 D_801BB01C;
 static void *sLoadedTextures[0x10];          // texture pointers
@@ -132,8 +141,11 @@ static s32 sVertexBufStartIndex;                  // Vtx start in GD Dl
 static struct ObjView *sCarSceneView;   // @ 801BB0D0
 static s32 sUpdateYoshiScene;           // @ 801BB0D4; update dl Vtx from ObjVertex?
 static s32 sUpdateMarioScene;           // @ 801BB0D8; update dl Vtx from ObjVertex?
+static u32 unref_801bb0dc;
 static s32 sUpdateCarScene; // @ 801BB0E0; guess, not really used
+static u32 unref_801bb0e4;
 static struct GdVec3f sTextDrawPos;  // position to draw text? only set in one function, never used
+static u32 unref_801bb0f8[2];
 static Mtx sIdnMtx;           // @ 801BB100
 static Mat4f sInitIdnMat4;    // @ 801BB140
 static s8 sVtxCvrtNormBuf[3]; // @ 801BB180
@@ -171,7 +183,9 @@ static struct ObjView *D_801BE994; // store if View flag 0x40 set
 #endif
 
 // data
+static u32 unref_801a8670 = 0;
 static s32 D_801A8674 = 0;
+static u32 unref_801a8678 = 0;
 static s32 D_801A867C = 0;
 static s32 D_801A8680 = 0;
 static f32 sTracked1FrameTime = 0.0f; // @ 801A8684
@@ -186,9 +200,11 @@ static struct GdTimer *D_801A86A4 = NULL; // timer for dlgen, dynamics, or rcp
 static struct GdTimer *D_801A86A8 = NULL; // timer for dlgen, dynamics, or rcp
 static struct GdTimer *D_801A86AC = NULL; // timer for dlgen, dynamics, or rcp
 s32 gGdFrameBufNum = 0;                      // @ 801A86B0
+static u32 unref_801a86B4 = 0;
 static struct ObjShape *sHandShape = NULL; // @ 801A86B8
 static s32 D_801A86BC = 1;
 static s32 D_801A86C0 = 0; // gd_dl id for something?
+static u32 unref_801a86C4 = 10;
 static s32 sMtxParamType = G_MTX_PROJECTION;
 static struct GdVec3f D_801A86CC = { 1.0f, 1.0f, 1.0f };
 static struct ObjView *sActiveView = NULL;  // @ 801A86D8 current view? used when drawing dl
@@ -199,9 +215,10 @@ static struct ObjView *sMenuView = NULL; // @ 801A86E8
 static u32 sItemsInMenu = 0;             // @ 801A86EC
 static s32 sDebugViewsCount = 0;               // number of elements in the sDebugViews array
 static s32 sCurrDebugViewIndex = 0;             // @ 801A86F4; timing activate cool down counter?
+static u32 unref_801a86F8 = 0;
 static struct GdDisplayList *sCurrentGdDl = NULL; // @ 801A86FC
 static u32 sGdDlCount = 0;                        // @ 801A8700
-UNUSED static struct DynListBankInfo sDynLists[] = {     // @ 801A8704
+static struct DynListBankInfo sDynLists[] = {     // @ 801A8704
     { STD_LIST_BANK, dynlist_test_cube },
     { STD_LIST_BANK, dynlist_spot_shape },
     { STD_LIST_BANK, dynlist_mario_master },
@@ -209,8 +226,15 @@ UNUSED static struct DynListBankInfo sDynLists[] = {     // @ 801A8704
 };
 
 // textures and display list data
+static Gfx gd_texture1_dummy_aligner1[] = { // @ 801A8728
+    gsSPEndDisplayList(),
+};
 
 ROM_ASSET_LOAD_TEXTURE(gd_texture_hand_open, "textures/intro_raw/hand_open.rgba16.inc.c", 0x00258d80, 2048, 0x00000000, 2048);
+
+static Gfx gd_texture2_dummy_aligner1[] = {
+    gsSPEndDisplayList()
+};
 
 ROM_ASSET_LOAD_TEXTURE(gd_texture_hand_closed, "textures/intro_raw/hand_closed.rgba16.inc.c", 0x00259588, 2048, 0x00000000, 2048);
 
@@ -251,6 +275,14 @@ static Vtx_t gd_vertex_star[] = {
     {{ 64,   0, 0}, 0, {992, 992}, {0x00, 0x00, 0x7F}},
     {{ 64, 128, 0}, 0, {992,   0}, {0x00, 0x00, 0x7F}},
     {{-64, 128, 0}, 0, {  0,   0}, {0x00, 0x00, 0x7F}},
+};
+
+//! no references to these vertices
+UNUSED static Vtx_t gd_unused_vertex[] = {
+    {{16384, 0,     0}, 0, {0, 16384}, {0x00, 0x00, 0x00}},
+    {{    0, 0, 16384}, 0, {0,     0}, {0x00, 0x00, 0x40}},
+    {{    0, 0,     0}, 0, {0,     0}, {0x00, 0x00, 0x00}},
+    {{    0, 0,     0}, 0, {0,     0}, {0x00, 0x00, 0x00}},
 };
 
 static Gfx gd_dl_star_common[] = {
@@ -601,15 +633,19 @@ static Gfx *gd_silver_sparkle_dl_array[] = {
 #endif
 };
 
+static Gfx gd_texture3_dummy_aligner1[] = {
+    gsSPEndDisplayList(),
+};
+
 ROM_ASSET_LOAD_TEXTURE(gd_texture_mario_face_shine, "textures/intro_raw/mario_face_shine.ia8.inc.c", 0x00265350, 1024, 0x00000000, 1024);
 
 static Gfx gd_dl_mario_face_shine[] = {
     gsSPSetGeometryMode(G_TEXTURE_GEN),
-    gsSPTexture(0x07C0, 0x07C0, 0, G_TX_RENDERTILE, G_ON),
+    gsSPTexture(0x0280, 0x0280, 0, G_TX_RENDERTILE, G_ON),
     gsDPSetTexturePersp(G_TP_PERSP),
     gsDPSetTextureFilter(G_TF_BILERP),
     gsDPSetCombineMode(G_CC_HILITERGBA, G_CC_HILITERGBA),
-    gsDPLoadTextureBlock(gd_texture_mario_face_shine, G_IM_FMT_IA, G_IM_SIZ_8b, 32, 32, 0,
+    gsDPLoadTextureBlock(gd_texture_mario_face_shine, G_IM_FMT_IA, G_IM_SIZ_8b, 32, 32, 0, 
                         G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, 5, 5, G_TX_NOLOD, G_TX_NOLOD),
     gsDPPipeSync(),
     gsSPEndDisplayList(),
@@ -640,7 +676,41 @@ static Gfx gd_dl_rdp_init[] = {
     gsSPEndDisplayList(),
 };
 
+static u32 gd_unused_pad1 = 0;
+
 float sGdPerspTimer = 1.0;
+
+static u32 gd_unused_pad2 = 0;
+
+static Gfx gd_texture4_dummy_aligner1[] = {
+    gsDPPipeSync(),
+    gsSPEndDisplayList(),
+};
+
+static Vtx_t gd_unused_mesh_vertex_group1[] = {
+    {{-8,  8,  0}, 0, {  0,  0}, {  0x00, 0x00, 0x00, 0xFF}},
+    {{ 8, -2,  0}, 0, {  0,  0}, {  0x00, 0x00, 0x00, 0xFF}},
+    {{ 2, -8,  0}, 0, {  0,  0}, {  0x00, 0x00, 0x00, 0xFF}},
+};
+
+static Vtx_t gd_unused_mesh_vertex_group2[] = {
+    {{-6,  6,  0}, 0, {  0,  0}, {  0xFF, 0xFF, 0xFF, 0xFF}},
+    {{ 7, -3,  0}, 0, {  0,  0}, {  0xFF, 0x00, 0x00, 0xFF}},
+    {{ 3, -7,  0}, 0, {  0,  0}, {  0xFF, 0x00, 0x00, 0xFF}},
+};
+
+static Gfx gd_dl_unused_mesh[] = {
+    gsDPPipeSync(),
+    gsDPSetRenderMode(G_RM_OPA_SURF, G_RM_OPA_SURF2),
+    gsSPClearGeometryMode(0xFFFFFFFF),
+    gsSPSetGeometryMode(G_SHADING_SMOOTH | G_SHADE),
+    gsDPPipeSync(),
+    gsSPVertex(gd_unused_mesh_vertex_group1, 3, 0),
+    gsSP1Triangle(0,  1,  2, 0x0),
+    gsSPVertex(gd_unused_mesh_vertex_group2, 3, 0),
+    gsSP1Triangle(0,  1,  2, 0x0),
+    gsSPEndDisplayList(),
+};
 
 static Gfx gd_dl_sprite_start_tex_block[] = {
     gsDPPipeSync(),
@@ -889,6 +959,12 @@ void gd_exit(UNUSED s32 code) {
 
 /* 24A1D4 -> 24A220; orig name: func_8019BA04 */
 void gd_free(void *ptr) {
+    /*C MEM*/
+    sAllocMemory -= sizeof(ptr);
+    free(ptr);
+    return;
+    /*C MEM*/
+
     sAllocMemory -= gd_free_mem(ptr);
 }
 
@@ -913,6 +989,12 @@ void *gd_allocblock(u32 size) {
 
 /* 24A318 -> 24A3E8 */
 void *gd_malloc(u32 size, u8 perm) {
+    /*C MEM*/
+    size = ALIGN(size, 8);
+    sAllocMemory += size;
+    return malloc(size);
+    /*C MEM*/
+
     void *ptr; // 1c
     size = ALIGN(size, 8);
     ptr = gd_request_mem(size, perm);
@@ -1194,7 +1276,7 @@ void gd_vblank(void) {
 }
 
 /**
- * Copies the player1 controller data from p1cont to sGdContPads[0].
+ * Copies the player1 controller data from p1cont to sGdContPads[0]. 
  */
 void gd_copy_p1_contpad(OSContPad *p1cont) {
     u32 i;                                    // 24
@@ -1846,7 +1928,7 @@ Vtx *gd_dl_make_vertex(f32 x, f32 y, f32 z, f32 alpha) {
 /* 24E6C0 -> 24E724 */
 void func_8019FEF0(void) {
     sTriangleBufCount++;
-    if (sVertexBufCount >= 12) {
+    if (sVertexBufCount >= GD_CFG_VERTEX_BATCH_SIZE) {
         gd_dl_flush_vertices();
         func_801A0038();
     }
@@ -2806,7 +2888,6 @@ void *load_texture_from_file(const char *file, s32 fmt, s32 size, u32 arg3, u32 
     u16 *txHalf;           // 2C
     u8 buf[3];             // 28
     u8 alpha;              // 27
-    s32 dl;                // 20
 
     txFile = gd_fopen(file, "r");
     if (txFile == NULL) {
@@ -2824,11 +2905,11 @@ void *load_texture_from_file(const char *file, s32 fmt, s32 size, u32 arg3, u32 
         *txHalf = ((buf[2] >> 3) << 11) | ((buf[1] >> 3) << 6) | ((buf[0] >> 3) << 1) | (alpha >> 7);
         txHalf++;
     }
-    gd_printf("Loaded texture '%s' (%d bytes)\n", file, txSize);
+    //gd_printf("Loaded texture '%s' (%d bytes)\n", file, txSize);
     gd_fclose(txFile);
-    dl = gd_gentexture(texture, fmt, size, arg3, arg4);
-    gd_printf("Generated '%s' (%d) display list ok.\n", file, dl);
-
+    gd_gentexture(texture, fmt, size, arg3, arg4);
+    //gd_printf("Generated '%s' (%d) display list ok.\n", file, dl);
+ 
     return texture;
 }
 
@@ -3133,16 +3214,16 @@ void gd_init(void) {
     remove_all_timers();
 
     start_memtracker("Static DL");
-    sStaticDl = new_gd_dl(0, 1900, 4000, 1, 300, 8);
+    sStaticDl = new_gd_dl(0, GD_CFG_STATIC_DL_GFX, GD_CFG_STATIC_DL_VTX, 1, 300, 8);
     stop_memtracker("Static DL");
 
     start_memtracker("Dynamic DLs");
-    sDynamicMainDls[0] = new_gd_dl(1, 600, 10, 200, 10, 3);
-    sDynamicMainDls[1] = new_gd_dl(1, 600, 10, 200, 10, 3);
+    sDynamicMainDls[0] = new_gd_dl(1, GD_CFG_DYNAMIC_DL_GFX, GD_CFG_DYNAMIC_DL_VTX, 200, 10, 3);
+    sDynamicMainDls[1] = new_gd_dl(1, GD_CFG_DYNAMIC_DL_GFX, GD_CFG_DYNAMIC_DL_VTX, 200, 10, 3);
     stop_memtracker("Dynamic DLs");
 
-    sMHeadMainDls[0] = new_gd_dl(1, 100, 0, 0, 0, 0);
-    sMHeadMainDls[1] = new_gd_dl(1, 100, 0, 0, 0, 0);
+    sMHeadMainDls[0] = new_gd_dl(1, 5000, 0, 0, 0, 0);
+    sMHeadMainDls[1] = new_gd_dl(1, 5000, 0, 0, 0, 0);
 
     for (i = 0; i < ARRAY_COUNT(sViewDls); i++) {
         sViewDls[i][0] = create_child_gdl(1, sDynamicMainDls[0]);
@@ -3656,13 +3737,13 @@ void func_801A71CC(struct ObjNet *net) {
     UNUSED u32 pad50;
     struct ObjPlane *planeL2; // 4c
     UNUSED u32 pad48;
-    struct ObjPlane *planeL3; // 44
+    UNUSED struct ObjPlane *planeL3; // 44
 
     if (net->unk21C == NULL) {
         net->unk21C = make_group(0);
     }
 
-    gd_print_bounding_box("making zones for net=", &net->boundingBox);
+    //gd_print_bounding_box("making zones for net=", &net->boundingBox);
 
     sp64.x = (ABS(net->boundingBox.minX) + ABS(net->boundingBox.maxX)) / 16.0f;
     sp64.z = (ABS(net->boundingBox.minZ) + ABS(net->boundingBox.maxZ)) / 16.0f;
@@ -3722,10 +3803,10 @@ void func_801A71CC(struct ObjNet *net) {
     for (link3 = net->unk1CC->firstMember; link3 != NULL; link3 = link3->next) {
         planeL3 = (struct ObjPlane *) link3->obj;
 
-        if (!planeL3->unk18) {
+        /*if (!planeL3->unk18) {
             gd_print_bounding_box("plane=", &planeL3->boundingBox);
             fatal_printf("plane not in any zones\n");
-        }
+        }*/
     }
 }
 

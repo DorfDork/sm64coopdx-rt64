@@ -1,6 +1,6 @@
 #include <PR/ultratypes.h>
 
-#if defined(VERSION_EU) || defined(VERSION_SH)
+#if 0
 #include "prevent_bss_reordering.h"
 #endif
 
@@ -15,6 +15,7 @@
 #include "renderer.h"
 #include "skin.h"
 #include "skin_movement.h"
+#include <stdio.h>
 
 // bss
 struct ObjNet *gGdSkinNet; // @ 801BAAF0
@@ -50,7 +51,7 @@ void compute_net_bounding_box(struct ObjNet *net) {
 void reset_net(struct ObjNet *net) {
     struct ObjGroup *grp;
 
-    printf("reset_net %d\n", net->id);
+    //printf("reset_net %d\n", net->id);
 
     net->worldPos.x = net->initPos.x;
     net->worldPos.y = net->initPos.y;
@@ -59,8 +60,8 @@ void reset_net(struct ObjNet *net) {
     net->torque.x = net->torque.y = net->torque.z = 0.0f;
 
     compute_net_bounding_box(net);
-    gd_print_vec("net scale: ", &net->scale);
-    gd_print_bounding_box("net box: ", &net->boundingBox);
+    //gd_print_vec("net scale: ", &net->scale);
+    //gd_print_bounding_box("net box: ", &net->boundingBox);
 
     gGdSkinNet = net;
     D_801BAAF4 = 0;

@@ -13,6 +13,7 @@ void *dynos_swap_cmd(void *cmd);
 // -- built in -- //
 void *dynos_update_cmd(void *cmd);
 void  dynos_update_gfx();
+void  dynos_restart_reset(void);
 s32   dynos_tex_import(void **output, void *ptr, s32 tile, void *grapi, void **hashmap, void *pool, s32 *poolpos, s32 poolsize);
 void  dynos_gfx_swap_animations(void *ptr);
 
@@ -32,6 +33,10 @@ const char* dynos_pack_get_name(s32 index);
 bool dynos_pack_get_enabled(s32 index);
 void dynos_pack_set_enabled(s32 index, bool value);
 bool dynos_pack_get_exists(s32 index);
+const char* dynos_pack_get_goddard_mario_head_bin(s32 index);
+const char* dynos_get_active_goddard_mario_head_bin(void);
+const u8* dynos_get_active_goddard_mario_head_bin_data(void);
+s32 dynos_get_active_goddard_mario_head_bin_size(void);
 void dynos_generate_mod_pack(char* modPath);
 void dynos_generate_packs(const char* directory);
 

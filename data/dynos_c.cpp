@@ -17,6 +17,10 @@ void dynos_update_gfx() {
     return DynOS_UpdateGfx();
 }
 
+void dynos_restart_reset(void) {
+    DynOS_Restart_Reset();
+}
+
 s32 dynos_tex_import(void **output, void *ptr, s32 tile, void *grapi, void **hashmap, void *pool, s32 *poolpos, s32 poolsize) {
     return DynOS_Tex_Import(output, ptr, tile, grapi, hashmap, pool, (u32 *) poolpos, (u32) poolsize);
 }
@@ -99,6 +103,28 @@ bool dynos_pack_get_exists(s32 index) {
         return fs_sys_dir_exists(_Pack->mPath.c_str());
     }
     return false;
+}
+
+const char* dynos_pack_get_goddard_mario_head_bin(s32 index) {
+    PackData* _Pack = DynOS_Pack_GetFromIndex(index);
+    if (_Pack) {
+        const SysPath& _Path = DynOS_Pack_GetGoddardMarioHeadBin(_Pack);
+        return _Path.c_str();
+    }
+    return NULL;
+}
+
+const char* dynos_get_active_goddard_mario_head_bin(void) {
+    const SysPath& _Path = DynOS_Goddard_GetActiveMarioHeadBin();
+    return _Path.c_str();
+}
+
+const u8* dynos_get_active_goddard_mario_head_bin_data(void) {
+    return DynOS_Goddard_GetActiveMarioHeadBinData();
+}
+
+s32 dynos_get_active_goddard_mario_head_bin_size(void) {
+    return DynOS_Goddard_GetActiveMarioHeadBinSize();
 }
 
 void dynos_generate_mod_pack(char* modPath) {
