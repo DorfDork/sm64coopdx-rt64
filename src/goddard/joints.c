@@ -1,4 +1,5 @@
 #include <PR/ultratypes.h>
+#include <stdio.h>
 
 #if 0
 #include "prevent_bss_reordering.h"
@@ -18,7 +19,6 @@
 #include "sfx.h"
 #include "skin.h"
 #include "skin_movement.h"
-#include <stdio.h>
 
 // data
 static s32 D_801A82D0 = 0;

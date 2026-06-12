@@ -5,141 +5,9 @@ extern "C" {
 #include "engine/graph_node.h"
 }
 
-#define MAX_CHARACTER_HEADS 16
-static const char* sCharacterHeadNames[MAX_CHARACTER_HEADS] = {
-    "mario_head.gdbin",
-    "luigi_head.gdbin",
-    "toad_head.gdbin",
-    "waluigi_head.gdbin",
-    "wario_head.gdbin",
-    NULL
-};
-
-static std::deque<PackData>& DynosPacks() {
+std::deque<PackData>& DynosPacks() {
     static std::deque<PackData> sDynosPacks;
     return sDynosPacks;
-}
-
-static SysPath& DynOS_Goddard_ActiveMarioHeadBin() {
-    static SysPath sActive = "";
-    return sActive;
-}
-
-static u8*& DynOS_Goddard_ActiveMarioHeadBinData() {
-    static u8* sData = NULL;
-    return sData;
-}
-
-static s32& DynOS_Goddard_ActiveMarioHeadBinSize() {
-    static s32 sSize = 0;
-    return sSize;
-}
-
-const u8* DynOS_Goddard_GetActiveMarioHeadBinData() {
-    return DynOS_Goddard_ActiveMarioHeadBinData();
-}
-
-s32 DynOS_Goddard_GetActiveMarioHeadBinSize() {
-    return DynOS_Goddard_ActiveMarioHeadBinSize();
-}
-
-const SysPath& DynOS_Goddard_GetActiveMarioHeadBin() {
-    return DynOS_Goddard_ActiveMarioHeadBin();
-}
-
-void DynOS_Goddard_ModShutdown() {
-    DynOS_Goddard_ActiveMarioHeadBin() = "";
-
-    if (DynOS_Goddard_ActiveMarioHeadBinData() != NULL) {
-        free(DynOS_Goddard_ActiveMarioHeadBinData());
-        DynOS_Goddard_ActiveMarioHeadBinData() = NULL;
-    }
-    DynOS_Goddard_ActiveMarioHeadBinSize() = 0;
-}
-
-static void DynOS_Goddard_LoadActiveMarioHeadBinIfNeeded() {
-    const SysPath& _Path = DynOS_Goddard_GetActiveMarioHeadBin();
-    if (_Path.empty()) {
-        DynOS_Goddard_ModShutdown();
-        return;
-    }
-
-    // Already loaded from this path
-    // (We store only one active bin, so path equality is enough.)
-    static SysPath sLoadedPath = "";
-    if (sLoadedPath == _Path && DynOS_Goddard_ActiveMarioHeadBinData() != NULL && DynOS_Goddard_ActiveMarioHeadBinSize() > 0) {
-        return;
-    }
-
-    // Clear previous
-    if (DynOS_Goddard_ActiveMarioHeadBinData() != NULL) {
-        free(DynOS_Goddard_ActiveMarioHeadBinData());
-        DynOS_Goddard_ActiveMarioHeadBinData() = NULL;
-    }
-    DynOS_Goddard_ActiveMarioHeadBinSize() = 0;
-    sLoadedPath = "";
-
-    BinFile* _File = BinFile::OpenR(_Path.c_str());
-    if (_File == NULL) {
-        printf("[DynOS] Goddard: failed to open mario_head.gdbin: %s\n", _Path.c_str());
-        return;
-    }
-
-    s32 _Size = _File->Size();
-    if (_Size <= 0) {
-        BinFile::Close(_File);
-        printf("[DynOS] Goddard: mario_head.gdbin is empty: %s\n", _Path.c_str());
-        return;
-    }
-
-    u8* _Data = (u8*) calloc(_Size, 1);
-    _File->Read<u8>(_Data, _Size);
-    BinFile::Close(_File);
-
-    DynOS_Goddard_ActiveMarioHeadBinData() = _Data;
-    DynOS_Goddard_ActiveMarioHeadBinSize() = _Size;
-    sLoadedPath = _Path;
-
-    printf("[DynOS] Goddard: loaded mario_head.gdbin (%d bytes) from %s\n", _Size, _Path.c_str());
-}
-
-extern "C" void DynOS_Goddard_RecomputeActiveMarioHeadBin() {
-    DynOS_Goddard_ActiveMarioHeadBin() = "";
-    
-    // Get the character index from save file
-    s32 charIndex = (configPlayerModel >= CT_MAX) ? CT_MARIO : configPlayerModel;
-    
-    // First try to find a character-specific head, then fall back to mario_head
-    for (auto& _Pack : DynosPacks()) {
-        if (!_Pack.mEnabled) { continue; }
-        
-        // Try character-specific head first
-        if (charIndex > 0 && charIndex < MAX_CHARACTER_HEADS && !_Pack.mGoddardCharacterHeadBins[charIndex].empty()) {
-            DynOS_Goddard_ActiveMarioHeadBin() = _Pack.mGoddardCharacterHeadBins[charIndex];
-        }
-        // Fall back to mario_head (index 0) or legacy mGoddardMarioHeadBin
-        else if (!_Pack.mGoddardCharacterHeadBins[0].empty()) {
-            DynOS_Goddard_ActiveMarioHeadBin() = _Pack.mGoddardCharacterHeadBins[0];
-        }
-        else if (!_Pack.mGoddardMarioHeadBin.empty()) {
-            DynOS_Goddard_ActiveMarioHeadBin() = _Pack.mGoddardMarioHeadBin;
-        }
-    }
-
-    if (DynOS_Goddard_ActiveMarioHeadBin().empty()) {
-        printf("[DynOS] Goddard: no active head.gdbin (no enabled packs provide it)\n");
-    } else {
-        const char* charName = (charIndex < MAX_CHARACTER_HEADS && sCharacterHeadNames[charIndex]) ? sCharacterHeadNames[charIndex] : "mario_head.gdbin";
-        printf("[DynOS] Goddard: active head for character %d (%s): %s\n", charIndex, charName, DynOS_Goddard_ActiveMarioHeadBin().c_str());
-    }
-
-    DynOS_Goddard_LoadActiveMarioHeadBinIfNeeded();
-}
-
-const SysPath& DynOS_Pack_GetGoddardMarioHeadBin(PackData* aPackData) {
-    static SysPath sEmpty = "";
-    if (aPackData == NULL) { return sEmpty; }
-    return aPackData->mGoddardMarioHeadBin;
 }
 
 static void ScanPackBins(struct PackData* aPack) {
@@ -170,21 +38,7 @@ static void ScanPackBins(struct PackData* aPack) {
         }
     }
 
-    // check for goddard
-    // Pack layout: dynos/packs/<pack>/goddard/mario_head.gdbin
-    // Also check for character-specific heads: luigi_head.gdbin, toad_head.gdbin, etc.
-    for (s32 i = 0; sCharacterHeadNames[i] != NULL && i < MAX_CHARACTER_HEADS; i++) {
-        SysPath _GoddardBin = fstring("%s/goddard/%s", aPack->mPath.c_str(), sCharacterHeadNames[i]);
-        if (fs_sys_file_exists(_GoddardBin.c_str())) {
-            aPack->mGoddardCharacterHeadBins[i] = _GoddardBin;
-            printf("[DynOS] Goddard: found %s in pack %s\n", sCharacterHeadNames[i], aPack->mPath.c_str());
-            
-            // Also set mGoddardMarioHeadBin for backwards compatibility (use mario_head as default)
-            if (i == 0) {
-                aPack->mGoddardMarioHeadBin = _GoddardBin;
-            }
-        }
-    }
+    goddard_scan_pack_bins(aPack);
 }
 
 static void DynOS_Pack_ActivateActor(s32 aPackIndex, std::pair<std::string, GfxData *> &pair) {
@@ -264,7 +118,15 @@ void DynOS_Pack_SetEnabled(PackData* aPack, bool aEnabled) {
         }
     }
 
-    DynOS_Goddard_RecomputeActiveMarioHeadBin();
+    // Check if active goddard head changed and reload if needed
+    SysPath _NewActiveHead = Goddard_CalculateActiveMarioHeadBin();
+    if (_NewActiveHead != goddard_get_active_mario_head_bin()) {
+        // Update the active head
+        extern void goddard_set_active_mario_head_bin(const SysPath& path);
+        goddard_set_active_mario_head_bin(_NewActiveHead);
+        Goddard_LoadActiveMarioHeadBinIfNeeded();
+    }
+
     DynOS_Actor_Override_All();
 }
 

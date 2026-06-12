@@ -13,7 +13,6 @@ void *dynos_swap_cmd(void *cmd);
 // -- built in -- //
 void *dynos_update_cmd(void *cmd);
 void  dynos_update_gfx();
-void  dynos_restart_reset(void);
 s32   dynos_tex_import(void **output, void *ptr, s32 tile, void *grapi, void **hashmap, void *pool, s32 *poolpos, s32 poolsize);
 void  dynos_gfx_swap_animations(void *ptr);
 

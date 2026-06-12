@@ -3,6 +3,7 @@
 #ifdef __cplusplus
 
 #include "dynos.h"
+#include <deque>
 #include <vector>
 
 extern "C" {
@@ -800,7 +801,6 @@ void DynOS_UpdateGfx();
 bool DynOS_IsTransitionActive();
 void DynOS_Mod_Update();
 void DynOS_Mod_Shutdown();
-void DynOS_Restart_Reset();
 
 //
 // Gfx
@@ -900,12 +900,16 @@ std::pair<std::string, GfxData *>* DynOS_Pack_GetActor(PackData* aPackData, cons
 void DynOS_Pack_AddActor(PackData* aPackData, const char* aActorName, GfxData* aGfxData);
 DataNode<TexData>* DynOS_Pack_GetTex(PackData* aPackData, const char* aTexName);
 void DynOS_Pack_AddTex(PackData* aPackData, DataNode<TexData>* aTexData);
-const SysPath& DynOS_Pack_GetGoddardMarioHeadBin(PackData* aPackData);
-const SysPath& DynOS_Goddard_GetActiveMarioHeadBin();
-void DynOS_Goddard_ModShutdown();
-const u8* DynOS_Goddard_GetActiveMarioHeadBinData();
-s32 DynOS_Goddard_GetActiveMarioHeadBinSize();
-extern "C" void DynOS_Goddard_RecomputeActiveMarioHeadBin();
+const SysPath& pack_get_goddard_mario_head_bin(PackData* aPackData);
+const SysPath& goddard_get_active_mario_head_bin();
+void goddard_set_active_mario_head_bin(const SysPath& path);
+void goddard_mod_shutdown();
+const u8* goddard_get_active_mario_head_bin_data();
+s32 goddard_get_active_mario_head_bin_size();
+SysPath Goddard_CalculateActiveMarioHeadBin();
+std::deque<PackData>& DynosPacks();
+void Goddard_LoadActiveMarioHeadBinIfNeeded();
+void goddard_scan_pack_bins(struct PackData* aPack);
 
 //
 // Actor Manager

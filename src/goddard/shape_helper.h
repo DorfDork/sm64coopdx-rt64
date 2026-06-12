@@ -27,11 +27,11 @@ s32 load_mario_head(void (*aniFn)(struct ObjAnimator *));
 void load_shapes2(void);
 
 // GDB2 skin weight accessors for variable poly count support
-bool gd_dynos_goddard_has_skin_weights(void);
-u32 gd_dynos_goddard_get_skin_joint_count(void);
-bool gd_dynos_goddard_get_skin_joint_data(u32 index, u32 *out_joint_id, u32 *out_weight_count);
-bool gd_dynos_goddard_get_skin_weight(u32 joint_index, u32 weight_index, u16 *out_vtx_idx, f32 *out_weight);
-void gd_dynos_apply_gdb2_skin_weights(void);
+bool gd_goddard_has_skin_weights(void);
+u32 gd_goddard_get_skin_joint_count(void);
+bool gd_goddard_get_skin_joint_data(u32 index, u32 *out_joint_id, u32 *out_weight_count);
+bool gd_goddard_get_skin_weight(u32 joint_index, u32 weight_index, u16 *out_vtx_idx, f32 *out_weight);
+void gd_apply_gdb2_skin_weights(void);
 
 // see bad_declarations.h
 #ifndef GD_USE_BAD_DECLARATIONS
