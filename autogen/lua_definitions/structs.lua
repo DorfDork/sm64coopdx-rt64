@@ -1067,6 +1067,8 @@
 --- @field public wallMaxRadius number
 --- @field public floorNormalMinY number
 --- @field public ceilNormalMaxY number
+--- @field public skipGoddard integer
+--- @field public skipFileSelect integer
 
 --- @class MarioAnimation
 --- @field public currentAnimAddr Pointer_integer

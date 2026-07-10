@@ -98,6 +98,8 @@ struct LevelValues {
     f32 wallMaxRadius;
     f32 floorNormalMinY;
     f32 ceilNormalMaxY;
+    u8 skipGoddard;
+    u8 skipFileSelect;
 };
 
 extern struct LevelValues gLevelValues;

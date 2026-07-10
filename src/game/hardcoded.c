@@ -131,6 +131,8 @@ struct LevelValues gDefaultLevelValues = {
     .wallMaxRadius                    = 200.0f,
     .floorNormalMinY                  = 0.01,
     .ceilNormalMaxY                   = -0.01,
+    .skipGoddard                      = FALSE,
+    .skipFileSelect                   = TRUE,
 };
 
 struct LevelValues gLevelValues = { 0 };
