@@ -224,7 +224,7 @@ static void select_graphics_backend(void) {
 
 #if defined(_WIN32)
     if (configGraphicsBackend == GFX_WINDOW_BACKEND_OPENGL && !gfx_window_opengl_check_compatibility()) {
-        configGraphicsBackend = GFX_WINDOW_BACKEND_DIRECTX;
+        configGraphicsBackend = GFX_WINDOW_BACKEND_DIRECTX11;
     }
 #endif
     int backend = configGraphicsBackend;
@@ -238,8 +238,12 @@ static void select_graphics_backend(void) {
             gAudioApi  = &audio_sdl;
             break;
 #if defined(_WIN32)
-        case GFX_WINDOW_BACKEND_DIRECTX:
+        case GFX_WINDOW_BACKEND_DIRECTX11:
             gRenderApi = &gfx_direct3d11_api;
+            gAudioApi  = &audio_sdl;
+            break;
+        case GFX_WINDOW_BACKEND_DIRECTX12:
+            gRenderApi = &gfx_direct3d12_api;
             gAudioApi  = &audio_sdl;
             break;
 #endif

@@ -74,6 +74,7 @@ struct FramePass {
     bool drawWorldGeometry;
     u8 clearColor[4];
     enum PassFilter passFilter;
+    bool d3d12CurrentlyShaderResource;
 };
 
 extern struct RSP rsp;

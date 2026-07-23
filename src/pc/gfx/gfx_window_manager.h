@@ -19,7 +19,8 @@ typedef bool (*kb_callback_t)(int code);
 
 enum GfxWindowBackend {
     #ifdef _WIN32
-        GFX_WINDOW_BACKEND_DIRECTX,
+        GFX_WINDOW_BACKEND_DIRECTX11,
+        GFX_WINDOW_BACKEND_DIRECTX12,
     #endif
     #ifdef __APPLE__
         GFX_WINDOW_BACKEND_METAL,

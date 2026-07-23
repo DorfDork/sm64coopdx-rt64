@@ -25,7 +25,8 @@
 
 static struct GfxWindowBackendAPI *sBackends[GFX_WINDOW_BACKEND_COUNT] = {
     #if defined(_WIN32)
-        [GFX_WINDOW_BACKEND_DIRECTX] = &gfx_window_dxgi,
+        [GFX_WINDOW_BACKEND_DIRECTX11] = &gfx_window_dxgi,
+        [GFX_WINDOW_BACKEND_DIRECTX12] = &gfx_window_dxgi,
     #endif
     #if defined(__APPLE__)
         [GFX_WINDOW_BACKEND_METAL] = &gfx_window_metal,

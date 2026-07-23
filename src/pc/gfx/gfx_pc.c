@@ -1814,7 +1814,7 @@ static void gfx_draw_fullscreen_quad() {
 
 #if defined(WIN32) || defined(OSX_BUILD)
 #if defined(WIN32)
-    if (gRenderApi == &gfx_direct3d11_api) {
+    if (gRenderApi == &gfx_direct3d11_api || gRenderApi == &gfx_direct3d12_api) {
 #else
     if (gRenderApi == &gfx_metal_api) {
 #endif
