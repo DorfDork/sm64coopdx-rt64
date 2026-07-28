@@ -476,6 +476,10 @@ ifeq ($(DISCORD_SDK),1)
   SRC_DIRS += src/pc/discord
 endif
 
+ifeq ($(WINDOWS_BUILD),0)
+  SRC_DIRS += src/pc/linenoise
+endif
+
 SRC_DIRS += src/pc/mumble
 
 ULTRA_SRC_DIRS := lib/src lib/src/math lib/asm lib/data
@@ -1015,7 +1019,7 @@ endif
 
 # Check for unsafe mode option
 ifeq ($(LUA_UNSAFE),1)
-  ifeq ($(DEVELOPMENT),1)
+  ifneq ($(or $(filter 1,$(DEVELOPMENT)),$(filter dev,$(MAKECMDGOALS))),)
     CC_CHECK_CFLAGS += -DLUA_UNSAFE
     CFLAGS += -DLUA_UNSAFE
   else
