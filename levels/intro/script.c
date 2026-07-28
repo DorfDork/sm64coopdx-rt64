@@ -40,6 +40,7 @@ const LevelScript level_intro_splash_screen[] = {
     CMD2A(/*unk2*/ 1),
     CLEAR_LEVEL(),
     SLEEP(/*frames*/ 2),
+    JUMP_IF(/*op*/ OP_EQ, /*arg*/ LEVEL_INTRO_GOTO_DEBUG_LEVEL_SELECT, level_intro_goto_debug_level_select), // Skip Goddard and go to debug level select
     JUMP_IF(/*op*/ OP_EQ, /*arg*/ LEVEL_INTRO_GOTO_FILE_SELECT, level_intro_goto_file_select), // Skip Goddard
     JUMP_IF(/*op*/ OP_EQ, /*arg*/ LEVEL_INTRO_GOTO_MAIN_SCRIPTS, level_intro_goto_main_scripts), // Skip Goddard and file select
     EXIT_AND_EXECUTE(/*seg*/ 0x14, _introSegmentRomStart, _introSegmentRomEnd, level_intro_mario_head_regular),

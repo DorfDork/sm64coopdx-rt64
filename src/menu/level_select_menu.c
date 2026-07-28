@@ -243,6 +243,9 @@ s32 intro_game_over(void) {
 s32 intro_play_its_a_me_mario(void) {
     set_background_music(0, SEQ_SOUND_PLAYER, 0);
     play_sound(SOUND_MENU_COIN_ITS_A_ME_MARIO, gGlobalSoundSource);
+    if (gDebugLevelSelect) {
+        return LEVEL_INTRO_GOTO_DEBUG_LEVEL_SELECT;
+    }
     if (gLevelValues.skipGoddard) {
         if (gLevelValues.skipFileSelect) {
             return LEVEL_INTRO_GOTO_MAIN_SCRIPTS;
