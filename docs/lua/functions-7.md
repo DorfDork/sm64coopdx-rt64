@@ -2487,6 +2487,27 @@ Gets the current area's networked timer
 
 <br />
 
+## [get_network_area_random_seed](#get_network_area_random_seed)
+
+### Description
+Gets the current area's networked random seed
+
+### Lua Example
+`local integerValue = get_network_area_random_seed()`
+
+### Parameters
+- None
+
+### Returns
+- `integer`
+
+### C Prototype
+`u32 get_network_area_random_seed(void);`
+
+[:arrow_up_small:](#)
+
+<br />
+
 ## [get_area_update_counter](#get_area_update_counter)
 
 ### Description
@@ -6061,6 +6082,76 @@ Allocates a new dialog entry
 
 <br />
 
+## [smlua_text_utils_dialog_get_type](#smlua_text_utils_dialog_get_type)
+
+### Description
+Gets the type of a `dialogId`
+
+### Lua Example
+`local enumValue = smlua_text_utils_dialog_get_type(dialogId)`
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| dialogId | [enum DialogId](constants.md#enum-DialogId) |
+
+### Returns
+- [enum DialogType](constants.md#enum-DialogType)
+
+### C Prototype
+`enum DialogType smlua_text_utils_dialog_get_type(enum DialogId dialogId);`
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [smlua_text_utils_dialog_set_type](#smlua_text_utils_dialog_set_type)
+
+### Description
+Sets the type of a `dialogId`
+
+### Lua Example
+`smlua_text_utils_dialog_set_type(dialogId, dialogType)`
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| dialogId | [enum DialogId](constants.md#enum-DialogId) |
+| dialogType | [enum DialogType](constants.md#enum-DialogType) |
+
+### Returns
+- None
+
+### C Prototype
+`void smlua_text_utils_dialog_set_type(enum DialogId dialogId, enum DialogType dialogType);`
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [smlua_text_utils_dialog_reset_type](#smlua_text_utils_dialog_reset_type)
+
+### Description
+Resets the type of a `dialogId`
+
+### Lua Example
+`smlua_text_utils_dialog_reset_type(dialogId)`
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| dialogId | [enum DialogId](constants.md#enum-DialogId) |
+
+### Returns
+- None
+
+### C Prototype
+`void smlua_text_utils_dialog_reset_type(enum DialogId dialogId);`
+
+[:arrow_up_small:](#)
+
+<br />
+
 ## [smlua_text_utils_course_acts_replace](#smlua_text_utils_course_acts_replace)
 
 ### Description
@@ -7371,6 +7462,29 @@ Checks if a surface has force
 
 <br />
 
+
+## [sync_object_get_random_seed](#sync_object_get_random_seed)
+
+### Description
+Retrieves the random seed of a sync object from its sync ID
+
+### Lua Example
+`local integerValue = sync_object_get_random_seed(syncId)`
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| syncId | `integer` |
+
+### Returns
+- `integer`
+
+### C Prototype
+`u16 sync_object_get_random_seed(u32 syncId);`
+
+[:arrow_up_small:](#)
+
+<br />
 
 ## [sync_object_get_object](#sync_object_get_object)
 

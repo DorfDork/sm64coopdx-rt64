@@ -59,16 +59,15 @@ struct ShaderProgramMetal {
 static struct {
     SDL_MetalView metalView;
 
-    MTL::Device* device;
+    MTL::Device *device;
     MTL::CommandQueue *commandQueue;
     MTL::CommandBuffer *commandBuffer;
     MTL::RenderCommandEncoder *encoder;
     CA::MetalLayer *layer;
     CA::MetalDrawable *drawable;
     MTL::Texture *depthTexture;
-    MTL::DepthStencilState *depthStencilState;
-    MTL::Buffer *vertexBuffer;
-    MTL::Library *library;
+    MTL::DepthStencilState *depthStencilStates[2][2];
+    NS::AutoreleasePool *autoreleasePool;
 
     dispatch_semaphore_t frameSemaphore;
 
@@ -88,28 +87,21 @@ static struct {
     int currentTile;
     u32 currentTextureIds[MAX_TEXTURES];
 
-    // Current state
+    MTL::SamplerState *linearClampSampler = NULL;
+    MTL::SamplerState *nearestClampSampler = NULL;
 
     struct ShaderProgramMetal *shaderProgram;
-
     u32 currentWidth, currentHeight;
-
     s8 depthTest;
     s8 depthMask;
     s8 zModeDecal;
-    bool useAlpha;
-
-    // Previous states (to prevent setting states needlessly)
 
     struct ShaderProgramMetal *lastShaderProgram = NULL;
-    u32 lastVertexBufferStride = 0;
-    MTL::RenderPipelineState *lastPipelineState;
     MTL::Texture *lastTextures[MAX_TEXTURES];
     MTL::SamplerState *lastSamplers[MAX_TEXTURES];
     s8 lastDepthTest = -1;
     s8 lastDepthMask = -1;
     s8 lastZModeDecal = -1;
-    MTL::PrimitiveType lastPrimitiveType = MTL::PrimitiveTypeTriangle;
 } metal;
 
 static void setup_command_buffer() {
@@ -120,6 +112,16 @@ static void setup_command_buffer() {
         dispatch_semaphore_signal(metal.frameSemaphore);
     });
     memset(metal.storageBufferOffset, 0, sizeof(metal.storageBufferOffset));
+}
+
+static void init_auto_release_pool() {
+    if (!metal.autoreleasePool) {
+        metal.autoreleasePool = NS::AutoreleasePool::alloc()->init();
+    }
+}
+
+static MTL::DepthStencilState *current_depth_stencil_state() {
+    return metal.depthStencilStates[metal.depthTest ? 1 : 0][metal.depthMask ? 1 : 0];
 }
 
 static MTL::Library *metal_compile_source(const char *sourceCode, const char *stageName) {
@@ -174,8 +176,6 @@ static void create_depth_texture() {
     desc->setUsage(MTL::TextureUsageRenderTarget);
 
     metal.depthTexture = metal.device->newTexture(desc);
-
-    desc->release();
 
     if (!metal.depthTexture) {
         sys_fatal("Failed to create Metal depth texture.");
@@ -514,7 +514,6 @@ void gfx_metal_create_framebuffer(struct FramePass *framePass) {
     colorDesc->setStorageMode(MTL::StorageModePrivate);
 
     MTL::Texture *colorTex = metal.device->newTexture(colorDesc);
-    colorDesc->release();
 
     if (!colorTex) {
         return;
@@ -530,7 +529,6 @@ void gfx_metal_create_framebuffer(struct FramePass *framePass) {
     depthDesc->setStorageMode(MTL::StorageModePrivate);
 
     MTL::Texture *depthTex = metal.device->newTexture(depthDesc);
-    depthDesc->release();
 
     if (!depthTex) {
         colorTex->release();
@@ -563,6 +561,8 @@ void gfx_metal_delete_framebuffer(struct FramePass *framePass) {
 void gfx_metal_set_framebuffer(struct FramePass *framePass) {
     if (!framePass || !framePass->fbo) return;
 
+    init_auto_release_pool(); // gfx_metal_set_framebuffer may be called before start frame
+
     setup_command_buffer();
 
     if (metal.encoder) {
@@ -586,13 +586,12 @@ void gfx_metal_set_framebuffer(struct FramePass *framePass) {
 
     auto depthAttachment = pass->depthAttachment();
     depthAttachment->setTexture((MTL::Texture *)framePass->d3dDsv);
-    depthAttachment->setLoadAction(MTL::LoadActionClear);
+    depthAttachment->setLoadAction(MTL::LoadActionDontCare);
     depthAttachment->setStoreAction(MTL::StoreActionDontCare);
     depthAttachment->setClearDepth(1.0);
 
     metal.encoder = metal.commandBuffer->renderCommandEncoder(pass);
-    metal.encoder->setDepthStencilState(metal.depthStencilState);
-    pass->release();
+    metal.encoder->setDepthStencilState(current_depth_stencil_state());
 
     metal.lastShaderProgram = NULL;
     metal.lastDepthTest = -1;
@@ -623,6 +622,7 @@ void gfx_metal_set_framebuffer(struct FramePass *framePass) {
 }
 
 void gfx_metal_reset_framebuffer(void) {
+    init_auto_release_pool(); // gfx_metal_reset_framebuffer may be called before start frame
     setup_command_buffer();
 
     if (metal.encoder) {
@@ -639,12 +639,11 @@ void gfx_metal_reset_framebuffer(void) {
 
     auto depthAttachment = pass->depthAttachment();
     depthAttachment->setTexture(metal.depthTexture);
-    depthAttachment->setLoadAction(MTL::LoadActionLoad);
+    depthAttachment->setLoadAction(MTL::LoadActionDontCare);
     depthAttachment->setStoreAction(MTL::StoreActionDontCare);
 
     metal.encoder = metal.commandBuffer->renderCommandEncoder(pass);
-    metal.encoder->setDepthStencilState(metal.depthStencilState);
-    pass->release();
+    metal.encoder->setDepthStencilState(current_depth_stencil_state());
 
     metal.lastShaderProgram = NULL;
     metal.lastDepthTest = -1;
@@ -769,19 +768,8 @@ void gfx_metal_bind_texture_raw(int tile, uint64_t texture_id) {
             currentFramePass = &gDefaultGeoFramePass;
         }
 
-        MTL::SamplerDescriptor *samplerDesc = MTL::SamplerDescriptor::alloc()->init();
-        samplerDesc->setMinFilter(currentFramePass->passFilter == PASS_FILTER_LINEAR ? MTL::SamplerMinMagFilterLinear : MTL::SamplerMinMagFilterNearest);
-        samplerDesc->setMagFilter(currentFramePass->passFilter == PASS_FILTER_LINEAR ? MTL::SamplerMinMagFilterLinear : MTL::SamplerMinMagFilterNearest);
-        samplerDesc->setSAddressMode(MTL::SamplerAddressModeClampToEdge);
-        samplerDesc->setTAddressMode(MTL::SamplerAddressModeClampToEdge);
-        samplerDesc->setRAddressMode(MTL::SamplerAddressModeClampToEdge);
-
-        MTL::SamplerState *sampler = metal.device->newSamplerState(samplerDesc);
-        samplerDesc->release();
-
+        MTL::SamplerState *sampler = (currentFramePass->passFilter == PASS_FILTER_LINEAR)  ? metal.linearClampSampler  : metal.nearestClampSampler;
         metal.encoder->setFragmentSamplerState(sampler, tile);
-
-        sampler->release();
     }
 }
 
@@ -792,7 +780,6 @@ void gfx_metal_upload_texture(const uint8_t *rgba32_buf, int width, int height) 
     desc->setStorageMode(MTL::StorageModeShared);
 
     MTL::Texture *texture = metal.device->newTexture(desc);
-    desc->release();
 
     if (texture == NULL) {
         sys_fatal("Failed to allocate memory for Metal texture upload!");
@@ -882,7 +869,6 @@ void gfx_metal_set_scissor(int x, int y, int width, int height) {
 }
 
 void gfx_metal_set_use_alpha(bool use_alpha) {
-    metal.useAlpha = use_alpha;
 }
 
 void gfx_metal_set_vsync(bool enabled) {
@@ -924,12 +910,7 @@ void gfx_metal_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_t buf_vb
     if (metal.lastDepthTest != metal.depthTest || metal.lastDepthMask != metal.depthMask) {
         metal.lastDepthTest = metal.depthTest;
         metal.lastDepthMask = metal.depthMask;
-
-        if (metal.depthStencilState != NULL) {
-            metal.depthStencilState->release();
-        }
-        metal.depthStencilState = get_or_create_depth_stencil_state(metal.depthTest, metal.depthMask);
-        metal.encoder->setDepthStencilState(metal.depthStencilState);
+        metal.encoder->setDepthStencilState(current_depth_stencil_state());
     }
 
     // update zmode decal and cull modes
@@ -1039,11 +1020,6 @@ void gfx_metal_init(void) {
         sys_fatal("Failed to create Metal command queue.");
     }
 
-    metal.vertexBuffer = metal.device->newBuffer(VERTEX_STRIDE * sizeof(float), MTL::ResourceStorageModeShared);
-    if (!metal.vertexBuffer) {
-        sys_fatal("Failed to create Metal vertex buffer.");
-    }
-
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         metal.dynamicStorageBuffer[i] = metal.device->newBuffer(MAX_STORAGE_BUFFER_SIZE, MTL::ResourceStorageModeShared);
         if (!metal.dynamicStorageBuffer[i]) {
@@ -1055,15 +1031,41 @@ void gfx_metal_init(void) {
     // setup semaphore
     metal.frameSemaphore = dispatch_semaphore_create(MAX_FRAMES_IN_FLIGHT);
 
-    // setup depth stencil
-    MTL::DepthStencilDescriptor *depthStencilDesc = MTL::DepthStencilDescriptor::alloc()->init();
-    depthStencilDesc->setDepthCompareFunction(MTL::CompareFunctionLessEqual);
-    depthStencilDesc->setDepthWriteEnabled(true);
-    metal.depthStencilState = metal.device->newDepthStencilState(depthStencilDesc);
-    depthStencilDesc->release();
-    if (!metal.depthStencilState) {
-        sys_fatal("Failed to create Metal depth stencil state.");
+    // precache depth stencil states
+    for (int test = 0; test < 2; test++) {
+        for (int mask = 0; mask < 2; mask++) {
+            MTL::DepthStencilDescriptor *depthStencilDesc = MTL::DepthStencilDescriptor::alloc()->init();
+            depthStencilDesc->setDepthCompareFunction(test ? MTL::CompareFunctionLessEqual : MTL::CompareFunctionAlways);
+            depthStencilDesc->setDepthWriteEnabled(mask != 0);
+            metal.depthStencilStates[test][mask] = metal.device->newDepthStencilState(depthStencilDesc);
+            depthStencilDesc->release();
+            if (!metal.depthStencilStates[test][mask]) {
+                sys_fatal("Failed to create Metal depth stencil state.");
+            }
+        }
     }
+
+    // precache frame pass texture samplers
+    MTL::SamplerDescriptor *samplerDesc = MTL::SamplerDescriptor::alloc()->init();
+    samplerDesc->setSAddressMode(MTL::SamplerAddressModeClampToEdge);
+    samplerDesc->setTAddressMode(MTL::SamplerAddressModeClampToEdge);
+    samplerDesc->setRAddressMode(MTL::SamplerAddressModeClampToEdge);
+
+    samplerDesc->setMinFilter(MTL::SamplerMinMagFilterLinear);
+    samplerDesc->setMagFilter(MTL::SamplerMinMagFilterLinear);
+    metal.linearClampSampler = metal.device->newSamplerState(samplerDesc);
+    if (!metal.linearClampSampler) {
+        sys_fatal("Failed to create Metal linear clamp sampler!");
+    }
+
+    samplerDesc->setMinFilter(MTL::SamplerMinMagFilterNearest);
+    samplerDesc->setMagFilter(MTL::SamplerMinMagFilterNearest);
+    metal.nearestClampSampler = metal.device->newSamplerState(samplerDesc);
+    if (!metal.nearestClampSampler) {
+        sys_fatal("Failed to create Metal nearest clamp sampler!");
+    }
+
+    samplerDesc->release();
 
     create_depth_texture();
 }
@@ -1091,6 +1093,8 @@ void gfx_metal_on_resize(void) {
 }
 
 void gfx_metal_start_frame(void) {
+    init_auto_release_pool();
+
     if (!metal.startedFrame) {
         dispatch_semaphore_wait(metal.frameSemaphore, DISPATCH_TIME_FOREVER);
         // increment the current frame
@@ -1130,6 +1134,9 @@ void gfx_metal_finish_render(void) {
         metal.commandBuffer->commit();
         metal.commandBuffer = NULL;
     }
+
+    metal.autoreleasePool->release();
+    metal.autoreleasePool = NULL;
 
     metal.startedFrame = false;
 }

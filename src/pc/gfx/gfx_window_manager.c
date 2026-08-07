@@ -22,6 +22,7 @@
 #include "pc/utils/misc.h"
 #include "pc/mods/mod_import.h"
 #include "pc/rom_checker.h"
+#include "pc/debuglog.h"
 
 static struct GfxWindowBackendAPI *sBackends[GFX_WINDOW_BACKEND_COUNT] = {
     #if defined(_WIN32)
@@ -190,7 +191,7 @@ static void gfx_wm_ondropfile(char* path) {
 
 void gfx_wm_handle_events(void) {
     if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
-    SDL_Event event;
+    SDL_Event event = { 0 };
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
             case SDL_TEXTINPUT:
@@ -237,6 +238,8 @@ void gfx_wm_handle_events(void) {
     if (configWindow.settings_changed) {
         gfx_wm_set_fullscreen();
         gfx_wm_reset_dimension_and_pos();
+        memset(&event, 0, sizeof(event));
+        sBackends[currBackend]->handle_events(event);
         configWindow.settings_changed = false;
     }
 }

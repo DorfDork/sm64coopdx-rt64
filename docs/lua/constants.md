@@ -2,6 +2,7 @@
 
 # Supported Constants
 - [area.h](#areah)
+    - [enum MenuOption](#enum-MenuOption)
 - [behavior_table.h](#behavior_tableh)
     - [enum BehaviorId](#enum-BehaviorId)
 - [camera.h](#camerah)
@@ -41,6 +42,8 @@
 - [gfx_shader.h](#gfx_shaderh)
     - [enum ShaderStage](#enum-ShaderStage)
 - [graph_node.h](#graph_nodeh)
+- [hardcoded.h](#hardcodedh)
+    - [enum PauseExitMode](#enum-PauseExitMode)
 - [interaction.c](#interactionc)
 - [interaction.h](#interactionh)
     - [enum InteractionType](#enum-InteractionType)
@@ -50,7 +53,13 @@
 - [level_defines.h](#level_definesh)
     - [enum LevelNum](#enum-LevelNum)
 - [level_update.h](#level_updateh)
+    - [enum TimerControl](#enum-TimerControl)
+    - [enum WarpOperation](#enum-WarpOperation)
+    - [enum SpecialWarpDestination](#enum-SpecialWarpDestination)
+    - [enum WarpFlags](#enum-WarpFlags)
     - [enum MarioSpawnType](#enum-MarioSpawnType)
+    - [enum WarpNodes](#enum-WarpNodes)
+    - [enum WarpType](#enum-WarpType)
     - [enum HUDDisplayFlag](#enum-HUDDisplayFlag)
 - [lighting_engine.h](#lighting_engineh)
     - [enum LEMode](#enum-LEMode)
@@ -104,6 +113,8 @@
     - [enum ActSelectHudPart](#enum-ActSelectHudPart)
 - [smlua_model_utils.h](#smlua_model_utilsh)
     - [enum ModelExtendedId](#enum-ModelExtendedId)
+- [smlua_text_utils.h](#smlua_text_utilsh)
+    - [enum DialogType](#enum-DialogType)
 - [sounds.h](#soundsh)
 - [surface_load.h](#surface_loadh)
 - [surface_terrains.h](#surface_terrainsh)
@@ -129,6 +140,21 @@
 - WARP_TRANSITION_FADE_INTO_MARIO
 - WARP_TRANSITION_FADE_FROM_BOWSER
 - WARP_TRANSITION_FADE_INTO_BOWSER
+
+### [enum MenuOption](#MenuOption)
+| Identifier | Value |
+| :--------- | :---- |
+| MENU_OPT_NONE | 0 |
+| MENU_OPT_1 | 1 |
+| MENU_OPT_2 | 2 |
+| MENU_OPT_3 | 3 |
+| MENU_OPT_DEFAULT | MENU_OPT_1 |
+| MENU_OPT_CONTINUE | MENU_OPT_1 |
+| MENU_OPT_EXIT_COURSE | ((MENU_OPT_CONTINUE) + 1) |
+| MENU_OPT_CAMERA_ANGLE_R | ((MENU_OPT_CONTINUE) + 2) |
+| MENU_OPT_EXIT_TO_CASTLE | ((MENU_OPT_CONTINUE) + 3) |
+| MENU_OPT_SAVE_AND_CONTINUE | MENU_OPT_1 |
+| MENU_OPT_CONTINUE_DONT_SAVE | ((MENU_OPT_SAVE_AND_CONTINUE) + 1) |
 - VERSION_REGION
 
 [:arrow_up_small:](#)
@@ -1415,23 +1441,23 @@
 ### [enum ColorCombinerSource](#ColorCombinerSource)
 | Identifier | Value |
 | :--------- | :---- |
-| CC_0 | 0 |
-| CC_TEXEL0 | 1 |
-| CC_TEXEL1 | 2 |
-| CC_PRIM | 3 |
-| CC_SHADE | 4 |
-| CC_ENV | 5 |
-| CC_TEXEL0A | 6 |
-| CC_LOD | 7 |
-| CC_1 | 8 |
-| CC_TEXEL1A | 9 |
-| CC_COMBINED | 10 |
-| CC_COMBINEDA | 11 |
-| CC_PRIMA | 12 |
-| CC_SHADEA | 13 |
-| CC_ENVA | 14 |
-| CC_NOISE | 15 |
-| CC_ENUM_MAX | 16 |
+| CCS_0 | 0 |
+| CCS_TEXEL0 | 1 |
+| CCS_TEXEL1 | 2 |
+| CCS_PRIM | 3 |
+| CCS_SHADE | 4 |
+| CCS_ENV | 5 |
+| CCS_TEXEL0A | 6 |
+| CCS_LOD | 7 |
+| CCS_1 | 8 |
+| CCS_TEXEL1A | 9 |
+| CCS_COMBINED | 10 |
+| CCS_COMBINEDA | 11 |
+| CCS_PRIMA | 12 |
+| CCS_SHADEA | 13 |
+| CCS_ENVA | 14 |
+| CCS_NOISE | 15 |
+| CCS_COUNT | 16 |
 
 ### [enum CcShaderInput](#CcShaderInput)
 | Identifier | Value |
@@ -1563,6 +1589,22 @@
 - GEO_CONTEXT_AREA_LOAD
 - GEO_CONTEXT_AREA_INIT
 - GEO_CONTEXT_HELD_OBJ
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [hardcoded.h](#hardcoded.h)
+
+### [enum PauseExitMode](#PauseExitMode)
+| Identifier | Value |
+| :--------- | :---- |
+| PAUSE_EXIT_VANILLA | 0 |
+| PAUSE_EXIT_COURSE | 1 |
+| PAUSE_EXIT_TO_CASTLE | 2 |
+| PAUSE_EXIT_BOTH | 3 |
+- STARS_NEEDED_FOR_DIALOG_COUNT
+- EXCLAMATION_BOX_MAX_SIZE
 
 [:arrow_up_small:](#)
 
@@ -1741,33 +1783,56 @@
 <br />
 
 ## [level_update.h](#level_update.h)
-- TIMER_CONTROL_SHOW
-- TIMER_CONTROL_START
-- TIMER_CONTROL_STOP
-- TIMER_CONTROL_HIDE
-- WARP_OP_NONE
-- WARP_OP_LOOK_UP
-- WARP_OP_SPIN_SHRINK
-- WARP_OP_WARP_DOOR
-- WARP_OP_WARP_OBJECT
-- WARP_OP_TELEPORT
-- WARP_OP_STAR_EXIT
-- WARP_OP_DEATH
-- WARP_OP_WARP_FLOOR
-- WARP_OP_GAME_OVER
-- WARP_OP_CREDITS_END
-- WARP_OP_DEMO_NEXT
-- WARP_OP_CREDITS_START
-- WARP_OP_CREDITS_NEXT
-- WARP_OP_DEMO_END
-- WARP_OP_FORCE_SYNC
-- WARP_OP_EXIT
-- WARP_OP_TRIGGERS_LEVEL_SELECT
-- SPECIAL_WARP_CAKE
-- SPECIAL_WARP_GODDARD
-- SPECIAL_WARP_GODDARD_GAMEOVER
-- SPECIAL_WARP_TITLE
-- SPECIAL_WARP_LEVEL_SELECT
+
+### [enum TimerControl](#TimerControl)
+| Identifier | Value |
+| :--------- | :---- |
+| TIMER_CONTROL_SHOW | 0 |
+| TIMER_CONTROL_START | 1 |
+| TIMER_CONTROL_STOP | 2 |
+| TIMER_CONTROL_HIDE | 3 |
+
+### [enum WarpOperation](#WarpOperation)
+| Identifier | Value |
+| :--------- | :---- |
+| WARP_OP_NONE | 0 |
+| WARP_OP_LOOK_UP | 1 |
+| WARP_OP_SPIN_SHRINK | 2 |
+| WARP_OP_WARP_DOOR | 3 |
+| WARP_OP_WARP_OBJECT | 4 |
+| WARP_OP_TELEPORT | 5 |
+| WARP_OP_TRIGGERS_LEVEL_SELECT | 0x10 |
+| WARP_OP_STAR_EXIT | 17 |
+| WARP_OP_DEATH | 18 |
+| WARP_OP_WARP_FLOOR | 19 |
+| WARP_OP_GAME_OVER | 20 |
+| WARP_OP_CREDITS_END | 21 |
+| WARP_OP_DEMO_NEXT | 22 |
+| WARP_OP_CREDITS_START | 23 |
+| WARP_OP_CREDITS_NEXT | 24 |
+| WARP_OP_DEMO_END | 25 |
+| WARP_OP_FORCE_SYNC | 26 |
+| WARP_OP_EXIT | 27 |
+
+### [enum SpecialWarpDestination](#SpecialWarpDestination)
+| Identifier | Value |
+| :--------- | :---- |
+| WARP_SPECIAL_LEVEL_SELECT | -9 |
+| WARP_SPECIAL_INTRO_SPLASH_SCREEN | -8 |
+| WARP_SPECIAL_SWITCH_FILE | -7 |
+| WARP_SPECIAL_MARIO_HEAD_DIZZY | -3 |
+| WARP_SPECIAL_MARIO_HEAD_REGULAR | -2 |
+| WARP_SPECIAL_ENDING | -1 |
+| WARP_SPECIAL_NONE | 0 |
+
+### [enum WarpFlags](#WarpFlags)
+| Identifier | Value |
+| :--------- | :---- |
+| WARP_FLAG_NONE | (0 << 0) |
+| WARP_FLAG_DOOR_PULLED | (1 << 0) |
+| WARP_FLAG_DOOR_FLIP_MARIO | (1 << 1) |
+| WARP_FLAG_DOOR_IS_WARP | (1 << 2) |
+| WARP_FLAG_EXIT_COURSE | (1 << 3) |
 
 ### [enum MarioSpawnType](#MarioSpawnType)
 | Identifier | Value |
@@ -1793,22 +1858,27 @@
 | MARIO_SPAWN_LAUNCH_DEATH | 37 |
 | MARIO_SPAWN_UNUSED_38 | 38 |
 | MARIO_SPAWN_FADE_FROM_BLACK | 39 |
-- MARIO_SPAWN_UNKNOWN_02
-- MARIO_SPAWN_UNKNOWN_03
-- MARIO_SPAWN_UNKNOWN_27
-- WARP_NODE_F0
-- WARP_NODE_DEATH
-- WARP_NODE_F2
-- WARP_NODE_WARP_FLOOR
-- WARP_NODE_CREDITS_START
-- WARP_NODE_CREDITS_NEXT
-- WARP_NODE_CREDITS_END
-- WARP_NODE_CREDITS_MIN
-- WARP_TYPE_NOT_WARPING
-- WARP_TYPE_CHANGE_LEVEL
-- WARP_TYPE_CHANGE_AREA
-- WARP_TYPE_SAME_AREA
-- WARP_ARG_EXIT_COURSE
+
+### [enum WarpNodes](#WarpNodes)
+| Identifier | Value |
+| :--------- | :---- |
+| WARP_NODE_MAIN_ENTRY | 0x0A |
+| WARP_NODE_DEFAULT | 0xF0 |
+| WARP_NODE_DEATH | 0xF1 |
+| WARP_NODE_LOOK_UP | 0xF2 |
+| WARP_NODE_WARP_FLOOR | 0xF3 |
+| WARP_NODE_CREDITS_MIN | 0xF8 |
+| WARP_NODE_CREDITS_START | 0xF8 |
+| WARP_NODE_CREDITS_NEXT | 0xF9 |
+| WARP_NODE_CREDITS_END | 0xFA |
+
+### [enum WarpType](#WarpType)
+| Identifier | Value |
+| :--------- | :---- |
+| WARP_TYPE_NOT_WARPING | 0 |
+| WARP_TYPE_CHANGE_LEVEL | 1 |
+| WARP_TYPE_CHANGE_AREA | 2 |
+| WARP_TYPE_SAME_AREA | 3 |
 - PRESS_START_DEMO_TIMER
 - PAINTING_WARP_INDEX_START
 - PAINTING_WARP_INDEX_FA
@@ -4246,6 +4316,23 @@
 | E_MODEL_WARIOS_WING_CAP | 379 |
 | E_MODEL_WARIOS_WINGED_METAL_CAP | 380 |
 | E_MODEL_MAX | 381 |
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [smlua_text_utils.h](#smlua_text_utils.h)
+- MAX_ACTS
+- MAX_ACTS_AND_100_COINS
+
+### [enum DialogType](#DialogType)
+| Identifier | Value |
+| :--------- | :---- |
+| DIALOG_TYPE_DEFAULT | 0 |
+| DIALOG_TYPE_BOSS_START | 1 |
+| DIALOG_TYPE_BOSS_STOP | 2 |
+| DIALOG_TYPE_RACE | 3 |
+| DIALOG_TYPE_STAR_SOUND | 4 |
 
 [:arrow_up_small:](#)
 

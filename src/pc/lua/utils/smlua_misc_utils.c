@@ -48,6 +48,10 @@ u32 get_network_area_timer(void) {
     return gNetworkAreaTimer;
 }
 
+u32 get_network_area_random_seed(void) {
+    return gNetworkAreaRandomSeed;
+}
+
 u16 get_area_update_counter(void) {
     return gAreaUpdateCounter;
 }
@@ -321,7 +325,7 @@ void game_unpause(void) {
     level_set_transition(0, NULL);
     gMenuMode = -1;
     gDialogBoxState = 0;
-    gPauseScreenMode = 1;
+    gMenuOptSelectIndex = MENU_OPT_DEFAULT;
 }
 
 ///

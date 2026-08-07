@@ -1563,6 +1563,7 @@
 | showStarNumber | `integer` |  |
 | extendedPauseDisplay | `integer` |  |
 | pauseExitAnywhere | `integer` |  |
+| pauseExitMode | [enum PauseExitMode](constants.md#enum-PauseExitMode) |  |
 | disableActs | `integer` |  |
 | bubbleOnDeathBarrierInCapStages | `integer` |  |
 | entryLevel | [enum LevelNum](constants.md#enum-LevelNum) |  |
@@ -1600,6 +1601,8 @@
 | wallMaxRadius | `number` |  |
 | floorNormalMinY | `number` |  |
 | ceilNormalMaxY | `number` |  |
+| skipGoddard | `integer` |  |
+| skipFileSelect | `integer` |  |
 
 [:arrow_up_small:](#)
 

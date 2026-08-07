@@ -17,6 +17,7 @@
 #include "pc/utils/misc.h"
 #include "pc/mods/mod_import.h"
 #include "pc/rom_checker.h"
+#include "pc/debuglog.h"
 
 static SDL_Window *sSdlWindow;
 

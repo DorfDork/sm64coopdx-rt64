@@ -55,6 +55,8 @@ constants_files = [
     "src/pc/gfx/gfx_shader.h",
     "src/engine/surface_load.h",
     "src/pc/lua/utils/smlua_audio_utils.h",
+    "src/pc/lua/utils/smlua_text_utils.h",
+    "src/game/hardcoded.h",
 ]
 
 # For each file, expose only these constants
@@ -141,6 +143,7 @@ constants_blacklist = { "__name__": "constants_blacklist",
     "src/pc/mods/mod_fs.h": [ "INT_TYPE_MAX", "FLOAT_TYPE_MAX", "FILE_SEEK_MAX" ],
     "src/engine/surface_load.h": [ "NUM_CELLS" ],
     "src/pc/network/version.h": [ "VERSION_OFFSET" ],
+    "src/pc/lua/utils/smlua_text_utils.h": [ "DIALOG_TYPE_MAX" ],
 }
 
 # For each file, expose these constants, but hide them from the documentation or VSCode autocomplete
@@ -243,7 +246,7 @@ functions_whitelist = { "__name__": "functions_whitelist",
     "src/engine/level_script.h":            [ "area_create_warp_node" ],
     "src/game/ingame_menu.h":               [ "set_min_dialog_width", "set_dialog_override_pos", "reset_dialog_override_pos", "set_dialog_override_color", "reset_dialog_override_color", "set_menu_mode", "create_dialog_box", "create_dialog_box_with_var", "create_dialog_inverted_box", "create_dialog_box_with_response", "reset_dialog_render_state", "set_dialog_box_state", "handle_special_dialog_text" ],
     "src/audio/seqplayer.h":                [ "sequence_player_set_tempo", "sequence_player_set_tempo_acc", "sequence_player_set_transposition", "sequence_player_get_tempo", "sequence_player_get_tempo_acc", "sequence_player_get_transposition", "sequence_player_get_volume", "sequence_player_get_fade_volume", "sequence_player_get_mute_volume_scale" ],
-    "src/pc/network/sync_object.h":         [ "sync_object_is_initialized", "sync_object_is_owned_locally", "sync_object_get_object" ],
+    "src/pc/network/sync_object.h":         [ "sync_object_is_initialized", "sync_object_is_owned_locally", "sync_object_get_object", "sync_object_get_random_seed"],
     "src/audio/load.h":                     [ "set_sound_bank_override" ],
     "src/pc/djui/djui_gfx.h":               [ "djui_gfx_get_scale" ],
 }
@@ -262,7 +265,7 @@ functions_blacklist = { "__name__": "functions_blacklist",
     "src/game/mario_actions_submerged.c":       [ "^[us]32 act_.*" ],
     "src/game/mario_step.h":                    [ " stub_mario_step", "transfer_bully_speed" ],
     "src/game/mario.h":                         [ " init_mario" ],
-    "src/pc/djui/djui_console.h":               [ " djui_console_create", "djui_console_message_create", "djui_console_message_dequeue" ],
+    "src/pc/djui/djui_console.h":               [ " djui_console_create", "djui_console_clear", "djui_console_message_create", "djui_console_message_dequeue" ],
     "src/pc/djui/djui_chat_message.h":          [ "create_from" ],
     "src/pc/djui/djui_hud_utils.h":             [ "djui_hud_clear_interp_data" ],
     "src/game/interaction.h":                   [ "process_interaction", "_handle_" ],
@@ -279,7 +282,7 @@ functions_blacklist = { "__name__": "functions_blacklist",
     "src/game/behavior_actions.h":              [ "bhv_dust_smoke_loop", "bhv_init_room", "geo_" ],
     "src/pc/lua/utils/smlua_audio_utils.h":     [ "audio_custom_shutdown", "smlua_audio_custom_deinit", "audio_destroy_pending_copies", "audio_custom_update_volume" ],
     "src/pc/lua/utils/smlua_level_utils.h":     [ "smlua_level_util_reset" ],
-    "src/pc/lua/utils/smlua_text_utils.h":      [ "smlua_text_utils_init", "smlua_text_utils_shutdown", "smlua_text_utils_dialog_get_unmodified"],
+    "src/pc/lua/utils/smlua_text_utils.h":      [ "smlua_text_utils_init", "smlua_text_utils_shutdown", "smlua_text_utils_dialog_get_unmodified" ],
     "src/pc/lua/utils/smlua_anim_utils.h":      [ "smlua_anim_util_reset", "smlua_anim_util_register_animation" ],
     "src/pc/lua/utils/smlua_gfx_utils.h":       [ "gfx_allocate_internal", "vtx_allocate_internal", "gfx_get_length_no_sentinel" ],
     "src/pc/network/lag_compensation.h":        [ "lag_compensation_clear" ],

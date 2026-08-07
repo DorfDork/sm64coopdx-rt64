@@ -12,16 +12,20 @@
    - [define_custom_obj_fields](#define_custom_obj_fields)
    - [network_init_object](#network_init_object)
    - [network_send_object](#network_send_object)
-   - [network_send_to](#network_send_to)
    - [network_send](#network_send)
+   - [network_send_to](#network_send_to)
+   - [network_send_bytestring](#network_send_bytestring)
+   - [network_send_bytestring_to](#network_send_bytestring_to)
    - [get_texture_info](#get_texture_info)
    - [texture_override_set](#texture_override_set)
    - [texture_override_reset](#texture_override_reset)
-   - [smlua_anim_util_register_animation](#smlua_anim_util_register_animation)
    - [level_script_parse](#level_script_parse)
+   - [smlua_anim_util_register_animation](#smlua_anim_util_register_animation)
    - [log_to_console](#log_to_console)
    - [add_scroll_target](#add_scroll_target)
    - [collision_find_surface_on_ray](#collision_find_surface_on_ray)
+   - [set_exclamation_box_contents](#set_exclamation_box_contents)
+   - [get_exclamation_box_contents](#get_exclamation_box_contents)
    - [cast_graph_node](#cast_graph_node)
    - [get_uncolored_string](#get_uncolored_string)
    - [gfx_set_command](#gfx_set_command)
@@ -32,8 +36,8 @@
    - [gfx_shader_set_vec3_array](#gfx_shader_set_vec3_array)
    - [gfx_shader_set_vec4_array](#gfx_shader_set_vec4_array)
    - [gfx_shader_set_mat4_array](#gfx_shader_set_mat4_array)
-   - [djui_hud_print_text](#djui_hud_print_text)
-   - [djui_hud_print_text_interpolated](#djui_hud_print_text_interpolated)
+   - [gfx_get_from_name](#gfx_get_from_name)
+   - [vtx_get_from_name](#vtx_get_from_name)
 
 <br />
 
@@ -762,7 +766,6 @@
 <br />
 
 - djui_console.h
-   - [djui_console_clear](functions-3.md#djui_console_clear)
    - [djui_console_toggle](functions-3.md#djui_console_toggle)
    - [djui_console_is_open](functions-3.md#djui_console_is_open)
 
@@ -2067,6 +2070,7 @@
 
 - smlua_misc_utils.h
    - [get_network_area_timer](functions-7.md#get_network_area_timer)
+   - [get_network_area_random_seed](functions-7.md#get_network_area_random_seed)
    - [get_area_update_counter](functions-7.md#get_area_update_counter)
    - [get_temp_s32_pointer](functions-7.md#get_temp_s32_pointer)
    - [deref_s32_pointer](functions-7.md#deref_s32_pointer)
@@ -2234,6 +2238,9 @@
    - [smlua_text_utils_dialog_restore](functions-7.md#smlua_text_utils_dialog_restore)
    - [smlua_text_utils_dialog_is_replaced](functions-7.md#smlua_text_utils_dialog_is_replaced)
    - [smlua_text_utils_allocate_dialog](functions-7.md#smlua_text_utils_allocate_dialog)
+   - [smlua_text_utils_dialog_get_type](functions-7.md#smlua_text_utils_dialog_get_type)
+   - [smlua_text_utils_dialog_set_type](functions-7.md#smlua_text_utils_dialog_set_type)
+   - [smlua_text_utils_dialog_reset_type](functions-7.md#smlua_text_utils_dialog_reset_type)
    - [smlua_text_utils_course_acts_replace](functions-7.md#smlua_text_utils_course_acts_replace)
    - [smlua_text_utils_secret_star_replace](functions-7.md#smlua_text_utils_secret_star_replace)
    - [smlua_text_utils_course_name_replace](functions-7.md#smlua_text_utils_course_name_replace)
@@ -2309,6 +2316,7 @@
 <br />
 
 - sync_object.h
+   - [sync_object_get_random_seed](functions-7.md#sync_object_get_random_seed)
    - [sync_object_get_object](functions-7.md#sync_object_get_object)
    - [sync_object_is_initialized](functions-7.md#sync_object_is_initialized)
    - [sync_object_is_owned_locally](functions-7.md#sync_object_is_owned_locally)
@@ -2321,10 +2329,11 @@
 
 ## [define_custom_obj_fields](#define_custom_obj_fields)
 
+### Description
 Defines a custom set of overlapping object fields.
 
-The `fieldTable` table's keys must start with the letter `o` and the values must be either `"u32"`, `"s32"`, `"f32"` or a table with fields `type` and `global`, for example `{ type = "u32", global = true }`.
-If, for a field, `global` is `true`, the field will be defined for all mods.
+- The `fieldTable` table's keys must start with the letter `o` and the values must be either `"u32"`, `"s32"`, `"f32"` or a table with fields `type` and `global`, for example `{ type = "u32", global = true }`.
+- If, for a field, `global` is `true`, the field will be defined for all mods.
 
 ### Lua Example
 ```lua
@@ -2341,34 +2350,38 @@ define_custom_obj_fields({
 ### Parameters
 | Field | Type |
 | ----- | ---- |
-| fieldTable | `Lua Table` |
+| objFieldTable | `table` |
 
-### C Prototype
-`N/A`
+### Returns
+- None
 
 [:arrow_up_small:](#)
 
+<br />
+
 ## [network_init_object](#network_init_object)
 
+### Description
 Enables synchronization on an object.
 
 - Setting `standardSync` to `true` will automatically synchronize the object at a rate that is determined based on player distance. The commonly used object fields will be automatically synchronized.
 - Setting `standardSync` to `false` will not automatically synchronize the object, or add commonly used object fields. The mod must manually call `network_send_object()` when fields have changed.
-
-The `fieldTable` parameter can be `nil`, or a list of object fields.
+- The `fieldTable` parameter can be `nil`, or a list of object fields.
 
 ### Lua Example
-`network_init_object(obj, true, { 'oCustomField1', 'oCustomField2', 'oCustomField3' })`
+```lua
+network_init_object(obj, true, { 'oCustomField1', 'oCustomField2', 'oCustomField3' })
+```
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
-| object | [Object](structs.md#Object) |
+| object | [Object](./structs.md#Object) |
 | standardSync | `bool` |
-| fieldTable | `Lua Table` |
+| fieldTable | `table` |
 
-### C Prototype
-`N/A`
+### Returns
+- None
 
 [:arrow_up_small:](#)
 
@@ -2376,46 +2389,24 @@ The `fieldTable` parameter can be `nil`, or a list of object fields.
 
 ## [network_send_object](#network_send_object)
 
+### Description
 Sends a packet that synchronizes an object. This does not need to be called when `standardSync` is enabled.
 
-The `reliable` field will ensure that the packet arrives, but should be used sparingly and only when missing a packet would cause a desync.
+- The `reliable` field will ensure that the packet arrives, but should be used sparingly and only when missing a packet would cause a desync.
 
 ### Lua Example
-`network_send_object(obj, false)`
+```lua
+network_send_object(obj, false)
+```
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
-| object | [Object](structs.md#Object) |
+| object | [Object](./structs.md#Object) |
 | reliable | `bool` |
 
-### C Prototype
-`N/A`
-
-[:arrow_up_small:](#)
-
-<br />
-
-## [network_send_to](#network_send_to)
-
-Sends a packet to a particular player (using their local index) containing whatever data you want.
-
-`dataTable` can only contain strings, integers, numbers, booleans, and nil
-
-The `reliable` field will ensure that the packet arrives, but should be used sparingly and only when missing a packet would cause a desync.
-
-### Lua Example
-`network_send_to(localPlayerIndex, reliable, { data1 = 'hello', data2 = 10})`
-
-### Parameters
-| Field | Type |
-| ----- | ---- |
-| localPlayerIndex | `integer` |
-| reliable | `bool` |
-| dataTable | `table` |
-
-### C Prototype
-`N/A`
+### Returns
+- None
 
 [:arrow_up_small:](#)
 
@@ -2423,14 +2414,16 @@ The `reliable` field will ensure that the packet arrives, but should be used spa
 
 ## [network_send](#network_send)
 
-Sends a packet to all players containing whatever data you want.
+### Description
+Sends a global Lua packet with the values of `dataTable`. Received with the `HOOK_ON_PACKET_RECEIVE` hook.
 
-`dataTable` can only contain strings, integers, numbers, booleans, and nil
-
-The `reliable` field will ensure that the packet arrives, but should be used sparingly and only when missing a packet would cause a desync.
+- `dataTable` can only contain strings, integers, numbers, booleans, and nil.
+- The `reliable` field will ensure that the packet arrives, but should be used sparingly and only when missing a packet would cause a desync.
 
 ### Lua Example
-`network_send(reliable, { data1 = 'hello', data2 = 10})`
+```lua
+network_send(reliable, { data1 = 'hello', data2 = 10 })
+```
 
 ### Parameters
 | Field | Type |
@@ -2438,8 +2431,102 @@ The `reliable` field will ensure that the packet arrives, but should be used spa
 | reliable | `bool` |
 | dataTable | `table` |
 
-### C Prototype
-`N/A`
+### Returns
+- None
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [network_send_to](#network_send_to)
+
+### Description
+Sends a Lua packet with the values of `dataTable` to a specific client through local indices. Received with the `HOOK_ON_PACKET_RECEIVE` hook.
+
+- `dataTable` can only contain strings, integers, numbers, booleans, and nil.
+- The `reliable` field will ensure that the packet arrives, but should be used sparingly and only when missing a packet would cause a desync.
+
+### Lua Example
+```lua
+network_send_to(localPlayerIndex, reliable, { data1 = 'hello', data2 = 10 })
+```
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| toLocalIndex | `integer` |
+| reliable | `bool` |
+| dataTable | `table` |
+
+### Returns
+- None
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [network_send_bytestring](#network_send_bytestring)
+
+### Description
+Sends a global Lua packet with the bytestring of `bytestring`. Received with the `HOOK_ON_PACKET_BYTESTRING_RECEIVE` hook.
+
+- The `reliable` field will ensure that the packet arrives, but should be used sparingly and only when missing a packet would cause a desync.
+
+### Lua Example
+```lua
+local bytestring = ''
+    -------------- PACKET ID --------------
+    .. string.pack("<B", PACKET_EXAMPLE_ID)
+    ---------------------------------------
+    .. string.pack("<l",  long_param)
+    .. string.pack("<s2", string_param)
+    ---------------------------------------
+
+network_send_bytestring(reliable, bytestring)
+```
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| reliable | `bool` |
+| bytestring | `string` |
+
+### Returns
+- None
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [network_send_bytestring_to](#network_send_bytestring_to)
+
+### Description
+Sends a Lua packet with the bytestring of `bytestring` to a specific client through local indices. Received with the `HOOK_ON_PACKET_BYTESTRING_RECEIVE` hook.
+
+- The `reliable` field will ensure that the packet arrives, but should be used sparingly and only when missing a packet would cause a desync.
+
+### Lua Example
+```lua
+local bytestring = ''
+    -------------- PACKET ID --------------
+    .. string.pack("<B", PACKET_EXAMPLE_ID)
+    ---------------------------------------
+    .. string.pack("<l",  long_param)
+    .. string.pack("<s2", string_param)
+    ---------------------------------------
+
+network_send_bytestring_to(localPlayerIndex, reliable, bytestring)
+```
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| toLocalIndex | `integer` |
+| reliable | `bool` |
+| bytestring | `string` |
+
+### Returns
+- None
 
 [:arrow_up_small:](#)
 
@@ -2447,10 +2534,14 @@ The `reliable` field will ensure that the packet arrives, but should be used spa
 
 ## [get_texture_info](#get_texture_info)
 
-Retrieves a texture by name.
+### Description
+Gets the `TextureInfo` of a texture by name.
+- Note: This also works with vanilla textures.
 
 ### Lua Example
-`get_texture_info(textureName)`
+```lua
+local texinfo = get_texture_info(textureName)
+```
 
 ### Parameters
 | Field | Type |
@@ -2458,32 +2549,7 @@ Retrieves a texture by name.
 | textureName | `string` |
 
 ### Returns
-- [TextureInfo](structs.md#TextureInfo)
-
-### C Prototype
-`N/A`
-
-[:arrow_up_small:](#)
-
-<br />
-
-## [texture_override_reset](#texture_override_reset)
-
-Resets an overridden texture.
-
-### Lua Example
-`texture_override_reset("outside_09004000")`
-
-### Parameters
-| Field | Type |
-| ----- | ---- |
-| textureName | `string` |
-
-### Returns
-- None
-
-### C Prototype
-`void dynos_texture_override_reset(const char* textureName);`
+- [TextureInfo](./structs.md#TextureInfo)
 
 [:arrow_up_small:](#)
 
@@ -2491,22 +2557,73 @@ Resets an overridden texture.
 
 ## [texture_override_set](#texture_override_set)
 
+### Description
 Overrides a texture with a custom `TextureInfo`.
+- `textureName` must be the codename of a vanilla texture, you can find these in `data/dynos_mgr_builtin_tex.cpp`
+- `overrideTexInfo` can be any `TextureInfo`
 
 ### Lua Example
-`texture_override_set("outside_09004000", overrideTexInfo)`
+```lua
+texture_override_set("outside_09004000", overrideTexInfo)
+```
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
 | textureName | `string` |
-| overrideTexInfo | [TextureInfo](structs.md#TextureInfo) |
+| overrideTexInfo | [TextureInfo](./structs.md#TextureInfo) |
 
 ### Returns
 - None
 
-### C Prototype
-`void dynos_texture_override_set(const char* textureName, struct TextureInfo* overrideTexInfo);`
+[:arrow_up_small:](#)
+
+<br />
+
+## [texture_override_reset](#texture_override_reset)
+
+### Description
+Resets an overridden texture.
+
+### Lua Example
+```lua
+texture_override_reset("outside_09004000")
+```
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| textureName | `string` |
+
+### Returns
+- None
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [level_script_parse](#level_script_parse)
+
+### Description
+Parses a level script and passes area index, behavior data, macro behavior IDs and macro behavior arguments to a function.
+When `func` is called, arguments are filled depending on the level command:
+- `AREA` command: only `areaIndex` is filled. It's a number
+- `OBJECT` command: only `bhvData` is filled. `bhvData` is a table with nine fields: 'behavior', 'behaviorArg', 'model', 'posX', 'posY', 'posZ', 'pitch', 'yaw' and 'roll'
+- `MACRO` command: only `macroBhvIds`, `macroBhvArgs` and 'macroBhvModels' are filled. `macroBhvIds` is a list of behavior ids. `macroBhvArgs` is a list of behavior params. 'macroBhvModels' is a list of model ids. All lists have the same size and start at index 0
+
+### Lua Example
+```lua
+level_script_parse(LEVEL_BOB, func)
+```
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| levelNum | [enum LevelNum](./constants.md#enum-LevelNum) \| `integer` |
+| func | `function` |
+
+### Returns
+- None
 
 [:arrow_up_small:](#)
 
@@ -2514,10 +2631,13 @@ Overrides a texture with a custom `TextureInfo`.
 
 ## [smlua_anim_util_register_animation](#smlua_anim_util_register_animation)
 
-Register a new Lua animation.
+### Description
+Registers an animation that can be used in objects if `smlua_anim_util_set_animation` is called.
 
 ### Lua Example
-`smlua_anim_util_register_animation("apparition_idle", 0, 189, 0, 0, 0x5A, values, index)`
+```lua
+smlua_anim_util_register_animation("apparition_idle", 0, 189, 0, 0, 0x5A, values, index)
+```
 
 ### Parameters
 | Field | Type |
@@ -2534,54 +2654,28 @@ Register a new Lua animation.
 ### Returns
 - None
 
-### C Prototype
-`void smlua_anim_util_register_animation(const char *name, s16 flags, s16 animYTransDivisor, s16 startFrame, s16 loopStart, s16 loopEnd, s16 *values, u32 valuesLength, u16 *index, u32 indexLength);`
-
-[:arrow_up_small:](#)
-
-<br />
-
-## [level_script_parse](#level_script_parse)
-
-### Lua Example
-`level_script_parse(LEVEL_BOB, func)`
-
-Parses a level script and passes area index, behavior data, macro behavior IDs and macro behavior arguments to a function.
-
-### Parameters
-| Field | Type |
-| ----- | ---- |
-| levelNum | `LevelNum` |
-| func | `function` |
-
-### Returns
-- None
-
-### C Prototype
-`void smlua_func_level_script_parse(lua_State* L);`
-
 [:arrow_up_small:](#)
 
 <br />
 
 ## [log_to_console](#log_to_console)
 
+### Description
 Logs a message to the in-game console.
 
 ### Lua Example
-`log_to_console("sm64coopdx FTW", CONSOLE_MESSAGE_INFO)`
+```lua
+log_to_console("sm64coopdx FTW", CONSOLE_MESSAGE_INFO)
+```
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
 | message | `string` |
-| level (optional) | `ConsoleMessageLevel` |
+| level | [enum ConsoleMessageLevel](./constants.md#enum-ConsoleMessageLevel) |
 
 ### Returns
 - None
-
-### C Prototype
-`void log_to_console(const char* message, enum ConsoleMessageLevel level);`
 
 [:arrow_up_small:](#)
 
@@ -2589,10 +2683,13 @@ Logs a message to the in-game console.
 
 ## [add_scroll_target](#add_scroll_target)
 
-Registers a vertex buffer to be used for a scrolling texture. Should be used with `RM_Scroll_Texture` or `editor_Scroll_Texture`
+### Description
+Registers a vertex buffer to be used for a scrolling texture. Should be used with `RM_Scroll_Texture` or `editor_Scroll_Texture`.
 
 ### Lua Example
-`add_scroll_target(0, "arena_rainbow_dl_StarRoad_mesh_layer_5_vtx_0")`
+```lua
+add_scroll_target(0, "arena_rainbow_dl_StarRoad_mesh_layer_5_vtx_0")
+```
 
 ### Parameters
 | Field | Type |
@@ -2603,19 +2700,19 @@ Registers a vertex buffer to be used for a scrolling texture. Should be used wit
 ### Returns
 - None
 
-### C Prototype
-`void dynos_add_scroll_target(u32 index, const char *name, u32 offset, u32 size);`
-
 [:arrow_up_small:](#)
 
 <br />
 
 ## [collision_find_surface_on_ray](#collision_find_surface_on_ray)
 
+### Description
 Shoots a raycast from `startX`, `startY`, and `startZ` in the direction of `dirX`, `dirY`, and `dirZ`.
 
 ### Lua Example
-`collision_find_surface_on_ray(0, 0, 0, 50, 100, 50)`
+```lua
+local hit = collision_find_surface_on_ray(0, 0, 0, 50, 100, 50, 3.0)
+```
 
 ### Parameters
 | Field | Type |
@@ -2626,13 +2723,10 @@ Shoots a raycast from `startX`, `startY`, and `startZ` in the direction of `dirX
 | dirX | `number` |
 | dirY | `number` |
 | dirZ | `number` |
-| precision (optional) | `number` |
+| precision | `number` |
 
 ### Returns
-- [RayIntersectionInfo](structs.md#RayIntersectionInfo)
-
-### C Prototype
-`struct RayIntersectionInfo* collision_find_surface_on_ray(f32 startX, f32 startY, f32 startZ, f32 dirX, f32 dirY, f32 dirZ, f32 precision);`
+- [RayIntersectionInfo](./structs.md#RayIntersectionInfo)
 
 [:arrow_up_small:](#)
 
@@ -2640,38 +2734,32 @@ Shoots a raycast from `startX`, `startY`, and `startZ` in the direction of `dirX
 
 ## [set_exclamation_box_contents](#set_exclamation_box_contents)
 
-Sets the contents that the exclamation box spawns. A single content has 5 keys: `id`, `unused`, `firstByte`, `model`, and `behavior`.
-* `id`: Required; what value the box's oBehParams2ndByte needs to be to spawn this object.
-* `unused`: Optional; unused by vanilla.
-* `firstByte`: Optional; Overrides the 1st byte given to the spawned object.
-* `model`: Required; The model that the object will spawn with. Uses `ModelExtendedId`.
-* `behavior`: Required; The behavior ID that the object will spawn with. Uses `BehaviorId`.
+### Description
+Sets the contents that the exclamation box spawns.
+A single content has 5 keys: `id`, `unused`, `firstByte`, `model`, and `behavior`:
+- `id`: Required; what value the box's oBehParams2ndByte needs to be to spawn this object.
+- `unused`: Optional; unused by vanilla.
+- `firstByte`: Optional; Overrides the 1st byte given to the spawned object.
+- `model`: Required; The model that the object will spawn with. Uses `ModelExtendedId`.
+- `behavior`: Required; The behavior ID that the object will spawn with. Uses `BehaviorId`.
 
 ### Lua Example
 ```lua
 set_exclamation_box_contents({
    {id = 0, unused = 0, firstByte = 0, model = E_MODEL_GOOMBA, behavior = id_bhvGoomba}, -- Uses both optional fields
    {id = 1, unused = 0, model = E_MODEL_KOOPA_WITH_SHELL, behavior = id_bhvKoopa}, -- Only uses `unused` optional field
-   {id = 2, firsteByte = model = E_MODEL_BLACK_BOBOMB, behavior = id_bhvBobomb}, -- Only uses `firstByte` optional field
+   {id = 2, firstByte = 0, model = E_MODEL_BLACK_BOBOMB, behavior = id_bhvBobomb}, -- Only uses `firstByte` optional field
    {id = 3, model = E_MODEL_BOO, behavior = id_bhvBoo}, -- Uses no optional fields
 })
 ```
 
 ### Parameters
-There exists only 1 parameter to this function which is the main table. However, each subtable has 5 different keys that could be accessed.
 | Field | Type |
 | ----- | ---- |
-| id | `integer` |
-| unused (Optional) | `integer` |
-| firstByte (Optional) | `integer` |
-| model | [ModelExtendedId](#ModelExtendedId) |
-| behavior | [BehaviorId](#BehaviorId) |
+| contents | `table` of [ExclamationBoxContent](./structs.md#ExclamationBoxContent) |
 
 ### Returns
 - None
-
-### C Prototype
-N/A
 
 [:arrow_up_small:](#)
 
@@ -2679,40 +2767,31 @@ N/A
 
 ## [get_exclamation_box_contents](#get_exclamation_box_contents)
 
-Gets the contents that the exclamation box spawns. A single content has 5 keys: `id`, `unused`, `firstByte`, `model`, and `behavior`.
-* `id`: Required; what value the box's oBehParams2ndByte needs to be to spawn this object.
-* `unused`: Optional; unused by vanilla.
-* `firstByte`: Optional; Overrides the 1st byte given to the spawned object.
-* `model`: Required; The model that the object will spawn with. Uses `ModelExtendedId`.
-* `behavior`: Required; The behavior ID that the object will spawn with. Uses `BehaviorId`.
+### Description
+Gets the contents that the exclamation box spawns.
+A single content has 5 keys: `id`, `unused`, `firstByte`, `model`, and `behavior`:
+- `id`: Required; what value the box's oBehParams2ndByte needs to be to spawn this object.
+- `unused`: Optional; unused by vanilla.
+- `firstByte`: Optional; Overrides the 1st byte given to the spawned object.
+- `model`: Required; The model that the object will spawn with. Uses `ModelExtendedId`.
+- `behavior`: Required; The behavior ID that the object will spawn with. Uses `BehaviorId`.
 
 ### Lua Example
 ```lua
 local contents = get_exclamation_box_contents()
 for index, content in pairs(contents) do -- Enter the main table
-   djui_chat_message_create("Table index " .. index) -- Print the current table index
-      for key, value in pairs(content) do
-         djui_chat_message_create(key .. ": " .. value) -- Print a key-value pair within this subtable
-      end
-   djui_chat_message_create("---------------------------------") -- Separator
+    djui_chat_message_create("Table index " .. index) -- Print the current table index
+    for key, value in pairs(content) do
+       djui_chat_message_create(key .. ": " .. value) -- Print a key-value pair within this subtable
+    end
 end
 ```
 
 ### Parameters
-- N/A
+- None
 
 ### Returns
-The function itself does not return every key/value pair. Instead it returns the main table which holds all the subtables that hold each key/value pair.
-| Field | Type |
-| ----- | ---- |
-| id | `integer` |
-| unused (Optional) | `integer` |
-| firstByte (Optional) | `integer` |
-| model | [ModelExtendedId](#ModelExtendedId) |
-| behavior | [BehaviorId](#BehaviorId) |
-
-### C Prototype
-N/A
+- `table` of [ExclamationBoxContent](./structs.md#ExclamationBoxContent)
 
 [:arrow_up_small:](#)
 
@@ -2720,7 +2799,9 @@ N/A
 
 ## [cast_graph_node](#cast_graph_node)
 
-Returns the specific GraphNode(...) the node is part of. Basically the reverse of `.node` or `.fnNode`.
+### Description
+Returns the specific GraphNode(...) the node is part of.
+Basically the reverse of `.node` or `.fnNode`.
 
 ### Lua Example
 ```lua
@@ -2733,13 +2814,10 @@ print(marioGfx == cast_graph_node(node)) -- true
 ### Parameters
 | Field | Type |
 | ----- | ---- |
-| node  | [GraphNode](structs.md#GraphNode) |
+| node | [GraphNode](./structs.md#GraphNode) \| [FnGraphNode](./structs.md#FnGraphNode) |
 
 ### Returns
-- GraphNode(...)
-
-### C Prototype
-N/A
+- [GraphNode](./structs.md#GraphNode) \| [GraphNodeAnimatedPart](./structs.md#GraphNodeAnimatedPart) \| [GraphNodeBackground](./structs.md#GraphNodeBackground) \| [GraphNodeBillboard](./structs.md#GraphNodeBillboard) \| [GraphNodeCamera](./structs.md#GraphNodeCamera) \| [GraphNodeCullingRadius](./structs.md#GraphNodeCullingRadius) \| [GraphNodeDisplayList](./structs.md#GraphNodeDisplayList) \| [GraphNodeGenerated](./structs.md#GraphNodeGenerated) \| [GraphNodeHeldObject](./structs.md#GraphNodeHeldObject) \| [GraphNodeLevelOfDetail](./structs.md#GraphNodeLevelOfDetail) \| [GraphNodeMasterList](./structs.md#GraphNodeMasterList) \| [GraphNodeObject](./structs.md#GraphNodeObject) \| [GraphNodeObjectParent](./structs.md#GraphNodeObjectParent) \| [GraphNodeOrthoProjection](./structs.md#GraphNodeOrthoProjection) \| [GraphNodePerspective](./structs.md#GraphNodePerspective) \| [GraphNodeRotation](./structs.md#GraphNodeRotation) \| [GraphNodeScale](./structs.md#GraphNodeScale) \| [GraphNodeShadow](./structs.md#GraphNodeShadow) \| [GraphNodeStart](./structs.md#GraphNodeStart) \| [GraphNodeSwitchCase](./structs.md#GraphNodeSwitchCase) \| [GraphNodeTranslation](./structs.md#GraphNodeTranslation) \| [GraphNodeTranslationRotation](./structs.md#GraphNodeTranslationRotation) \| [GraphNodeBone](./structs.md#GraphNodeBone)
 
 [:arrow_up_small:](#)
 
@@ -2747,23 +2825,21 @@ N/A
 
 ## [get_uncolored_string](#get_uncolored_string)
 
+### Description
 Removes color codes from a string.
 
 ### Lua Example
 ```lua
-print(get_uncolored_string("\#210059\Colored \#FF086F\String")) -- "Colored String"
+print(get_uncolored_string("\\#210059\\Colored \\#FF086F\\String")) -- "Colored String"
 ```
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
-| str   | 'string' |
+| str | `string` |
 
 ### Returns
 - `string`
-
-### C Prototype
-N/A
 
 [:arrow_up_small:](#)
 
@@ -2771,6 +2847,7 @@ N/A
 
 ## [gfx_set_command](#gfx_set_command)
 
+### Description
 Sets a display list command on the display list given.
 
 If `command` includes parameter specifiers (subsequences beginning with `%`), the additional arguments following `command` are converted and inserted in `command` replacing their respective specifiers.
@@ -2784,8 +2861,7 @@ The following specifiers are allowed:
 - `%t` for a `Texture` parameter
 - `%g` for a `Gfx` parameter
 
-### Lua Examples
-
+### Lua Example
 Plain string:
 ```lua
 gfx_set_command(gfx, "gsDPSetEnvColor(0x00, 0xFF, 0x00, 0xFF)")
@@ -2793,22 +2869,19 @@ gfx_set_command(gfx, "gsDPSetEnvColor(0x00, 0xFF, 0x00, 0xFF)")
 
 With parameter specifiers:
 ```lua
-r, g, b, a = 0x00, 0xFF, 0x00, 0xFF
+local r, g, b, a = 0x00, 0xFF, 0x00, 0xFF
 gfx_set_command(gfx, "gsDPSetEnvColor(%i, %i, %i, %i)", r, g, b, a)
 ```
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
-| gfx   | [Gfx](structs.md#Gfx) |
+| gfx | [Gfx](./structs.md#Gfx) |
 | command | `string` |
-| parameters... | any of `integer`, `string`, `Gfx`, `Texture`, `Vtx` |
+| parameters... | `integer` \| `string` \| [Gfx](./structs.md#Gfx) \| [Texture](./structs.md#Texture) \| [Vtx](./structs.md#Vtx) |
 
 ### Returns
 - None
-
-### C Prototype
-N/A
 
 [:arrow_up_small:](#)
 
@@ -2817,23 +2890,22 @@ N/A
 ## [gfx_shader_set_bool_array](#gfx_shader_set_bool_array)
 
 ### Description
-Passes an array of booleans to a custom uniform shader location.
+Pass an array of booleans to a custom uniform shader location.
 
 ### Lua Example
+```lua
 local toggles = { true, false, true, true }
 gfx_shader_set_bool_array("uBools", toggles)
+```
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
 | name | `string` |
-| values | `boolean[]` |
+| values | `table` of `bool` |
 
 ### Returns
 - None
-
-### C Prototype
-`void gfx_shader_set_bool_array(const char* name, bool* values, s32 count);`
 
 [:arrow_up_small:](#)
 
@@ -2842,23 +2914,22 @@ gfx_shader_set_bool_array("uBools", toggles)
 ## [gfx_shader_set_int_array](#gfx_shader_set_int_array)
 
 ### Description
-Passes an array of integers to a custom uniform shader location.
+Pass an array of integers to a custom uniform shader location.
 
 ### Lua Example
+```lua
 local indices = { 0, 4, 8, 12 }
 gfx_shader_set_int_array("uIndices", indices)
+```
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
 | name | `string` |
-| values | `integer[]` |
+| values | `table` of `integer` |
 
 ### Returns
 - None
-
-### C Prototype
-`void gfx_shader_set_int_array(const char* name, s32* values, s32 count);`
 
 [:arrow_up_small:](#)
 
@@ -2867,23 +2938,22 @@ gfx_shader_set_int_array("uIndices", indices)
 ## [gfx_shader_set_float_array](#gfx_shader_set_float_array)
 
 ### Description
-Passes an array of floating-point numbers to a custom uniform shader location.
+Pass an array of floating-point numbers to a custom uniform shader location.
 
 ### Lua Example
+```lua
 local weights = { 0.1, 0.5, 1.25, 0.0 }
 gfx_shader_set_float_array("uWeights", weights)
+```
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
 | name | `string` |
-| values | `number[]` |
+| values | `table` of `number` |
 
 ### Returns
 - None
-
-### C Prototype
-`void gfx_shader_set_float_array(const char* name, f32* values, s32 count);`
 
 [:arrow_up_small:](#)
 
@@ -2892,24 +2962,23 @@ gfx_shader_set_float_array("uWeights", weights)
 ## [gfx_shader_set_vec2_array](#gfx_shader_set_vec2_array)
 
 ### Description
-Passes an array of 2D vectors (vec2) to a custom uniform shader location using a flat number array.
+Pass an array of 2D vectors (vec2) to a custom uniform shader location using a flat number array.
 
 ### Lua Example
+```lua
 -- Represents two vec2 elements: (1.0, 2.0) and (3.0, 4.0)
 local positions = { 1.0, 2.0, 3.0, 4.0 }
 gfx_shader_set_vec2_array("uPositions", positions)
+```
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
 | name | `string` |
-| values | `number[]` |
+| values | `table` of `number` |
 
 ### Returns
 - None
-
-### C Prototype
-`void gfx_shader_set_vec2_array(const char* name, f32* values, s32 count);`
 
 [:arrow_up_small:](#)
 
@@ -2918,24 +2987,23 @@ gfx_shader_set_vec2_array("uPositions", positions)
 ## [gfx_shader_set_vec3_array](#gfx_shader_set_vec3_array)
 
 ### Description
-Passes an array of 3D vectors (vec3) to a custom uniform shader location using a flat number array.
+Pass an array of 3D vectors (vec3) to a custom uniform shader location using a flat number array.
 
 ### Lua Example
+```lua
 -- Represents two vec3 colors: RGB(1, 0, 0) and RGB(0, 1, 0)
 local colors = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0 }
 gfx_shader_set_vec3_array("uColors", colors)
+```
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
 | name | `string` |
-| values | `number[]` |
+| values | `table` of `number` |
 
 ### Returns
 - None
-
-### C Prototype
-`void gfx_shader_set_vec3_array(const char* name, f32* values, s32 count);`
 
 [:arrow_up_small:](#)
 
@@ -2944,24 +3012,23 @@ gfx_shader_set_vec3_array("uColors", colors)
 ## [gfx_shader_set_vec4_array](#gfx_shader_set_vec4_array)
 
 ### Description
-Passes an array of 4D vectors (vec4) to a custom uniform shader location using a flat number array.
+Pass an array of 4D vectors (vec4) to a custom uniform shader location using a flat number array.
 
 ### Lua Example
+```lua
 -- Represents two vec4 points: (x, y, z, w)
 local points = { 0.0, 0.0, 0.0, 1.0, 10.0, 5.0, 2.0, 1.0 }
 gfx_shader_set_vec4_array("uPoints", points)
+```
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
 | name | `string` |
-| values | `number[]` |
+| values | `table` of `number` |
 
 ### Returns
 - None
-
-### C Prototype
-`void gfx_shader_set_vec4_array(const char* name, f32* values, s32 count);`
 
 [:arrow_up_small:](#)
 
@@ -2970,92 +3037,71 @@ gfx_shader_set_vec4_array("uPoints", points)
 ## [gfx_shader_set_mat4_array](#gfx_shader_set_mat4_array)
 
 ### Description
-Passes an array of 4x4 matrices (mat4) to a custom uniform shader location using a flat array of 16 numbers per matrix.
+Pass an array of 4x4 matrices (mat4) to a custom uniform shader location using a flat array of 16 numbers per matrix.
 
 ### Lua Example
--- Flat array containing 16 elements for a single matrix
-local matrix = {
-    1, 0, 0, 0,
-    0, 1, 0, 0,
-    0, 0, 1, 0,
-    0, 0, 0, 1
-}
-gfx_shader_set_mat4_array("uBoneMatrices", matrix)
+```lua
+-- Table containing 16 elements for a 4x4 matrix
+local matrix = gMat4Identity()
+gfx_shader_set_mat4_array("uIdentityMatrix", matrix)
+```
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
 | name | `string` |
-| values | `number[]` |
+| values | `table` of `number` |
 
 ### Returns
 - None
-
-### C Prototype
-`void gfx_shader_set_mat4_array(const char* name, f32* values, s32 count);`
 
 [:arrow_up_small:](#)
 
 <br />
 
-## [djui_hud_print_text](#djui_hud_print_text)
+## [gfx_get_from_name](#gfx_get_from_name)
 
 ### Description
-Prints DJUI HUD text onto the screen
+Gets a display list of the current mod from its name.
+Returns a pointer to the display list and its length
 
 ### Lua Example
-`djui_hud_print_text(message, x, y, scaleX, scaleY)`
+
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
-| message | `string` |
-| x | `number` |
-| y | `number` |
-| scaleX | `number` |
-| scaleY | `number` |
+| name | `string` |
 
 ### Returns
-- None
-
-### C Prototype
-`void djui_hud_print_text(const char* message, f32 x, f32 y, f32 scaleX, f32 scaleY);`
+- [Pointer_Gfx](./structs.md#Pointer_Gfx)
+- `integer`
 
 [:arrow_up_small:](#)
 
 <br />
 
-## [djui_hud_print_text_interpolated](#djui_hud_print_text_interpolated)
+## [vtx_get_from_name](#vtx_get_from_name)
 
 ### Description
-Prints interpolated DJUI HUD text onto the screen
+Gets a vertex buffer of the current mod from its name.
+Returns a pointer to the vertex buffering and its vertex count
 
 ### Lua Example
-`djui_hud_print_text_interpolated(message, prevX, prevY, prevScaleX, prevScaleY, x, y, scaleX, scaleY)`
+
 
 ### Parameters
 | Field | Type |
 | ----- | ---- |
-| message | `string` |
-| prevX | `number` |
-| prevY | `number` |
-| prevScaleX | `number` |
-| prevScaleY | `number` |
-| x | `number` |
-| y | `number` |
-| scaleX | `number` |
-| scaleY | `number` |
+| name | `string` |
 
 ### Returns
-- None
-
-### C Prototype
-`void djui_hud_print_text_interpolated(const char* message, f32 prevX, f32 prevY, f32 prevScaleX, f32 prevScaleY, f32 x, f32 y, f32 scaleX, f32 scaleY);`
+- [Pointer_Vtx](./structs.md#Pointer_Vtx)
+- `integer`
 
 [:arrow_up_small:](#)
 
 <br />
-
 
 ---
 # functions from area.h

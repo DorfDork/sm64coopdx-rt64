@@ -247,46 +247,46 @@ static struct ShaderProgram *gfx_lookup_or_create_shader_program(struct ColorCom
 
 static void gfx_generate_cc(struct ColorCombiner *cc) {
     u8 next_input_number = 0;
-    u8 input_number[CC_ENUM_MAX] = { 0 };
+    u8 input_number[CCS_COUNT] = { 0 };
 
     for  (int i = 0; i < SHADER_CMD_LENGTH; i++) {
         u8 cm_cmd = cc->cm.all_values[i];
         u8 shader_cmd = 0;
         switch (cm_cmd) {
-            case CC_0:
+            case CCS_0:
                 shader_cmd = SHADER_0;
                 break;
-            case CC_1:
+            case CCS_1:
                 shader_cmd = SHADER_1;
                 break;
-            case CC_TEXEL0:
+            case CCS_TEXEL0:
                 shader_cmd = SHADER_TEXEL0;
                 break;
-            case CC_TEXEL1:
+            case CCS_TEXEL1:
                 shader_cmd = SHADER_TEXEL1;
                 break;
-            case CC_TEXEL0A:
+            case CCS_TEXEL0A:
                 shader_cmd = SHADER_TEXEL0A;
                 break;
-            case CC_TEXEL1A:
+            case CCS_TEXEL1A:
                 shader_cmd = SHADER_TEXEL1A;
                 break;
-            case CC_COMBINED:
+            case CCS_COMBINED:
                 shader_cmd = cc->cm.use_2cycle ? SHADER_COMBINED : SHADER_0;
                 break;
-            case CC_COMBINEDA:
+            case CCS_COMBINEDA:
                 shader_cmd = cc->cm.use_2cycle ? SHADER_COMBINEDA : SHADER_0;
                 break;
-            case CC_NOISE:
+            case CCS_NOISE:
                 shader_cmd = SHADER_NOISE;
                 break;
-            case CC_PRIM:
-            case CC_PRIMA:
-            case CC_SHADE:
-            case CC_SHADEA:
-            case CC_ENV:
-            case CC_ENVA:
-            case CC_LOD:
+            case CCS_PRIM:
+            case CCS_PRIMA:
+            case CCS_SHADE:
+            case CCS_SHADEA:
+            case CCS_ENV:
+            case CCS_ENVA:
+            case CCS_LOD:
                 if (input_number[cm_cmd] == 0) {
                     cc->shader_input_mapping[next_input_number] = cm_cmd;
                     input_number[cm_cmd] = SHADER_INPUT_1 + next_input_number;
@@ -785,12 +785,13 @@ static OPTIMIZE_O3 void gfx_local_to_world_space(VEC_OUT Vec3f pos, VEC_OUT Vec3
 static void OPTIMIZE_O3 gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *vertices, bool worldGeometry) {
     if (!vertices) { return; }
 
-    Vec3f globalLightCached[2];
+    Vec3f globalLightCached[2] = { { 1.f, 1.f, 1.f }, { 1.f, 1.f, 1.f } };
     Vec3f vertexColorCached;
     if ((rsp.geometry_mode & G_LIGHTING) && !(rsp.geometry_mode & G_LIGHT_MAP_EXT)) {
         for (int i = 0; i < 2; i++) {
-            for (int j = 0; j < 3; j++)
+            for (int j = 0; j < 3; j++) {
                 globalLightCached[i][j] = gLightingColor[i][j] / 255.0f;
+            }
         }
     }
 
@@ -1320,22 +1321,22 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
             u8 mapping = (j < num_inputs) ? comb->shader_input_mapping[j] : 255;
 
             switch (mapping) {
-                case CC_PRIM:   color = &rdp.prim_color; break;
-                case CC_SHADE:  color = &v_arr[i]->color; break;
-                case CC_ENV:    color = &rdp.env_color; break;
-                case CC_PRIMA:
+                case CCS_PRIM:   color = &rdp.prim_color; break;
+                case CCS_SHADE:  color = &v_arr[i]->color; break;
+                case CCS_ENV:    color = &rdp.env_color; break;
+                case CCS_PRIMA:
                     memset(&tmp, rdp.prim_color.a, sizeof(tmp));
                     color = &tmp;
                     break;
-                case CC_SHADEA:
+                case CCS_SHADEA:
                     memset(&tmp, v_arr[i]->color.a, sizeof(tmp));
                     color = &tmp;
                     break;
-                case CC_ENVA:
+                case CCS_ENVA:
                     memset(&tmp, rdp.env_color.a, sizeof(tmp));
                     color = &tmp;
                     break;
-                case CC_LOD: {
+                case CCS_LOD: {
                     float distance_frac = (v_arr[i]->w - 3000.0f) / 3000.0f;
                     if (distance_frac < 0.0f) { distance_frac = 0.0f; }
                     if (distance_frac > 1.0f) { distance_frac = 1.0f; }
@@ -1836,6 +1837,8 @@ static void gfx_draw_fullscreen_quad() {
     smlua_call_event_hooks(HOOK_ON_SET_SHADER_PROGRAM);
 
     gfx_rapi->draw_triangles(quadVerticies, sizeof(quadVerticies) / sizeof(float), 2);
+
+    sRenderingState.shader_program = NULL; // reset shader program to sync state with render api
 }
 
 static void gfx_dp_texture_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int32_t lry, UNUSED uint8_t tile, int16_t uls, int16_t ult, int16_t dsdx, int16_t dtdy, bool flip) {
@@ -2341,7 +2344,9 @@ static void gfx_process_lua_passes(Gfx *commands, bool *isLuaPassesActive) {
     }
 }
 
-void gfx_run_basic(Gfx *commands) { // for dummy frames we don't want to do a multipass system
+// a helper function when porting over new render apis to not deal with framebuffers
+// in one go
+/*void gfx_run_basic(Gfx *commands) {
     gfx_sp_reset();
     sHasInverseCameraMatrix = false;
 
@@ -2354,7 +2359,7 @@ void gfx_run_basic(Gfx *commands) { // for dummy frames we don't want to do a mu
     gfx_rapi->reset_framebuffer();
     gfx_rapi->start_frame();
     gfx_run_dl(commands);
-}
+}*/
 
 void gfx_run(Gfx *commands) {
     if (!gfx_wm_start_frame()) {
@@ -2431,7 +2436,7 @@ void gfx_run(Gfx *commands) {
         }
     }
 
-    gfx_draw_fullscreen_quad();  // draw final quad
+    gfx_draw_fullscreen_quad();
 }
 
 void gfx_end_frame_render(void) {

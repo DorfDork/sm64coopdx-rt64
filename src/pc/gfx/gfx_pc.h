@@ -114,7 +114,7 @@ bool gfx_shader_stage_is(enum ShaderStage stage);
 void gfx_start_frame(void);
 void gfx_get_frame_pass_viewport_dimensions(struct FramePass *framePass, u32 *width, u32 *height);
 struct FramePass *gfx_get_current_frame_pass(void);
-void gfx_run_basic(Gfx *commands);
+//void gfx_run_basic(Gfx *commands);
 void gfx_run(Gfx *commands);
 void gfx_end_frame_render(void);
 void gfx_display_frame(void);
