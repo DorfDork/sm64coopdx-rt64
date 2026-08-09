@@ -344,6 +344,7 @@ structs_files = [
     "src/game/paintings.h",
     "src/pc/djui/djui_types.h",
     "src/pc/gfx/gfx_cc.h",
+    "src/pc/gfx/gfx_pc.h",
     "src/pc/gfx/gfx_shader.h",
     "src/game/level_update.h",
     "src/game/first_person_cam.h",
@@ -359,6 +360,7 @@ structs_whitelist = { "__name__": "structs_whitelist",
     "src/game/level_update.h": [ "HudDisplay" ],
     "src/game/player_palette.h": [ "PlayerPalette" ],
     "src/game/ingame_menu.h" : [ "DialogEntry" ],
+    "src/pc/gfx/gfx_pc.h": [ "FramePass" ],
     "src/pc/gfx/gfx_shader.h": [ "ShaderStage" ],
     "include/PR/gbi.h": [ "Gfx", "^Vtx$" ],
 }
@@ -400,6 +402,7 @@ structs_excluded = [
 
 # For each struct, expose only these fields
 structs_fields_whitelist = { "__name__": "structs_fields_whitelist",
+    "FramePass": [ "width", "height", "drawWorldGeometry", "clearColor", "passFilter" ],
 }
 
 # For each struct, do not expose these fields
@@ -424,7 +427,7 @@ structs_fields_blacklist = { "__name__": "structs_fields_blacklist",
     "DialogEntry": [ "str" ],
     "ModFsFile": [ "data", "capacity" ],
     "ModFs": [ "files" ],
-    "ColorCombiner": [ "prg" ],
+    "ColorCombiner": [ "prg", "shader_commands_as_u64", "shader_input_mapping_as_u64" ],
 }
 
 # For each struct, expose these fields, but hide them from the documentation or VSCode autocomplete

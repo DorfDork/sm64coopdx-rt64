@@ -769,14 +769,6 @@ static void geo_process_camera(struct GraphNodeCamera *node) {
         mtxf_copy(gCamera->mtx, gMatStack[gMatStackIndex]);
     }
 
-    // compute inverse matrix for lighting engine and fresnel
-    Mat4 invCameraMatrix;
-    if (mtxf_inverse_non_affine(invCameraMatrix, gCamera->mtx)) {
-        Mtx *invMtx = alloc_display_list(sizeof(Mtx));
-        mtxf_to_mtx(invMtx, invCameraMatrix);
-        gSPMatrix(gDisplayListHead++, invMtx, G_MTX_INVERSE_CAMERA_EXT);
-    }
-
     if (node->fnNode.node.children != 0) {
         gCurGraphNodeCamera = node;
         sUsingCamSpace = TRUE;
@@ -1883,7 +1875,7 @@ static void geo_process_bone(struct GraphNodeBone *node) {
 
         get_world_mtx_from_transform(
             gCurMarioBodyState->animPartsMtx[gCurMarioBodyState->currAnimPart],
-            gMatStack[gMatStackIndex], 
+            gMatStack[gMatStackIndex],
             *gCurGraphNodeCamera->matrixPtr
         );
     }

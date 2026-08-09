@@ -155,10 +155,6 @@ int gSelectedFragmentUniformBuffer = 0;
 
 enum ShaderStage gSelectedShaderStage = SHADER_STAGE_ANY;
 
-// need inverse camera matrix to compute world space for lighting engine
-static Mat4 sInverseCameraMatrix;
-static bool sHasInverseCameraMatrix = false;
-
 static u32 sFrameCount = 0;
 
 // 4x4 pink-black checkerboard texture to indicate missing textures
@@ -676,15 +672,6 @@ static void OPTIMIZE_O3 gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
 
     Mat4 matrix;
 
-    // remember inverse camera matrix to use for the lighting engine
-    if (parameters == G_MTX_INVERSE_CAMERA_EXT) {
-        if (addr) {
-            memcpy(sInverseCameraMatrix, addr, sizeof(sInverseCameraMatrix));
-            sHasInverseCameraMatrix = true;
-        }
-        return;
-    }
-
 #if 0
     // Original code when fixed point matrices were used
     for (int32_t i = 0; i < 4; i++) {
@@ -753,11 +740,9 @@ static float gfx_adjust_x_for_aspect_ratio(float x) {
 }
 
 static OPTIMIZE_O3 void gfx_local_to_world_space(VEC_OUT Vec3f pos, VEC_OUT Vec3f normal) {
-    if (!sHasInverseCameraMatrix) { return; }
-
     // strip view matrix off of the model-view matrix
     Mat4 model;
-    mtxf_mul(model, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size-1], sInverseCameraMatrix);
+    mtxf_mul(model, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size-1], gInverseCameraMatrix.m);
 
     // transform position to world
     Vec3f worldPos;
@@ -933,9 +918,9 @@ static void OPTIMIZE_O3 gfx_sp_vertex(size_t n_vertices, size_t dest_index, cons
                 gfx_local_to_world_space(vpos, vnormal);
 
                 Vec3f viewDir = {
-                    sInverseCameraMatrix[3][0] - vpos[0],
-                    sInverseCameraMatrix[3][1] - vpos[1],
-                    sInverseCameraMatrix[3][2] - vpos[2]
+                    gInverseCameraMatrix.m[3][0] - vpos[0],
+                    gInverseCameraMatrix.m[3][1] - vpos[1],
+                    gInverseCameraMatrix.m[3][2] - vpos[2]
                 };
                 vec3f_normalize(viewDir);
                 vec3f_normalize(vnormal);
@@ -1803,7 +1788,7 @@ static void gfx_draw_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int32_t lr
 }
 
 static void gfx_draw_fullscreen_quad() {
-    float quadVerticies[] = {
+    float quadVertices[] = {
         -1.0f,  1.0f, 0.0f, 1.0f,   0.0f, 1.0f,
         -1.0f, -1.0f, 0.0f, 1.0f,   0.0f, 0.0f,
          1.0f, -1.0f, 0.0f, 1.0f,   1.0f, 0.0f,
@@ -1821,7 +1806,7 @@ static void gfx_draw_fullscreen_quad() {
 #endif
         // flip y coordinates
         for (int i = 0; i < 6; i++) {
-            quadVerticies[i * 6 + 5] = 1.0f - quadVerticies[i * 6 + 5];
+            quadVertices[i * 6 + 5] = 1.0f - quadVertices[i * 6 + 5];
         }
     }
 #endif
@@ -1836,7 +1821,7 @@ static void gfx_draw_fullscreen_quad() {
     gfx_set_builtin_uniforms();
     smlua_call_event_hooks(HOOK_ON_SET_SHADER_PROGRAM);
 
-    gfx_rapi->draw_triangles(quadVerticies, sizeof(quadVerticies) / sizeof(float), 2);
+    gfx_rapi->draw_triangles(quadVertices, sizeof(quadVertices) / sizeof(float), 2);
 
     sRenderingState.shader_program = NULL; // reset shader program to sync state with render api
 }
@@ -2305,7 +2290,6 @@ static void gfx_process_lua_passes(Gfx *commands, bool *isLuaPassesActive) {
         gfx_rapi->start_frame(); // resets color and depth
 
         gfx_sp_reset(); // resets the rsp
-        sHasInverseCameraMatrix = false;
 
         // bind pass textures if they exist
         if (i > 0) {
@@ -2348,7 +2332,6 @@ static void gfx_process_lua_passes(Gfx *commands, bool *isLuaPassesActive) {
 // in one go
 /*void gfx_run_basic(Gfx *commands) {
     gfx_sp_reset();
-    sHasInverseCameraMatrix = false;
 
     if (!gfx_wm_start_frame()) {
         sDroppedFrame = true;
@@ -2393,7 +2376,6 @@ void gfx_run(Gfx *commands) {
         gfx_rapi->set_framebuffer(&gDefaultGeoFramePass);
 
         gfx_sp_reset(); // resets the rsp
-        sHasInverseCameraMatrix = false;
 
         gfx_rapi->start_frame(); // resets color and depth
 
@@ -2405,7 +2387,6 @@ void gfx_run(Gfx *commands) {
     }
 
     gfx_sp_reset(); // resets the rsp
-    sHasInverseCameraMatrix = false;
 
     gfx_rapi->reset_framebuffer();
     gfx_rapi->start_frame(); // resets color and depth

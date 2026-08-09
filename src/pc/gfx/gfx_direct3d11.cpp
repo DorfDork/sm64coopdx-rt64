@@ -29,12 +29,12 @@
 #include "game/rendering_graph_node.h"
 
 extern "C" {
-    #include "gfx_pc.h"
-    #include "pc/lua/smlua.h"
-    #include "pc/mods/mods_utils.h"
-    #include "pc/controller/controller_bind_mapping.h"
-    #include "engine/math_util.h"
-    extern Color gVertexColor;
+#include "gfx_pc.h"
+#include "pc/lua/smlua.h"
+#include "pc/mods/mods_utils.h"
+#include "pc/controller/controller_bind_mapping.h"
+#include "engine/math_util.h"
+extern Color gVertexColor;
 }
 
 #define DECLARE_GFX_DXGI_FUNCTIONS
@@ -57,13 +57,13 @@ struct TextureData {
 };
 
 struct ShaderProgramD3D11 {
-    ComPtr<ID3D11VertexShader> vertex_shader;
-    ComPtr<ID3D11PixelShader> pixel_shader;
+    ComPtr<ID3D11VertexShader> dx_vertex_shader;
+    ComPtr<ID3D11PixelShader> dx_pixel_shader;
     ComPtr<ID3D11InputLayout> input_layout;
     ComPtr<ID3D11BlendState> blend_state;
 
-    struct Shader *vertexShader;
-    struct Shader *fragmentShader;
+    struct Shader *vertex_shader;
+    struct Shader *fragment_shader;
 
     uint64_t hash;
     uint8_t num_inputs;
@@ -296,14 +296,14 @@ static void gfx_d3d11_load_shader(struct ShaderProgram *new_prg) {
 static void gfx_d3d11_remove_shaders(void) {
     for (int i = 0; i < MAX_FRAME_PASSES; i++) {
         for (int j = 0; j < CC_MAX_SHADERS; j++) {
-            gfx_destroy_shader(d3d.shader_program_pool[i][j].vertexShader);
-            gfx_destroy_shader(d3d.shader_program_pool[i][j].fragmentShader);
+            gfx_destroy_shader(d3d.shader_program_pool[i][j].vertex_shader);
+            gfx_destroy_shader(d3d.shader_program_pool[i][j].fragment_shader);
             d3d.shader_program_pool[i][j] = { 0 };
         }
         d3d.shader_program_pool_index[i] = 0;
         d3d.shader_program_pool_size[i] = 0;
-        gfx_destroy_shader(d3d.post_process_shader_program_pool[i].vertexShader);
-        gfx_destroy_shader(d3d.post_process_shader_program_pool[i].fragmentShader);
+        gfx_destroy_shader(d3d.post_process_shader_program_pool[i].vertex_shader);
+        gfx_destroy_shader(d3d.post_process_shader_program_pool[i].fragment_shader);
         d3d.post_process_shader_program_pool[i] = { 0 };
     }
 
@@ -365,8 +365,8 @@ static struct ShaderProgram *gfx_d3d11_create_and_load_new_shader(struct ColorCo
     d3d.shader_program_pool_index[framePassIndex] = (d3d.shader_program_pool_index[framePassIndex] + 1) % CC_MAX_SHADERS;
     if (d3d.shader_program_pool_size[framePassIndex] < CC_MAX_SHADERS) { d3d.shader_program_pool_size[framePassIndex]++; }
 
-    ThrowIfFailed(d3d.device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, prg->vertex_shader.GetAddressOf()));
-    ThrowIfFailed(d3d.device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, prg->pixel_shader.GetAddressOf()));
+    ThrowIfFailed(d3d.device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, prg->dx_vertex_shader.GetAddressOf()));
+    ThrowIfFailed(d3d.device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, prg->dx_pixel_shader.GetAddressOf()));
 
     // Input Layout
 
@@ -452,8 +452,8 @@ static struct ShaderProgram *gfx_d3d11_create_and_load_new_shader(struct ColorCo
     prg->used_textures[1] = cc_features.used_textures[1];
     prg->used_lightmap = cc->cm.light_map;
     prg->used_fog = cc->cm.use_fog;
-    prg->vertexShader = vertexShader;
-    prg->fragmentShader = fragmentShader;
+    prg->vertex_shader = vertexShader;
+    prg->fragment_shader = fragmentShader;
     prg->world_geometry = cc->cm.world_geometry;
 
     return (struct ShaderProgram *)(d3d.shader_program = prg);
@@ -464,7 +464,7 @@ static struct ShaderProgram *gfx_d3d11_create_or_load_post_process_shader(void) 
     struct ShaderProgramD3D11 *prg = &d3d.post_process_shader_program_pool[framePassIndex];
 
     // check and load from cache
-    if (prg->vertex_shader != nullptr) {
+    if (prg->dx_vertex_shader != nullptr) {
         d3d.shader_program = prg;
         return (struct ShaderProgram *)prg;
     }
@@ -511,8 +511,8 @@ static struct ShaderProgram *gfx_d3d11_create_or_load_post_process_shader(void) 
     free(vs_hlsl);
     free(ps_hlsl);
 
-    ThrowIfFailed(d3d.device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, prg->vertex_shader.GetAddressOf()));
-    ThrowIfFailed(d3d.device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, prg->pixel_shader.GetAddressOf()));
+    ThrowIfFailed(d3d.device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, prg->dx_vertex_shader.GetAddressOf()));
+    ThrowIfFailed(d3d.device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, prg->dx_pixel_shader.GetAddressOf()));
 
     // generate input layout
     D3D11_INPUT_ELEMENT_DESC ied[MAX_SHADER_INPUTS];
@@ -568,8 +568,8 @@ static struct ShaderProgram *gfx_d3d11_create_or_load_post_process_shader(void) 
     prg->used_textures[1] = false;
     prg->used_lightmap = false;
     prg->used_fog = false;
-    prg->vertexShader = vertexShader;
-    prg->fragmentShader = fragmentShader;
+    prg->vertex_shader = vertexShader;
+    prg->fragment_shader = fragmentShader;
     prg->world_geometry = false;
 
     d3d.shader_program = prg;
@@ -725,14 +725,29 @@ static void gfx_d3d11_reset_framebuffer(void) {
     d3d.context->RSSetScissorRects(1, &rect);
 }
 
+size_t gfx_d3d11_get_uniform_buffer_size(enum ShaderStage stage, int bufferIndex) {
+    if (bufferIndex < 0 || bufferIndex >= MAX_UNIFORM_BLOCKS) { return 0; }
+
+    struct Shader *shader = NULL;
+    if (stage == SHADER_STAGE_VERTEX) {
+        shader = d3d.shader_program->vertex_shader;
+    } else if (stage == SHADER_STAGE_FRAGMENT) {
+        shader = d3d.shader_program->fragment_shader;
+    } else {
+        return 0;
+    }
+
+    return shader->uniformBlocks[bufferIndex].size;
+}
+
 void gfx_d3d11_set_uniform_buffer(enum ShaderStage stage, const char *name) {
     struct Shader *shader = NULL;
     int *destination = NULL;
     if (stage == SHADER_STAGE_VERTEX) {
-        shader = d3d.shader_program->vertexShader;
+        shader = d3d.shader_program->vertex_shader;
         destination = &gSelectedVertexUniformBuffer;
     } else if (stage == SHADER_STAGE_FRAGMENT) {
-        shader = d3d.shader_program->fragmentShader;
+        shader = d3d.shader_program->fragment_shader;
         destination = &gSelectedFragmentUniformBuffer;
     } else {
         return;
@@ -781,10 +796,10 @@ void gfx_d3d11_set_uniform(struct ShaderProgram *prg, const char *name, ShaderUn
     }
 
     if (gfx_shader_stage_is(SHADER_STAGE_VERTEX)) {
-        gfx_d3d11_set_uniform_for_specific_shader(&d3d11_prg->vertexShader->uniformBlocks[gSelectedVertexUniformBuffer], name, type, data, numElements);
+        gfx_d3d11_set_uniform_for_specific_shader(&d3d11_prg->vertex_shader->uniformBlocks[gSelectedVertexUniformBuffer], name, type, data, numElements);
     }
     if (gfx_shader_stage_is(SHADER_STAGE_FRAGMENT)) {
-        gfx_d3d11_set_uniform_for_specific_shader(&d3d11_prg->fragmentShader->uniformBlocks[gSelectedFragmentUniformBuffer], name, type, data, numElements);
+        gfx_d3d11_set_uniform_for_specific_shader(&d3d11_prg->fragment_shader->uniformBlocks[gSelectedFragmentUniformBuffer], name, type, data, numElements);
     }
 }
 
@@ -1066,8 +1081,8 @@ static void gfx_d3d11_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_t
     }
     smlua_call_event_hooks(HOOK_ON_DRAW_TRIANGLE);
 
-    upload_uniform_buffers_for_shader(d3d.shader_program->vertexShader);
-    upload_uniform_buffers_for_shader(d3d.shader_program->fragmentShader);
+    upload_uniform_buffers_for_shader(d3d.shader_program->vertex_shader);
+    upload_uniform_buffers_for_shader(d3d.shader_program->fragment_shader);
 
     // Set vertex buffer data
 
@@ -1088,8 +1103,8 @@ static void gfx_d3d11_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_t
     if (d3d.last_shader_program != d3d.shader_program) {
         d3d.last_shader_program = d3d.shader_program;
         d3d.context->IASetInputLayout(d3d.shader_program->input_layout.Get());
-        d3d.context->VSSetShader(d3d.shader_program->vertex_shader.Get(), 0, 0);
-        d3d.context->PSSetShader(d3d.shader_program->pixel_shader.Get(), 0, 0);
+        d3d.context->VSSetShader(d3d.shader_program->dx_vertex_shader.Get(), 0, 0);
+        d3d.context->PSSetShader(d3d.shader_program->dx_pixel_shader.Get(), 0, 0);
 
         if (d3d.last_blend_state.Get() != d3d.shader_program->blend_state.Get()) {
             d3d.last_blend_state = d3d.shader_program->blend_state.Get();
@@ -1153,6 +1168,9 @@ static void gfx_d3d11_start_frame(void) {
     d3d.context->ClearRenderTargetView(currentRtv, clearColor);
     d3d.context->ClearDepthStencilView(currentDsv, D3D11_CLEAR_DEPTH, 1.0f, 0);
 
+    currentRtv->Release();
+    currentDsv->Release();
+
     frameCount++;
 }
 
@@ -1186,6 +1204,7 @@ struct GfxRenderingAPI gfx_direct3d11_api = {
     gfx_d3d11_delete_framebuffer,
     gfx_d3d11_set_framebuffer,
     gfx_d3d11_reset_framebuffer,
+    gfx_d3d11_get_uniform_buffer_size,
     gfx_d3d11_set_uniform_buffer,
     gfx_d3d11_set_uniform,
     gfx_d3d11_new_texture,

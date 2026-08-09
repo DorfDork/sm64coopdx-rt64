@@ -9,6 +9,7 @@
 
 #include "pc/lua/smlua.h"
 #include "pc/lua/utils/smlua_text_utils.h"
+#include "pc/network/socket/socket.h"
 #include "game/memory.h"
 #include "audio/data.h"
 #include "audio/external.h"
@@ -36,7 +37,6 @@
 #include "pc/lua/utils/smlua_audio_utils.h"
 
 #include "pc/network/version.h"
-#include "pc/network/socket/socket.h"
 #include "pc/network/network_player.h"
 #include "pc/update_checker.h"
 #include "pc/djui/djui.h"

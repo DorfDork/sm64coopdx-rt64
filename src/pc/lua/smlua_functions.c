@@ -1063,183 +1063,97 @@ int smlua_func_gfx_set_command(lua_State* L) {
     return 1;
 }
 
-#define MAX_LUA_UNIFORMS 4096
-
-int smlua_func_gfx_shader_set_bool_array(lua_State* L) {
+static int smlua_gfx_shader_set_array(lua_State *L, const char *funcName, enum ShaderUniformType type, u32 numElements) {
     if (!smlua_functions_valid_param_count(L, 2)) { return 0; }
 
     const char *name = smlua_to_string(L, 1);
-    if (lua_type(L, 2) != LUA_TTABLE) {
-        LOG_LUA_LINE("Invalid type passed to gfx_shader_set_bool_array(): %s", luaL_typename(L, 2));
+    if (!gSmLuaConvertSuccess) {
+        LOG_LUA("%s: Failed to convert parameter 1", funcName);
         return 0;
     }
 
-    int values[MAX_LUA_UNIFORMS];
-    u32 count = 0;
-    u32 tableLength = (u32)lua_rawlen(L, 2);
-    if (tableLength > MAX_LUA_UNIFORMS) tableLength = MAX_LUA_UNIFORMS;
+    if (lua_type(L, 2) != LUA_TTABLE) {
+        LOG_LUA_LINE("Invalid type passed to %s: %s", funcName, luaL_typename(L, 2));
+        return 0;
+    }
 
-    for (u32 i = 1; i <= tableLength; i++) {
-        lua_rawgeti(L, 2, i);
-        if (lua_isboolean(L, -1)) {
-            values[count++] = lua_toboolean(L, -1) ? 1 : 0;
-        } else {
-            values[count++] = (lua_tointeger(L, -1) != 0) ? 1 : 0;
+    // the uniform buffer size is whichever is larger between these 2, since there are no functions
+    // to get the current shader stage active. This works just fine for our purposes
+    size_t vertexUniformBufferSize = gfx_get_current_rendering_api()->get_uniform_buffer_size(SHADER_STAGE_VERTEX, gSelectedVertexUniformBuffer);
+    size_t fragmentUniformBufferSize = gfx_get_current_rendering_api()->get_uniform_buffer_size(SHADER_STAGE_FRAGMENT, gSelectedFragmentUniformBuffer);
+    size_t uniformBufferSize = MAX(vertexUniformBufferSize, fragmentUniformBufferSize);
+    if (uniformBufferSize == 0) { return 0; }
+
+    size_t totalElements = lua_rawlen(L, 2);
+
+    u32 maxElementsFromBuffer = (u32)(uniformBufferSize / (type == SHADER_UNIFORM_TYPE_BOOL || type == SHADER_UNIFORM_TYPE_INT ? sizeof(int) : sizeof(f32)));
+    if (totalElements > maxElementsFromBuffer) { totalElements = maxElementsFromBuffer; }
+
+    if (type == SHADER_UNIFORM_TYPE_BOOL || type == SHADER_UNIFORM_TYPE_INT) {
+        size_t rawSize = totalElements * sizeof(int);
+        size_t alignedSize = (rawSize + 15) & ~15;
+
+        int *values = malloc(alignedSize);
+        if (values == NULL) { return 0; }
+
+        for (u32 i = 1; i <= totalElements; i++) {
+            lua_rawgeti(L, 2, i);
+            if (type == SHADER_UNIFORM_TYPE_BOOL) {
+                values[i - 1] = lua_isboolean(L, -1) ? (lua_toboolean(L, -1) ? 1 : 0) : (lua_tointeger(L, -1) != 0 ? 1 : 0);
+            } else {
+                values[i - 1] = (int)lua_tointeger(L, -1);
+            }
+            lua_pop(L, 1);
         }
-        lua_pop(L, 1);
+
+        gfx_get_current_rendering_api()->set_uniform(NULL, name, type, values, totalElements / numElements);
+        free(values);
+    } else {
+        size_t rawSize = totalElements * sizeof(f32);
+        size_t alignedSize = (rawSize + 15) & ~15;
+
+        f32 *buffer = malloc(alignedSize);
+        if (buffer == NULL) { return 0; }
+
+        for (u32 i = 1; i <= totalElements; i++) {
+            lua_rawgeti(L, 2, i);
+            buffer[i - 1] = (f32)lua_tonumber(L, -1);
+            lua_pop(L, 1);
+        }
+
+        gfx_get_current_rendering_api()->set_uniform(NULL, name, type, buffer, totalElements / numElements);
+        free(buffer);
     }
 
-    gfx_get_current_rendering_api()->set_uniform(NULL, name, SHADER_UNIFORM_TYPE_BOOL, values, count);
     return 1;
 }
 
-int smlua_func_gfx_shader_set_int_array(lua_State* L) {
-    if (!smlua_functions_valid_param_count(L, 2)) { return 0; }
-
-    const char *name = smlua_to_string(L, 1);
-    if (lua_type(L, 2) != LUA_TTABLE) {
-        LOG_LUA_LINE("Invalid type passed to gfx_shader_set_int_array(): %s", luaL_typename(L, 2));
-        return 0;
-    }
-
-    int values[MAX_LUA_UNIFORMS];
-    u32 count = 0;
-    u32 tableLength = (u32)lua_rawlen(L, 2);
-    if (tableLength > MAX_LUA_UNIFORMS) tableLength = MAX_LUA_UNIFORMS;
-
-    for (u32 i = 1; i <= tableLength; i++) {
-        lua_rawgeti(L, 2, i);
-        values[count++] = (int)lua_tointeger(L, -1);
-        lua_pop(L, 1);
-    }
-
-    gfx_get_current_rendering_api()->set_uniform(NULL, name, SHADER_UNIFORM_TYPE_INT, values, count);
-    return 1;
+int smlua_func_gfx_shader_set_bool_array(lua_State *L) {
+    return smlua_gfx_shader_set_array(L, "gfx_shader_set_bool_array", SHADER_UNIFORM_TYPE_BOOL, 1);
 }
 
-int smlua_func_gfx_shader_set_float_array(lua_State* L) {
-    if (!smlua_functions_valid_param_count(L, 2)) { return 0; }
-
-    const char *name = smlua_to_string(L, 1);
-    if (lua_type(L, 2) != LUA_TTABLE) {
-        LOG_LUA_LINE("Invalid type passed to gfx_shader_set_float_array(): %s", luaL_typename(L, 2));
-        return 0;
-    }
-
-    static f32 buffer[MAX_LUA_UNIFORMS];
-    u32 tableLength = (u32)lua_rawlen(L, 2);
-    if (tableLength > MAX_LUA_UNIFORMS) tableLength = MAX_LUA_UNIFORMS;
-
-    for (u32 i = 1; i <= tableLength; i++) {
-        lua_rawgeti(L, 2, i);
-        buffer[i - 1] = (f32)lua_tonumber(L, -1);
-        lua_pop(L, 1);
-    }
-
-    gfx_get_current_rendering_api()->set_uniform(NULL, name, SHADER_UNIFORM_TYPE_FLOAT, buffer, tableLength);
-    return 1;
+int smlua_func_gfx_shader_set_int_array(lua_State *L) {
+    return smlua_gfx_shader_set_array(L, "gfx_shader_set_int_array", SHADER_UNIFORM_TYPE_INT, 1);
 }
 
-int smlua_func_gfx_shader_set_vec2_array(lua_State* L) {
-    if (!smlua_functions_valid_param_count(L, 2)) { return 0; }
-
-    const char *name = smlua_to_string(L, 1);
-    if (lua_type(L, 2) != LUA_TTABLE) {
-        LOG_LUA_LINE("Invalid type passed to gfx_shader_set_vec2_array(): %s", luaL_typename(L, 2));
-        return 0;
-    }
-
-    static f32 buffer[MAX_LUA_UNIFORMS];
-    u32 total_floats = (u32)lua_rawlen(L, 2);
-    if (total_floats > MAX_LUA_UNIFORMS) total_floats = MAX_LUA_UNIFORMS;
-
-    for (u32 i = 1; i <= total_floats; i++) {
-        lua_rawgeti(L, 2, i);
-        buffer[i - 1] = (f32)lua_tonumber(L, -1);
-        lua_pop(L, 1);
-    }
-
-    gfx_get_current_rendering_api()->set_uniform(NULL, name, SHADER_UNIFORM_TYPE_VEC2, buffer, total_floats / 2);
-    return 1;
+int smlua_func_gfx_shader_set_float_array(lua_State *L) {
+    return smlua_gfx_shader_set_array(L, "gfx_shader_set_float_array", SHADER_UNIFORM_TYPE_FLOAT, 1);
 }
 
-int smlua_func_gfx_shader_set_vec3_array(lua_State* L) {
-    if (!smlua_functions_valid_param_count(L, 2)) { return 0; }
-
-    const char *name = smlua_to_string(L, 1);
-    if (lua_type(L, 2) != LUA_TTABLE) {
-        LOG_LUA_LINE("Invalid type passed to gfx_shader_set_vec3_array(): %s", luaL_typename(L, 2));
-        return 0;
-    }
-
-    static f32 buffer[MAX_LUA_UNIFORMS];
-    u32 total_floats = (u32)lua_rawlen(L, 2);
-    if (total_floats > MAX_LUA_UNIFORMS) total_floats = MAX_LUA_UNIFORMS;
-
-    for (u32 i = 1; i <= total_floats; i++) {
-        lua_rawgeti(L, 2, i);
-        buffer[i - 1] = (f32)lua_tonumber(L, -1);
-        lua_pop(L, 1);
-    }
-
-    gfx_get_current_rendering_api()->set_uniform(NULL, name, SHADER_UNIFORM_TYPE_VEC3, buffer, total_floats / 3);
-    return 1;
+int smlua_func_gfx_shader_set_vec2_array(lua_State *L) {
+    return smlua_gfx_shader_set_array(L, "gfx_shader_set_vec2_array", SHADER_UNIFORM_TYPE_VEC2, 2);
 }
 
-int smlua_func_gfx_shader_set_vec4_array(lua_State* L) {
-    if (!smlua_functions_valid_param_count(L, 2)) { return 0; }
-
-    const char *name = smlua_to_string(L, 1);
-    if (lua_type(L, 2) != LUA_TTABLE) {
-        LOG_LUA_LINE("Invalid type passed to gfx_shader_set_vec4_array(): %s", luaL_typename(L, 2));
-        return 0;
-    }
-
-    static f32 buffer[MAX_LUA_UNIFORMS];
-    u32 total_floats = (u32)lua_rawlen(L, 2);
-    if (total_floats > MAX_LUA_UNIFORMS) total_floats = MAX_LUA_UNIFORMS;
-
-    for (u32 i = 1; i <= total_floats; i++) {
-        lua_rawgeti(L, 2, i);
-        buffer[i - 1] = (f32)lua_tonumber(L, -1);
-        lua_pop(L, 1);
-    }
-
-    gfx_get_current_rendering_api()->set_uniform(NULL, name, SHADER_UNIFORM_TYPE_VEC4, buffer, total_floats / 4);
-    return 1;
+int smlua_func_gfx_shader_set_vec3_array(lua_State *L) {
+    return smlua_gfx_shader_set_array(L, "gfx_shader_set_vec3_array", SHADER_UNIFORM_TYPE_VEC3, 3);
 }
 
-int smlua_func_gfx_shader_set_mat4_array(lua_State* L) {
-    if (!smlua_functions_valid_param_count(L, 2)) { return 0; }
-
-    const char *name = smlua_to_string(L, 1);
-    if (lua_type(L, 2) != LUA_TTABLE) {
-        LOG_LUA_LINE("Invalid type passed to gfx_shader_set_mat4_array(): %s", luaL_typename(L, 2));
-        return 0;
-    }
-
-    static f32 buffer[MAX_LUA_UNIFORMS];
-    u32 total_floats = (u32)lua_rawlen(L, 2);
-    if (total_floats > MAX_LUA_UNIFORMS) total_floats = MAX_LUA_UNIFORMS;
-
-    for (u32 i = 1; i <= total_floats; i++) {
-        lua_rawgeti(L, 2, i);
-        buffer[i - 1] = (f32)lua_tonumber(L, -1);
-        lua_pop(L, 1);
-    }
-
-    gfx_get_current_rendering_api()->set_uniform(NULL, name, SHADER_UNIFORM_TYPE_MAT4, buffer, total_floats / 16);
-    return 1;
+int smlua_func_gfx_shader_set_vec4_array(lua_State *L) {
+    return smlua_gfx_shader_set_array(L, "gfx_shader_set_vec4_array", SHADER_UNIFORM_TYPE_VEC4, 4);
 }
 
-#undef MAX_LUA_UNIFORMS
-
-// compatibility band-aid
-int smlua_func_return_self(lua_State* L) {
-    if (!smlua_functions_valid_param_count(L, 1)) { return 0; }
-
-    lua_pushvalue(L, 1);
-    return 1;
+int smlua_func_gfx_shader_set_mat4_array(lua_State *L) {
+    return smlua_gfx_shader_set_array(L, "gfx_shader_set_mat4_array", SHADER_UNIFORM_TYPE_MAT4, 16);
 }
 
   //////////
@@ -1281,5 +1195,4 @@ void smlua_bind_functions(void) {
     smlua_bind_function(L, "gfx_shader_set_vec3_array", smlua_func_gfx_shader_set_vec3_array);
     smlua_bind_function(L, "gfx_shader_set_vec4_array", smlua_func_gfx_shader_set_vec4_array);
     smlua_bind_function(L, "gfx_shader_set_mat4_array", smlua_func_gfx_shader_set_mat4_array);
-    smlua_bind_function(L, "return_self", smlua_func_return_self); // compatibility band-aid
 }

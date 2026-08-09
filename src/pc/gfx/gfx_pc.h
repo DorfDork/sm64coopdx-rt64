@@ -72,7 +72,7 @@ struct FramePass {
     u32 height;
     bool active;
     bool drawWorldGeometry;
-    u8 clearColor[4];
+    ColorRGBA clearColor;
     enum PassFilter passFilter;
     bool d3d12CurrentlyShaderResource;
 };

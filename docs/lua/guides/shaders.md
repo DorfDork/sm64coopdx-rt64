@@ -63,7 +63,7 @@ The fragment shader takes in the vertex pos we exported in the vertex shader.
 
 For a post process vertex shader example, we are going to mirror the entire world. First, grab the [default C post process shader converted to Lua](../examples/shader-demo/default-post-process-shader.lua), specifically the vertex portion.
 
-*Note: While the format shown in the default shaders use `table.insert(xShader, "line")`, this is not at all required. You may use any method you'd like, including loading the shader from a different file. This method was picked for it's ease to inject any if statement checks anywhere you'd like that's outside the shader.*
+*Note: While the format shown in the default shaders use `table.insert(xShader, "line")`, this is not at all required. You may use any method you'd like. This method was picked for it's ease to inject any if statement checks anywhere you'd like that's outside the shader.*
 
 ```lua
 gl_Position = aVtxPos;
@@ -185,13 +185,13 @@ local sceneBrightness = 0.5
 
 local function on_set_shader_uniforms()
     -- if necessary, check frame pass index using this code
-    -- local framePass = gfx_shader_get_current_frame_pass()
+    -- local framePass = gfx_shader_get_current_frame_pass_index()
     -- if framePass ~= FRAME_PASS_REQ then return end
 
     gfx_shader_set_float("uSceneBrightness", sceneBrightness)
 end
 
-hook_event(HOOK_ON_SET_SHADER_UNIFORMS, on_set_shader_uniforms)
+hook_event(HOOK_ON_SET_SHADER_PROGRAM, on_set_shader_uniforms)
 ```
 
 That allows you to define your own uniforms and set your uniforms in Lua!
@@ -236,18 +236,13 @@ Multipass shaders allow you to draw the world multiple times in a single frame. 
 
 ## Creating a frame pass
 
-A frame pass can be created with `gfx_shader_create_frame_pass`. This function returns the frame pass index, which is anywhere from zero to the maximum number of frame passes. A frame pass may also be removed with `gfx_shader_remove_frame_pass`.
+A frame pass can be created with `gfx_shader_create_frame_pass`. This function returns the frame pass index, and the frame pass itself. The frame pass index is anywhere from zero to `MAX_FRAME_PASSES`. A frame pass may also be removed with `gfx_shader_remove_frame_pass`, which takes in the frame pass index.
 
-Frame passes can be configured with their configuration functions.
-
-| Function | Description |
-| -------- | ----------- |
-| `gfx_shader_set_frame_pass_viewport` | Sets the viewport/resolution of the frame pass. A viewport width or height of 0 will cause that value to use whatever the current screen size is |
-| `gfx_shader_set_frame_pass_draw_world` | Configures whether the frame pass should redraw the world or use a quad (quad uses post process shader, redrawing the world uses the scene shader) |
+Frame passes can be configured by modifying the `FramePass` provided by `gfx_shader_create_frame_pass`.
 
 ## Using frame passes
 
-In your shader hooks, you can access which frame pass you are currently on with the `gfx_shader_get_current_frame_pass`. This is needed if you need to change your shader depending on the current frame pass.
+In your shader hooks, you can access which frame pass you are currently on with the `gfx_shader_get_current_frame_pass` and `gfx_shader_get_current_frame_pass_index`. For unique identification, which is the main reason you would get the current frame pass, you should use `gfx_shader_get_current_frame_pass_index`. This is needed if you need to change your shader depending on the current frame pass.
 
 Sometimes you may need to configure things before you redraw the world. For instance, on some shaders you may want to disable culling before you redraw the world. You can use `HOOK_BEFORE_DRAW_GEOMETRY` to achieve this. Check your current frame pass index using `gfx_shader_get_current_frame_pass`, and run code accordingly in this hook. This hook isn't unique to frame passes, it's called anytime the world geometry is about to be drawn.
 

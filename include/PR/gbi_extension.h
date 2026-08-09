@@ -8,7 +8,7 @@
 // For RDP commands, use decrementing numbers starting from ff.
 // Please update the following table when implementing a new command.
 //
-// RSP ->                     09 0a 0b 0c 0d 0e 0f
+// RSP ->                  08 09 0a 0b 0c 0d 0e 0f
 //             14 15 16 17 18 19 1a 1b 1c 1d 1e 1f
 // 20 21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f
 // 30 31 32 33 34 35 36 37 38 39 3a 3b 3c 3d 3e 3f
@@ -64,8 +64,6 @@
 #define G_TRI2_EXT         0x12
 #define G_TEXADDR_DJUI     0x13
 #define G_EXECUTE_DJUI     0xdd
-
-#define G_MTX_INVERSE_CAMERA_EXT   0x08
 
 #define	gsSPTextureAddrDjui(c) \
 {{ \

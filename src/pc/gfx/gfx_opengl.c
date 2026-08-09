@@ -476,6 +476,21 @@ static void gfx_opengl_reset_framebuffer(void) {
     glScissor(0, 0, windowWidth, windowHeight);
 }
 
+size_t gfx_opengl_get_uniform_buffer_size(enum ShaderStage stage, int bufferIndex) {
+    if (bufferIndex < 0 || bufferIndex >= MAX_UNIFORM_BLOCKS) { return 0; }
+
+    struct Shader *shader = NULL;
+    if (stage == SHADER_STAGE_VERTEX) {
+        shader = opengl_prg->vertexShader;
+    } else if (stage == SHADER_STAGE_FRAGMENT) {
+        shader = opengl_prg->fragmentShader;
+    } else {
+        return 0;
+    }
+
+    return shader->uniformBlocks[bufferIndex].size;
+}
+
 void gfx_opengl_set_uniform_buffer(enum ShaderStage stage, const char *name) {
     struct Shader *shader = NULL;
     int *destination = NULL;
@@ -817,6 +832,7 @@ struct GfxRenderingAPI gfx_opengl_api = {
     gfx_opengl_delete_framebuffer,
     gfx_opengl_set_framebuffer,
     gfx_opengl_reset_framebuffer,
+    gfx_opengl_get_uniform_buffer_size,
     gfx_opengl_set_uniform_buffer,
     gfx_opengl_set_uniform,
     gfx_opengl_new_texture,

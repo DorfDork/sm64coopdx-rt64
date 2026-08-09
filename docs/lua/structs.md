@@ -13,6 +13,7 @@
 - [Character](#Character)
 - [Color](#Color)
 - [ColorCombiner](#ColorCombiner)
+- [ColorRGBA](#ColorRGBA)
 - [CombineMode](#CombineMode)
 - [Controller](#Controller)
 - [CustomLevelInfo](#CustomLevelInfo)
@@ -27,6 +28,7 @@
 - [ExclamationBoxContent](#ExclamationBoxContent)
 - [FirstPersonCamera](#FirstPersonCamera)
 - [FnGraphNode](#FnGraphNode)
+- [FramePass](#FramePass)
 - [Gfx](#Gfx)
 - [GlobalObjectAnimations](#GlobalObjectAnimations)
 - [GlobalObjectCollisionData](#GlobalObjectCollisionData)
@@ -702,10 +704,21 @@
 | ----- | ---- | ------ |
 | cm | [CombineMode](structs.md#CombineMode) | read-only |
 | shader_input_mapping | `Array` <`integer`> |  |
-| shader_input_mapping_as_u64 | `Array` <`integer`> |  |
 | shader_commands | `Array` <`integer`> |  |
-| shader_commands_as_u64 | `Array` <`integer`> |  |
 | hash | `integer` |  |
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [ColorRGBA](#ColorRGBA)
+
+| Field | Type | Access |
+| ----- | ---- | ------ |
+| r | `integer` |  |
+| g | `integer` |  |
+| b | `integer` |  |
+| a | `integer` |  |
 
 [:arrow_up_small:](#)
 
@@ -914,6 +927,20 @@
 | Field | Type | Access |
 | ----- | ---- | ------ |
 | node | [GraphNode](structs.md#GraphNode) | read-only |
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [FramePass](#FramePass)
+
+| Field | Type | Access |
+| ----- | ---- | ------ |
+| width | `integer` |  |
+| height | `integer` |  |
+| drawWorldGeometry | `boolean` |  |
+| clearColor | [ColorRGBA](structs.md#ColorRGBA) | read-only |
+| passFilter | [enum PassFilter](constants.md#enum-PassFilter) |  |
 
 [:arrow_up_small:](#)
 

@@ -506,7 +506,7 @@ void gfx_shader_set_mat4(const char *name, const Mat4 mat4) {
     gfx_get_current_rendering_api()->set_uniform(NULL, name, SHADER_UNIFORM_TYPE_MAT4, mat4, 1);
 }
 
-int gfx_shader_create_frame_pass() {
+int gfx_shader_create_frame_pass(RET struct FramePass **retFramePass) {
     // iterates through frame passes until it finds one that's inactive
     for (int i = 0; i < MAX_CUSTOM_FRAME_PASSES; i++) {
         struct FramePass *framePass = &gFramePasses[i];
@@ -517,6 +517,8 @@ int gfx_shader_create_frame_pass() {
         // set default values
         framePass->active = true;
         framePass->clearColor[3] = 255; // clear color is black from memset, set alpha to 255
+
+        *retFramePass = framePass;
 
         return i;
     }
@@ -535,51 +537,13 @@ void gfx_shader_remove_frame_pass(int framePassIndex) {
     memset(framePass, 0, sizeof(struct FramePass));
 }
 
-void gfx_shader_get_frame_pass_viewport(int framePassIndex, RET u32 *width, RET u32 *height) {
-    if (framePassIndex < 0 || framePassIndex >= MAX_CUSTOM_FRAME_PASSES) { return; }
-
-    struct FramePass *framePass = &gFramePasses[framePassIndex];
-    if (!framePass->active) { return; }
-    gfx_get_frame_pass_viewport_dimensions(framePass, width, height);
-}
-
-void gfx_shader_set_frame_pass_viewport(int framePassIndex, u32 width, u32 height) {
-    if (framePassIndex < 0 || framePassIndex >= MAX_CUSTOM_FRAME_PASSES) { return; }
-
-    struct FramePass *framePass = &gFramePasses[framePassIndex];
-    if (!framePass->active) { return; }
-
-    framePass->width = width;
-    framePass->height = height;
-
-    // needs to be recreated
-    gfx_get_current_rendering_api()->delete_framebuffer(framePass);
-}
-
-void gfx_shader_set_frame_pass_filter(int framePassIndex, enum PassFilter filter) {
-    if (framePassIndex < 0 || framePassIndex >= MAX_CUSTOM_FRAME_PASSES) { return; }
-    if (filter < 0 || filter >= PASS_FILTER_COUNT) { return; }
-
-    struct FramePass *framePass = &gFramePasses[framePassIndex];
-    if (!framePass->active) { return; }
-
-    framePass->passFilter = filter;
-
-    // needs to be recreated
-    gfx_get_current_rendering_api()->delete_framebuffer(framePass);
-}
-
-void gfx_shader_set_frame_pass_draw_world(int framePassIndex, bool drawWorldGeometry) {
-    if (framePassIndex < 0 || framePassIndex >= MAX_CUSTOM_FRAME_PASSES) { return; }
-
-    struct FramePass *framePass = &gFramePasses[framePassIndex];
-    if (!framePass->active) { return; }
-
-    framePass->drawWorldGeometry = drawWorldGeometry;
-}
-
-int gfx_shader_get_current_frame_pass() {
+int gfx_shader_get_current_frame_pass_index() {
     return gCurrentFramePassIndex;
+}
+
+struct FramePass *gfx_shader_get_current_frame_pass() {
+    if (gCurrentFramePassIndex < 0) { return NULL; }
+    return &gFramePasses[gCurrentFramePassIndex];
 }
 
 ///

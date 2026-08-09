@@ -7157,14 +7157,14 @@ function mtxf_inverse_non_affine(dest, src)
 end
 
 --- @param dest Mat4
---- @param bottom number
---- @param topBound number
---- @param left number
---- @param right number
+--- @param boundBottom number
+--- @param boundTop number
+--- @param boundLeft number
+--- @param boundRight number
 --- @param near number
 --- @param far number
 --- Creates a orthographic matrix based on the bounds provided. This can be used to get an orthographic projection matrix.
-function mtxf_ortho(dest, bottom, topBound, left, right, near, far)
+function mtxf_ortho(dest, boundBottom, boundTop, boundLeft, boundRight, near, far)
     -- ...
 end
 
@@ -11945,7 +11945,8 @@ function gfx_shader_set_mat4(name, mat4)
 end
 
 --- @return integer
---- Creates a frame pass to be used when rendering the game. Allows for multipass shaders. Returns the frame pass index
+--- @return FramePass retFramePass
+--- Creates a frame pass to be used when rendering the game. Allows for multipass shaders. Returns the frame pass index and the frame pass
 function gfx_shader_create_frame_pass()
     -- ...
 end
@@ -11956,38 +11957,14 @@ function gfx_shader_remove_frame_pass(framePassIndex)
     -- ...
 end
 
---- @param framePassIndex integer
---- @return integer width
---- @return integer height
---- Gets a frame passes viewport size
-function gfx_shader_get_frame_pass_viewport(framePassIndex)
-    -- ...
-end
-
---- @param framePassIndex integer
---- @param width integer
---- @param height integer
---- Sets a frame passes viewport size
-function gfx_shader_set_frame_pass_viewport(framePassIndex, width, height)
-    -- ...
-end
-
---- @param framePassIndex integer
---- @param filter PassFilter
---- Sets a frame passes filter for the pass texture
-function gfx_shader_set_frame_pass_filter(framePassIndex, filter)
-    -- ...
-end
-
---- @param framePassIndex integer
---- @param drawWorldGeometry boolean
---- Configures whether a frame pass should redraw the whole scene or use a fullscreen quad
-function gfx_shader_set_frame_pass_draw_world(framePassIndex, drawWorldGeometry)
-    -- ...
-end
-
 --- @return integer
 --- Gets the current active frame pass index. If there is no active frame pass, it returns -1
+function gfx_shader_get_current_frame_pass_index()
+    -- ...
+end
+
+--- @return FramePass
+--- Gets the current active frame pass. If there is no active frame pass, it returns nil
 function gfx_shader_get_current_frame_pass()
     -- ...
 end
@@ -13704,3 +13681,4 @@ end
 --- @alias Vec4sp Vec4s
 --- @alias Mat4p Mat4
 --- @alias Colorp Color
+--- @alias ColorRGBAp ColorRGBA

@@ -156,20 +156,14 @@ void gfx_shader_set_vec3(const char *name, f32 x, f32 y, f32 z);
 void gfx_shader_set_vec4(const char *name, f32 x, f32 y, f32 z, f32 w);
 /* |description|Sets the value of a shader uniform of type mat4|descriptionEnd| */
 void gfx_shader_set_mat4(const char *name, const Mat4 mat4);
-/* |description|Creates a frame pass to be used when rendering the game. Allows for multipass shaders. Returns the frame pass index|descriptionEnd| */
-int gfx_shader_create_frame_pass();
+/* |description|Creates a frame pass to be used when rendering the game. Allows for multipass shaders. Returns the frame pass index and the frame pass|descriptionEnd| */
+int gfx_shader_create_frame_pass(RET struct FramePass **retFramePass);
 /* |description|Deletes a frame pass using `framePassIndex`|descriptionEnd| */
 void gfx_shader_remove_frame_pass(int framePassIndex);
-/* |description|Gets a frame passes viewport size|descriptionEnd| */
-void gfx_shader_get_frame_pass_viewport(int framePassIndex, RET u32 *width, RET u32 *height);
-/* |description|Sets a frame passes viewport size|descriptionEnd| */
-void gfx_shader_set_frame_pass_viewport(int framePassIndex, u32 width, u32 height);
-/* |description|Sets a frame passes filter for the pass texture|descriptionEnd| */
-void gfx_shader_set_frame_pass_filter(int framePassIndex, enum PassFilter filter);
-/* |description|Configures whether a frame pass should redraw the whole scene or use a fullscreen quad|descriptionEnd| */
-void gfx_shader_set_frame_pass_draw_world(int framePassIndex, bool drawWorldGeometry);
 /* |description|Gets the current active frame pass index. If there is no active frame pass, it returns -1|descriptionEnd| */
-int gfx_shader_get_current_frame_pass();
+int gfx_shader_get_current_frame_pass_index();
+/* |description|Gets the current active frame pass. If there is no active frame pass, it returns nil|descriptionEnd| */
+struct FramePass *gfx_shader_get_current_frame_pass();
 
 
 /* |description|

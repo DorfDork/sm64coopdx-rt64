@@ -669,6 +669,21 @@ void gfx_metal_reset_framebuffer(void) {
     metal.encoder->setScissorRect(scissorRect);
 }
 
+size_t gfx_metal_get_uniform_buffer_size(enum ShaderStage stage, int bufferIndex) {
+    if (bufferIndex < 0 || bufferIndex >= MAX_UNIFORM_BLOCKS) { return 0; }
+
+    struct Shader *shader = NULL;
+    if (stage == SHADER_STAGE_VERTEX) {
+        shader = metal.shaderProgram->vertexShader;
+    } else if (stage == SHADER_STAGE_FRAGMENT) {
+        shader = metal.shaderProgram->fragmentShader;
+    } else {
+        return 0;
+    }
+
+    return shader->uniformBlocks[bufferIndex].size;
+}
+
 void gfx_metal_set_uniform_buffer(enum ShaderStage stage, const char *name) {
     struct Shader *shader = NULL;
     int *destination = NULL;
@@ -1166,6 +1181,7 @@ struct GfxRenderingAPI gfx_metal_api = {
     gfx_metal_delete_framebuffer,
     gfx_metal_set_framebuffer,
     gfx_metal_reset_framebuffer,
+    gfx_metal_get_uniform_buffer_size,
     gfx_metal_set_uniform_buffer,
     gfx_metal_set_uniform,
     gfx_metal_new_texture,

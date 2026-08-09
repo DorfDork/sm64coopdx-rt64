@@ -26,6 +26,7 @@
 #include "src/game/paintings.h"
 #include "src/pc/djui/djui_types.h"
 #include "src/pc/gfx/gfx_cc.h"
+#include "src/pc/gfx/gfx_pc.h"
 #include "src/pc/gfx/gfx_shader.h"
 #include "src/game/level_update.h"
 #include "src/game/first_person_cam.h"
@@ -145,6 +146,14 @@ static struct LuaObjectField sColorFields[LUA_COLOR_FIELD_COUNT] = {
     { "r", LVT_U8, sizeof(u8) * 0, false, LOT_NONE, 1, sizeof(u8) },
 };
 
+#define LUA_COLORRGBA_FIELD_COUNT 4
+static struct LuaObjectField sColorRGBAFields[LUA_COLORRGBA_FIELD_COUNT] = {
+    { "a", LVT_U8, sizeof(u8) * 3, false, LOT_NONE, 1, sizeof(u8) },
+    { "b", LVT_U8, sizeof(u8) * 2, false, LOT_NONE, 1, sizeof(u8) },
+    { "g", LVT_U8, sizeof(u8) * 1, false, LOT_NONE, 1, sizeof(u8) },
+    { "r", LVT_U8, sizeof(u8) * 0, false, LOT_NONE, 1, sizeof(u8) },
+};
+
 struct LuaObjectTable sLuaObjectTable[LOT_MAX] = {
     [LOT_NONE] = { LOT_NONE, NULL, 0 },
     [LOT_VEC2F] = { LOT_VEC2F, sVec2fFields, LUA_VEC2F_FIELD_COUNT },
@@ -158,6 +167,7 @@ struct LuaObjectTable sLuaObjectTable[LOT_MAX] = {
     [LOT_VEC4S] = { LOT_VEC4S, sVec4sFields, LUA_VEC4S_FIELD_COUNT },
     [LOT_MAT4] = { LOT_MAT4, sMat4Fields, LUA_MAT4_FIELD_COUNT },
     [LOT_COLOR] = { LOT_COLOR, sColorFields, LUA_COLOR_FIELD_COUNT },
+    [LOT_COLORRGBA] = { LOT_COLORRGBA, sColorRGBAFields, LUA_COLORRGBA_FIELD_COUNT },
     [LOT_ARRAY] = { LOT_ARRAY, NULL, 0 },
     [LOT_POINTER] = { LOT_POINTER, NULL, 0 },
 };
@@ -698,14 +708,12 @@ static struct LuaObjectField sCharacterFields[LUA_CHARACTER_FIELD_COUNT] = {
     { "type",                               LVT_S32,       offsetof(struct Character, type),                               true, LOT_NONE                                         },
 };
 
-#define LUA_COLOR_COMBINER_FIELD_COUNT 6
+#define LUA_COLOR_COMBINER_FIELD_COUNT 4
 static struct LuaObjectField sColorCombinerFields[LUA_COLOR_COMBINER_FIELD_COUNT] = {
-    { "cm",                          LVT_COBJECT, offsetof(struct ColorCombiner, cm),                          true,  LOT_COMBINEMODE                },
-    { "hash",                        LVT_U64,     offsetof(struct ColorCombiner, hash),                        false, LOT_NONE                       },
-    { "shader_commands",             LVT_U8,      offsetof(struct ColorCombiner, shader_commands),             false, LOT_NONE,      16, sizeof(u8)  },
-    { "shader_commands_as_u64",      LVT_U64,     offsetof(struct ColorCombiner, shader_commands_as_u64),      false, LOT_NONE,      8,  sizeof(u64) },
-    { "shader_input_mapping",        LVT_U8,      offsetof(struct ColorCombiner, shader_input_mapping),        false, LOT_NONE,      16, sizeof(u8)  },
-    { "shader_input_mapping_as_u64", LVT_U64,     offsetof(struct ColorCombiner, shader_input_mapping_as_u64), false, LOT_NONE,      8,  sizeof(u64) },
+    { "cm",                   LVT_COBJECT, offsetof(struct ColorCombiner, cm),                   true,  LOT_COMBINEMODE               },
+    { "hash",                 LVT_U64,     offsetof(struct ColorCombiner, hash),                 false, LOT_NONE                      },
+    { "shader_commands",      LVT_U8,      offsetof(struct ColorCombiner, shader_commands),      false, LOT_NONE,      16, sizeof(u8) },
+    { "shader_input_mapping", LVT_U8,      offsetof(struct ColorCombiner, shader_input_mapping), false, LOT_NONE,      16, sizeof(u8) },
 };
 
 #define LUA_COMBINE_MODE_FIELD_COUNT 8
@@ -849,6 +857,15 @@ static struct LuaObjectField sFirstPersonCameraFields[LUA_FIRST_PERSON_CAMERA_FI
 static struct LuaObjectField sFnGraphNodeFields[LUA_FN_GRAPH_NODE_FIELD_COUNT] = {
 //  { "func", LVT_???,     offsetof(struct FnGraphNode, func), false, LOT_???       }, <--- UNIMPLEMENTED
     { "node", LVT_COBJECT, offsetof(struct FnGraphNode, node), true,  LOT_GRAPHNODE },
+};
+
+#define LUA_FRAME_PASS_FIELD_COUNT 5
+static struct LuaObjectField sFramePassFields[LUA_FRAME_PASS_FIELD_COUNT] = {
+    { "clearColor",        LVT_COBJECT, offsetof(struct FramePass, clearColor),        true,  LOT_COLORRGBA },
+    { "drawWorldGeometry", LVT_BOOL,    offsetof(struct FramePass, drawWorldGeometry), false, LOT_NONE      },
+    { "height",            LVT_U32,     offsetof(struct FramePass, height),            false, LOT_NONE      },
+    { "passFilter",        LVT_S32,     offsetof(struct FramePass, passFilter),        false, LOT_NONE      },
+    { "width",             LVT_U32,     offsetof(struct FramePass, width),             false, LOT_NONE      },
 };
 
 #define LUA_GFX_FIELD_COUNT 2
@@ -2763,6 +2780,7 @@ struct LuaObjectTable sLuaObjectAutogenTable[LOT_AUTOGEN_MAX - LOT_AUTOGEN_MIN] 
     { LOT_EXCLAMATIONBOXCONTENT,        sExclamationBoxContentFields,        LUA_EXCLAMATION_BOX_CONTENT_FIELD_COUNT         },
     { LOT_FIRSTPERSONCAMERA,            sFirstPersonCameraFields,            LUA_FIRST_PERSON_CAMERA_FIELD_COUNT             },
     { LOT_FNGRAPHNODE,                  sFnGraphNodeFields,                  LUA_FN_GRAPH_NODE_FIELD_COUNT                   },
+    { LOT_FRAMEPASS,                    sFramePassFields,                    LUA_FRAME_PASS_FIELD_COUNT                      },
     { LOT_GFX,                          sGfxFields,                          LUA_GFX_FIELD_COUNT                             },
     { LOT_GLOBALOBJECTANIMATIONS,       sGlobalObjectAnimationsFields,       LUA_GLOBAL_OBJECT_ANIMATIONS_FIELD_COUNT        },
     { LOT_GLOBALOBJECTCOLLISIONDATA,    sGlobalObjectCollisionDataFields,    LUA_GLOBAL_OBJECT_COLLISION_DATA_FIELD_COUNT    },
@@ -2843,6 +2861,7 @@ const char *sLuaLotNames[] = {
     [LOT_VEC4S] = "Vec4s",
     [LOT_MAT4] = "Mat4",
     [LOT_COLOR] = "Color",
+    [LOT_COLORRGBA] = "ColorRGBA",
     [LOT_ARRAY] = "Array",
     [LOT_POINTER] = "Pointer",
     [LOT_MAX] = "Max",
@@ -2872,6 +2891,7 @@ const char *sLuaLotNames[] = {
     [LOT_EXCLAMATIONBOXCONTENT] = "ExclamationBoxContent",
     [LOT_FIRSTPERSONCAMERA] = "FirstPersonCamera",
     [LOT_FNGRAPHNODE] = "FnGraphNode",
+    [LOT_FRAMEPASS] = "FramePass",
     [LOT_GFX] = "Gfx",
     [LOT_GLOBALOBJECTANIMATIONS] = "GlobalObjectAnimations",
     [LOT_GLOBALOBJECTCOLLISIONDATA] = "GlobalObjectCollisionData",

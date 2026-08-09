@@ -24,6 +24,7 @@ struct GfxRenderingAPI {
     void (*delete_framebuffer)(struct FramePass *framePass);
     void (*set_framebuffer)(struct FramePass *framePass);
     void (*reset_framebuffer)(void);
+    size_t (*get_uniform_buffer_size)(enum ShaderStage stage, int bufferIndex);
     void (*set_uniform_buffer)(enum ShaderStage stage, const char *name);
     void (*set_uniform)(struct ShaderProgram *prg, const char *name, ShaderUniformType type, const void *data, uint32_t numElements);
     uint32_t (*new_texture)(void);

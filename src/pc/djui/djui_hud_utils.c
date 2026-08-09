@@ -69,15 +69,6 @@ static struct HudUtilsState sHudUtilsState = {
 static struct DjuiColor sRefColor = { 255, 255, 255, 255 };
 static struct DjuiColor sRefTextColor = { 255, 255, 255, 255 };
 
-// why does this need to start at -1? I don't know, but what I know is it has to do
-// with the ortho function and normalized device coordinate depth range being between 0 and 1.
-// This is garbage, I am well aware this is garbage, I am well aware this is by no means a
-// proper fix for custom lua hud elements, I am well aware this is a VERY incorrect thing to do
-// but I don't care, I'm tired, I'm done, I'm done, I'm done, I'm done, I'm done, I'm done
-// I'm done, I'm done, I'm done, I'm done, I'm done, I'm done, I'm done, I'm done, I'm done
-// I'm done, I'm done, I'm done, I'm done, I'm done, I'm done, I'm done, I'm done, I'm done
-// I'm done, I'm done, I'm done, I'm done, I'm done
-f32 gDjuiHudUtilsZ = -1;
 bool gDjuiHudLockMouse = false;
 
 extern ALIGNED8 const u8 texture_hud_char_camera[];
@@ -210,7 +201,6 @@ void patch_djui_hud_before(void) {
 }
 
 void patch_djui_hud(f32 delta) {
-    f32 savedZ = gDjuiHudUtilsZ;
     Gfx* savedHeadPos = gDisplayListHead;
     struct HudUtilsState savedState = sHudUtilsState;
 
@@ -222,7 +212,6 @@ void patch_djui_hud(f32 delta) {
         f32 scaleW = delta_interpolate_f32(interp->scaleX.prev, interp->scaleX.curr, delta);
         f32 scaleH = delta_interpolate_f32(interp->scaleY.prev, interp->scaleY.curr, delta);
         sHudUtilsState = interp->state;
-        gDjuiHudUtilsZ = interp->z;
 
         for (u32 j = 0; j != interp->gfx->count; ++j) {
             const InterpHudGfx *gfx = interp->gfx->buffer[j];
@@ -233,7 +222,7 @@ void patch_djui_hud(f32 delta) {
                     f32 translatedX = x;
                     f32 translatedY = y;
                     djui_hud_position_translate(&translatedX, &translatedY);
-                    create_dl_translation_matrix(DJUI_MTX_PUSH, translatedX, translatedY, gDjuiHudUtilsZ);
+                    create_dl_translation_matrix(DJUI_MTX_PUSH, translatedX, translatedY, 0);
                 } break;
 
                 case INTERP_HUD_ROTATION: {
@@ -300,7 +289,6 @@ void patch_djui_hud(f32 delta) {
 
     sHudUtilsState = savedState;
     gDisplayListHead = savedHeadPos;
-    gDjuiHudUtilsZ = savedZ;
 }
 
 static struct InterpHud *djui_hud_create_interp() {
@@ -311,7 +299,7 @@ static struct InterpHud *djui_hud_create_interp() {
     );
 
     if (interp) {
-        interp->z = gDjuiHudUtilsZ;
+        interp->z = 0;
         interp->state = sHudUtilsState;
         if (!interp->gfx) {
             interp->gfx = growing_array_init(NULL, 8, malloc, free);
@@ -650,7 +638,6 @@ static Mtx *allocate_dl_translation_matrix() {
 
 static void djui_hud_print_text_internal(const char* message, f32 x, f32 y, f32 scaleX, f32 scaleY, struct InterpHud *interp) {
     if (message == NULL) { return; }
-    gDjuiHudUtilsZ += 0.001f;
 
     const struct DjuiFont* font = djui_hud_get_text_font();
     f32 fontScaleX = font->defaultFontScale * scaleX;
@@ -666,7 +653,7 @@ static void djui_hud_print_text_internal(const char* message, f32 x, f32 y, f32 
     f32 translatedX = x + (font->xOffset * scaleX);
     f32 translatedY = y + (font->yOffset * scaleY);
     djui_hud_position_translate(&translatedX, &translatedY);
-    create_dl_translation_matrix(DJUI_MTX_PUSH, translatedX, translatedY, gDjuiHudUtilsZ);
+    create_dl_translation_matrix(DJUI_MTX_PUSH, translatedX, translatedY, 0);
 
     // rotate
     f32 translatedFontSizeX = fontScaleX;
@@ -841,14 +828,12 @@ static void djui_hud_render_texture_raw(const Texture* texture, u32 width, u32 h
 
     if (!texture) { return; }
 
-    gDjuiHudUtilsZ += 0.001f;
-
     // translate position
     djui_hud_create_interp_gfx(interp, INTERP_HUD_TRANSLATION);
     f32 translatedX = x;
     f32 translatedY = y;
     djui_hud_position_translate(&translatedX, &translatedY);
-    create_dl_translation_matrix(DJUI_MTX_PUSH, translatedX, translatedY, gDjuiHudUtilsZ);
+    create_dl_translation_matrix(DJUI_MTX_PUSH, translatedX, translatedY, 0);
 
     // rotate
     f32 translatedW = scaleW;
@@ -878,7 +863,6 @@ static void djui_hud_render_texture_raw(const Texture* texture, u32 width, u32 h
 static void djui_hud_render_texture_tile_raw(const Texture* texture, u32 width, u32 height, u8 fmt, u8 siz, f32 x, f32 y, f32 scaleW, f32 scaleH, u32 tileX, u32 tileY, u32 tileW, u32 tileH, struct InterpHud *interp) {
     if (!texture) { return; }
 
-    gDjuiHudUtilsZ += 0.001f;
     if (width != 0) { scaleW *= (f32) tileW / (f32) width; }
     if (height != 0) { scaleH *= (f32) tileH / (f32) height; }
 
@@ -887,7 +871,7 @@ static void djui_hud_render_texture_tile_raw(const Texture* texture, u32 width, 
     f32 translatedX = x;
     f32 translatedY = y;
     djui_hud_position_translate(&translatedX, &translatedY);
-    create_dl_translation_matrix(DJUI_MTX_PUSH, translatedX, translatedY, gDjuiHudUtilsZ);
+    create_dl_translation_matrix(DJUI_MTX_PUSH, translatedX, translatedY, 0);
 
     // rotate
     f32 translatedW = scaleW;
@@ -968,14 +952,12 @@ void djui_hud_render_texture_tile_interpolated(struct TextureInfo* texInfo, f32 
 }
 
 static void djui_hud_render_rect_internal(f32 x, f32 y, f32 width, f32 height, struct InterpHud *interp) {
-    gDjuiHudUtilsZ += 0.001f;
-
     // translate position
     djui_hud_create_interp_gfx(interp, INTERP_HUD_TRANSLATION);
     f32 translatedX = x;
     f32 translatedY = y;
     djui_hud_position_translate(&translatedX, &translatedY);
-    create_dl_translation_matrix(DJUI_MTX_PUSH, translatedX, translatedY, gDjuiHudUtilsZ);
+    create_dl_translation_matrix(DJUI_MTX_PUSH, translatedX, translatedY, 0);
 
     // rotate
     f32 translatedW = width;

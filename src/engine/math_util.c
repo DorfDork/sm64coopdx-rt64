@@ -876,16 +876,19 @@ OPTIMIZE_O3 bool mtxf_inverse_non_affine(VEC_OUT Mat4 dest, Mat4 src) {
  * This function assumes an NDC Z depth (z) range of 0 to 1, and takes in the dimensions of
  * the orthographic bounds.
  */
-OPTIMIZE_O3 void mtxf_ortho(VEC_OUT Mat4 dest, float bottom, float topBound, float left, float right, float near, float far) {
+OPTIMIZE_O3 void mtxf_ortho(VEC_OUT Mat4 dest, f32 boundBottom, f32 boundTop, f32 boundLeft, f32 boundRight, f32 near, f32 far) {
     mtxf_zero(dest); // zero out matrix first
 
+    // prevent division by zero
+    if (boundRight == boundLeft || boundTop == boundBottom || far == near) { return; }
+
     // setup the dimensions of the viewport
-    dest[0][0] = 2.0f / (right - left);
-    dest[1][1] = 2.0f / (topBound - bottom);
+    dest[0][0] = 2.0f / (boundRight - boundLeft);
+    dest[1][1] = 2.0f / (boundTop - boundBottom);
     dest[2][2] = -1.0f / (far - near); // setup depth
 
-    dest[3][0] = -(right + left) / (right - left);
-    dest[3][1] = -(topBound + bottom) / (topBound - bottom);
+    dest[3][0] = -(boundRight + boundLeft) / (boundRight - boundLeft);
+    dest[3][1] = -(boundTop + boundBottom) / (boundTop - boundBottom);
     dest[3][2] = -near / (far - near);
     dest[3][3] = 1.0f;
 }
