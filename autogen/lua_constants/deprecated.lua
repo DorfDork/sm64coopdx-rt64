@@ -46,17 +46,10 @@ hypotf = math.hypot
 -- Old audio constants and functions --
 ---------------------------------------
 
---- @type ModAudioChannel
-MOD_AUDIO_CHANNEL_MUSIC = 0
-
- --- @type ModAudioChannel
-MOD_AUDIO_CHANNEL_SFX = 1
-
- --- @type ModAudioChannel
-MOD_AUDIO_CHANNEL_ENV = 2
-
- --- @type ModAudioChannel
-MOD_AUDIO_CHANNEL_MASTER = 3
+MOD_AUDIO_CHANNEL_MUSIC  = 0 --- @type ModAudioChannel
+MOD_AUDIO_CHANNEL_SFX    = 1 --- @type ModAudioChannel
+MOD_AUDIO_CHANNEL_ENV    = 2 --- @type ModAudioChannel
+MOD_AUDIO_CHANNEL_MASTER = 3 --- @type ModAudioChannel
 
 function audio_sample_load(filename) return audio_load(filename, MA_TYPE_SAMPLE) end
 function audio_stream_load(filename) return audio_load(filename, MA_TYPE_STREAM) end

@@ -95,7 +95,6 @@ local function on_vertex_shader_create(cc)
 
     local vs = {}
 
-    table.insert(vs, "#version 410 core")
     table.insert(vs, "in vec4 aVtxPos;")
     table.insert(vs, "in vec4 aLocalPos;")
 
@@ -177,7 +176,6 @@ local function on_fragment_shader_create(cc)
 
     local fs = {}
 
-    table.insert(fs, "#version 410 core")
     table.insert(fs, "out vec4 fragColor;")
 
     for t = 0, 1 do

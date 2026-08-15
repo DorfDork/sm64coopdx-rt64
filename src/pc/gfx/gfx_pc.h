@@ -61,11 +61,16 @@ struct FramePass {
     u32 depthBuffer;
     u64 passTexture;
 
-    // d3d/metal (scuffed)
-    void *d3dTexture;
-    void *d3dRtv;
+    // d3d/metal specific stuff
     void *d3dSrv;
-    void *d3dDsv;
+    union {
+        void *d3dRtv;
+        void *mtlColorTex;
+    };
+    union {
+        void *d3dDsv;
+        void *mtlDepthTex;
+    };
 
     // global
     u32 width;
@@ -81,10 +86,6 @@ extern struct RSP rsp;
 extern struct FramePass gDefaultGeoFramePass;
 extern struct FramePass gFramePasses[MAX_CUSTOM_FRAME_PASSES];
 extern int gCurrentFramePassIndex;
-
-extern f32 gFogDepthZAdd;
-extern f32 gFogDepthZMult;
-extern f32 gFogDepthZSub;
 
 extern Vec3f gLightingDir;
 extern Color gLightingColor[2];
@@ -122,7 +123,6 @@ void gfx_end_frame(void);
 void gfx_shutdown(void);
 void gfx_update_fog_uniforms(void);
 void gfx_update_matrices(void);
-void gfx_set_builtin_uniforms(void);
 void gfx_set_builtin_uniforms(void);
 void gfx_remove_all_color_combiners(void);
 void gfx_pc_precomp_shader(uint32_t rgb1, uint32_t alpha1, uint32_t rgb2, uint32_t alpha2, uint32_t flags);

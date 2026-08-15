@@ -21374,6 +21374,27 @@ int smlua_func_delta_interpolate_s32(lua_State* L) {
     return 1;
 }
 
+int smlua_func_delta_interpolate_angle(lua_State* L) {
+    if (L == NULL) { return 0; }
+
+    int top = lua_gettop(L);
+    if (top != 3) {
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "delta_interpolate_angle", 3, top);
+        return 0;
+    }
+
+    s16 a = smlua_to_integer(L, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "delta_interpolate_angle"); return 0; }
+    s16 b = smlua_to_integer(L, 2);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 2, "delta_interpolate_angle"); return 0; }
+    f32 delta = smlua_to_number(L, 3);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 3, "delta_interpolate_angle"); return 0; }
+
+    lua_pushinteger(L, delta_interpolate_angle(a, b, delta));
+
+    return 1;
+}
+
 int smlua_func_delta_interpolate_vec3f(lua_State* L) {
     if (L == NULL) { return 0; }
 
@@ -37901,6 +37922,7 @@ void smlua_bind_functions_autogen(void) {
     smlua_bind_function(L, "clock_is_date", smlua_func_clock_is_date);
     smlua_bind_function(L, "delta_interpolate_f32", smlua_func_delta_interpolate_f32);
     smlua_bind_function(L, "delta_interpolate_s32", smlua_func_delta_interpolate_s32);
+    smlua_bind_function(L, "delta_interpolate_angle", smlua_func_delta_interpolate_angle);
     smlua_bind_function(L, "delta_interpolate_vec3f", smlua_func_delta_interpolate_vec3f);
     smlua_bind_function(L, "delta_interpolate_vec3s", smlua_func_delta_interpolate_vec3s);
 

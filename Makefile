@@ -959,7 +959,11 @@ ifeq ($(WINDOWS_BUILD),1)
   endif
 else
   ifeq ($(DISCORD_SDK),1)
-    LDFLAGS += -ldiscord_game_sdk -Wl,-rpath . -Wl,-rpath lib/discordsdk
+    ifeq ($(OSX_BUILD),1)
+      LDFLAGS += -ldiscord_game_sdk -Wl,-rpath,@executable_path
+    else
+      LDFLAGS += -ldiscord_game_sdk -Wl,-rpath . -Wl,-rpath lib/discordsdk
+    endif
   endif
 endif
 

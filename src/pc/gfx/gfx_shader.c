@@ -29,7 +29,7 @@ struct ShaderInput *gPostProcessShaderInputs = NULL;
 struct ShaderBinding *gShaderBindings = NULL;
 struct ShaderBinding *gPostProcessShaderBindings = NULL;
 
-const char *gDefaultPostProcessVertexShader = "#version 410 core\n"
+const char *gDefaultPostProcessVertexShader = ""
     "in vec4 aVtxPos;\n"
     "out vec4 vVtxPos;\n" // exists for convenience of mods
     "in vec2 aTexCoord;\n"
@@ -40,7 +40,7 @@ const char *gDefaultPostProcessVertexShader = "#version 410 core\n"
     "    gl_Position = aVtxPos;\n"
     "}\n";
 
-const char *gDefaultPostProcessFragmentShader = "#version 410 core\n"
+const char *gDefaultPostProcessFragmentShader = ""
     "uniform sampler2D uPassTex;\n"
     "in vec4 vVtxPos;\n" // exists for convenience of mods
     "in vec2 vTexCoord;\n"
@@ -53,6 +53,7 @@ static int sShaderInputCount = 0;
 static int sShaderOutputCount = 0;
 static int sShaderUniformBlockCount = 0;
 static bool sShaderInsideCustomUniformBlock = false;
+static bool sShaderHasVersion = false;
 
 static char sShaderUniformCode[MAX_SHADER_CODE] = { 0 };
 
@@ -186,7 +187,6 @@ char *gfx_get_default_vertex_shader_from_cc(struct ColorCombiner *cc) {
     static char vs_buf[8192] = { 0 };
     size_t vs_len = 0;
 
-    append_line(vs_buf, &vs_len, "#version 410 core");
     append_line(vs_buf, &vs_len, "in vec4 aVtxPos;");
     append_line(vs_buf, &vs_len, "in vec4 aLocalPos;");
     for (int t = 0; t < 2; t++) {
@@ -256,7 +256,6 @@ char *gfx_get_default_fragment_shader_from_cc(struct ColorCombiner *cc) {
     static char fs_buf[8192] = { 0 };
     size_t fs_len = 0;
 
-    append_line(fs_buf, &fs_len, "#version 410 core");
     append_line(fs_buf, &fs_len, "out vec4 fragColor;");
     for (int t = 0; t < 2; t++) {
         if (!opt_tex_persp) { append_str(fs_buf, &fs_len, "noperspective "); }
@@ -754,6 +753,7 @@ static bool process_shader_line(struct Shader *shader, struct ShaderInput *refer
         char layoutLine[32] = { 0 };
         snprintf(layoutLine, sizeof(layoutLine), "#version 450 core");
         strncat(output, layoutLine, MAX_SHADER_CODE - strlen(output) - 1);
+        sShaderHasVersion = true;
         return true;
     }
 
@@ -773,6 +773,7 @@ static void gfx_sanitize_shader(struct Shader *shader, struct ShaderInput *refer
     sShaderInputCount = 0;
     sShaderOutputCount = 0;
     sShaderInsideCustomUniformBlock = false;
+    sShaderHasVersion = false;
 
     memset(sShaderUniformCode, 0, sizeof(char) * MAX_SHADER_CODE);
 
@@ -799,6 +800,22 @@ static void gfx_sanitize_shader(struct Shader *shader, struct ShaderInput *refer
         }
 
         line = lineEnd + 1;
+    }
+
+    // add in the version text if necessary
+    if (!sShaderHasVersion) {
+        char *sanitizedSource = strdup(sanitized);
+        if (!sanitizedSource) {
+            free(sourceCopy);
+            free(sanitized);
+            return;
+        }
+
+        memset(sanitized, 0, MAX_SHADER_CODE);
+
+        strncat(sanitized, "#version 450 core\n", MAX_SHADER_CODE - 1);
+        strncat(sanitized, sanitizedSource, MAX_SHADER_CODE - strlen(sanitized) - 1);
+        free(sanitizedSource);
     }
 
     // readd the global uniforms into a global uniform block

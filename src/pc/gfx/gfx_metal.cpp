@@ -536,22 +536,22 @@ void gfx_metal_create_framebuffer(struct FramePass *framePass) {
     }
 
     framePass->passTexture = (u64)colorTex;
-    framePass->d3dRtv = (void *)colorTex;
-    framePass->d3dDsv = (void *)depthTex;
+    framePass->mtlColorTex = (void *)colorTex;
+    framePass->mtlDepthTex = (void *)depthTex;
     framePass->fbo = 1;
 }
 
 void gfx_metal_delete_framebuffer(struct FramePass *framePass) {
     if (!framePass || !framePass->fbo) return;
 
-    if (framePass->d3dRtv) {
-        ((MTL::Texture *)framePass->d3dRtv)->release();
-        framePass->d3dRtv = NULL;
+    if (framePass->mtlColorTex) {
+        ((MTL::Texture *)framePass->mtlColorTex)->release();
+        framePass->mtlColorTex = NULL;
     }
 
-    if (framePass->d3dDsv) {
-        ((MTL::Texture *)framePass->d3dDsv)->release();
-        framePass->d3dDsv = NULL;
+    if (framePass->mtlDepthTex) {
+        ((MTL::Texture *)framePass->mtlDepthTex)->release();
+        framePass->mtlDepthTex = NULL;
     }
 
     framePass->passTexture = 0;
@@ -574,7 +574,7 @@ void gfx_metal_set_framebuffer(struct FramePass *framePass) {
     MTL::RenderPassDescriptor *pass = MTL::RenderPassDescriptor::renderPassDescriptor();
 
     auto colorAttachment = pass->colorAttachments()->object(0);
-    colorAttachment->setTexture((MTL::Texture *)framePass->d3dRtv);
+    colorAttachment->setTexture((MTL::Texture *)framePass->mtlColorTex);
     colorAttachment->setLoadAction(MTL::LoadActionClear);
     colorAttachment->setStoreAction(MTL::StoreActionStore);
 
@@ -585,7 +585,7 @@ void gfx_metal_set_framebuffer(struct FramePass *framePass) {
     colorAttachment->setClearColor(MTL::ClearColor(r, g, b, a));
 
     auto depthAttachment = pass->depthAttachment();
-    depthAttachment->setTexture((MTL::Texture *)framePass->d3dDsv);
+    depthAttachment->setTexture((MTL::Texture *)framePass->mtlDepthTex);
     depthAttachment->setLoadAction(MTL::LoadActionDontCare);
     depthAttachment->setStoreAction(MTL::StoreActionDontCare);
     depthAttachment->setClearDepth(1.0);

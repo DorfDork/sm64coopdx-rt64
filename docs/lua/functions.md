@@ -1389,6 +1389,7 @@
    - [clock_is_date](functions-5.md#clock_is_date)
    - [delta_interpolate_f32](functions-5.md#delta_interpolate_f32)
    - [delta_interpolate_s32](functions-5.md#delta_interpolate_s32)
+   - [delta_interpolate_angle](functions-5.md#delta_interpolate_angle)
    - [delta_interpolate_vec3f](functions-5.md#delta_interpolate_vec3f)
    - [delta_interpolate_vec3s](functions-5.md#delta_interpolate_vec3s)
 
