@@ -53,6 +53,7 @@ GeoLayoutCommandProc GeoLayoutJumpTable[] = {
 struct GraphNode gObjParentGraphNode;
 struct DynamicPool *gGraphNodePool = NULL;
 struct GraphNode *gCurRootGraphNode = NULL;
+void *gCurGeoLayout = NULL;
 
 UNUSED s32 D_8038BCA8;
 
@@ -902,6 +903,7 @@ struct GraphNode *process_geo_layout(struct DynamicPool *pool, void *segptr) {
     gGeoLayoutReturnIndex = 2; // stack index is often copied here?
 
     gGeoLayoutCommand = segmented_to_virtual(segptr);
+    gCurGeoLayout = gGeoLayoutCommand;
 
     gGraphNodePool = pool;
 

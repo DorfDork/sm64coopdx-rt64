@@ -57,6 +57,17 @@ extern enum RefreshRateMode configFramerateMode;
 extern unsigned int configFrameLimit;
 extern unsigned int configInterpolationMode;
 extern unsigned int configDrawDistance;
+// RT64 settings
+extern unsigned int configRT64ResScale;
+extern unsigned int configRT64MaxLights;
+extern unsigned int configRT64MaxReflections;
+extern unsigned int configRT64MotionBlurStrength;
+extern unsigned int configRT64UpscalerSharpness;
+extern bool         configRT64SphereLights;
+extern bool         configRT64GI;
+extern unsigned int configRT64Upscaler;
+extern unsigned int configRT64UpscalerMode;
+extern bool         configRT64Denoiser;
 // sound settings
 extern unsigned int configMasterVolume;
 extern unsigned int configMusicVolume;

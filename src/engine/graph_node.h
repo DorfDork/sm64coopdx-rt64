@@ -134,6 +134,9 @@ struct DisplayListNode
     Gfx *displayList;
     struct DisplayListNode *next;
     u8 usingCamSpace;
+    u32 uid;            // Per-instance identity, only read by backends declaring GFX_BACKEND_OBJECT_IDENTITY.
+    void *graphNodeMod;
+    void *graphNodeRoot;
 };
 
 /** GraphNode that manages the 8 top-level display lists that will be drawn
@@ -401,6 +404,10 @@ extern struct GraphNode *gCurRootGraphNode;
 extern struct GraphNode *gCurGraphNodeList[];
 
 extern s16 gCurGraphNodeIndex;
+
+extern u32 gCurGraphNodeUID;
+
+extern void *gCurGeoLayout;
 
 void init_scene_graph_node_links(struct GraphNode *graphNode, s32 type);
 

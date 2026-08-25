@@ -210,6 +210,37 @@ const char *DynOS_Gfx_GetName(Gfx *aGfx) {
     return DynOS_Builtin_Gfx_GetFromData(aGfx);
 }
 
+const char *DynOS_Gfx_GetCustomName(Gfx *aGfx) {
+    if (!aGfx) { return NULL; }
+    s32 modIndex = (gLuaActiveMod ? gLuaActiveMod->index : -1);
+
+    // Check mod data
+    static std::string outName;
+    if (sModsDisplayLists.GetName(modIndex, aGfx, outName)) {
+        return outName.c_str();
+    }
+
+    // Check levels
+    for (auto &lvl : DynOS_Lvl_GetArray()) {
+        for (auto &gfx : lvl.second->mDisplayLists) {
+            if (gfx->mData == aGfx) {
+                return gfx->mName.begin();
+            }
+        }
+    }
+
+    // Check loaded actors
+    for (auto &actor : DynOS_Actor_GetValidActors()) {
+        for (auto &gfx : actor.second.mGfxData->mDisplayLists) {
+            if (gfx->mData == aGfx) {
+                return gfx->mName.begin();
+            }
+        }
+    }
+
+    return NULL;
+}
+
 Gfx *DynOS_Gfx_Create(const char *aName, u32 aLength) {
     s32 modIndex = (gLuaActiveMod ? gLuaActiveMod->index : -1);
     return sModsDisplayLists.Create(modIndex, aName, aLength);

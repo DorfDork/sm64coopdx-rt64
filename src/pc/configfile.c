@@ -90,6 +90,17 @@ enum RefreshRateMode configFramerateMode          = RRM_AUTO;
 unsigned int configFrameLimit                     = 60;
 unsigned int configInterpolationMode              = 1;
 unsigned int configDrawDistance                   = 6;
+// RT64 settings
+unsigned int configRT64ResScale                   = 100;
+unsigned int configRT64MaxLights                  = 6;
+unsigned int configRT64MaxReflections             = 2;
+unsigned int configRT64MotionBlurStrength         = 0;
+unsigned int configRT64UpscalerSharpness          = 100;
+bool         configRT64SphereLights               = false;
+bool         configRT64GI                         = false;
+unsigned int configRT64Upscaler                   = 0;
+unsigned int configRT64UpscalerMode               = 0;
+bool         configRT64Denoiser                   = true;
 // sound settings
 unsigned int configMasterVolume                   = 80; // 0 - MAX_VOLUME
 unsigned int configMusicVolume                    = MAX_VOLUME;
@@ -264,6 +275,17 @@ static const struct ConfigOption options[] = {
     {.name = "frame_limit",                    .type = CONFIG_TYPE_UINT, .uintValue = &configFrameLimit},
     {.name = "interpolation_mode",             .type = CONFIG_TYPE_UINT, .uintValue = &configInterpolationMode},
     {.name = "coop_draw_distance",             .type = CONFIG_TYPE_UINT, .uintValue = &configDrawDistance},
+    // RT64 settings
+    {.name = "rt64_res_scale",                 .type = CONFIG_TYPE_UINT, .uintValue = &configRT64ResScale},
+    {.name = "rt64_max_lights",                .type = CONFIG_TYPE_UINT, .uintValue = &configRT64MaxLights},
+    {.name = "rt64_max_reflections",           .type = CONFIG_TYPE_UINT, .uintValue = &configRT64MaxReflections},
+    {.name = "rt64_motion_blur_strength",      .type = CONFIG_TYPE_UINT, .uintValue = &configRT64MotionBlurStrength},
+    {.name = "rt64_upscaler_sharpness",        .type = CONFIG_TYPE_UINT, .uintValue = &configRT64UpscalerSharpness},
+    {.name = "rt64_sphere_lights",             .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64SphereLights},
+    {.name = "rt64_gi",                        .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64GI},
+    {.name = "rt64_upscaler",                  .type = CONFIG_TYPE_UINT, .uintValue = &configRT64Upscaler},
+    {.name = "rt64_upscaler_mode_common",      .type = CONFIG_TYPE_UINT, .uintValue = &configRT64UpscalerMode},
+    {.name = "rt64_denoiser",                  .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64Denoiser},
     // sound settings
     {.name = "master_volume",                  .type = CONFIG_TYPE_UINT, .uintValue = &configMasterVolume},
     {.name = "music_volume",                   .type = CONFIG_TYPE_UINT, .uintValue = &configMusicVolume},

@@ -252,7 +252,7 @@ static void gfx_d3d11_init(void) {
     d3d.sample_description.Quality = 0;
 
     // Create the swap chain
-    d3d.swap_chain = gfx_window_dxgi_create_swap_chain(d3d.device.Get());
+    d3d.swap_chain = gfx_window_dxgi_create_swap_chain(d3d.device.Get(), 1);
 
     // Create D3D Debug device if in debug mode
 
@@ -803,7 +803,7 @@ void gfx_d3d11_set_uniform(struct ShaderProgram *prg, const char *name, ShaderUn
     }
 }
 
-static uint32_t gfx_d3d11_new_texture(void) {
+static uint32_t gfx_d3d11_new_texture(UNUSED const char *name) {
     d3d.textures.resize(d3d.textures.size() + 1);
     return (uint32_t)(d3d.textures.size() - 1);
 }

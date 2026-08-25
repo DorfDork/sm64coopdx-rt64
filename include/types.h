@@ -150,6 +150,7 @@ struct GraphNode
     u8 extraFlags;
     u8 hookProcess;
     s16 padding;
+    u32 uid;
 
 #ifdef DEBUG
     uintptr_t _guard2;

@@ -10,6 +10,7 @@ extern "C" {
 #include "gfx/gfx_opengl.h"
 #include "gfx/gfx_direct3d11.h"
 #include "gfx/gfx_direct3d12.h"
+#include "gfx/gfx_rt64.h"
 #include "gfx/gfx_metal.h"
 
 #include "gfx/gfx_window_opengl.h"

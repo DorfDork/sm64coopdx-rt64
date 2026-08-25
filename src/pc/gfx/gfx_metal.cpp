@@ -747,7 +747,7 @@ void gfx_metal_set_uniform(struct ShaderProgram *prg, const char *name, ShaderUn
     }
 }
 
-uint32_t gfx_metal_new_texture(void) {
+uint32_t gfx_metal_new_texture(UNUSED const char *name) {
     metal.textures.resize(metal.textures.size() + 1);
     return (uint32_t)(metal.textures.size() - 1);
 }

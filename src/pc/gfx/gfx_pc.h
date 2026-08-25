@@ -79,7 +79,6 @@ struct FramePass {
     bool drawWorldGeometry;
     ColorRGBA clearColor;
     enum PassFilter passFilter;
-    bool d3d12CurrentlyShaderResource;
 };
 
 extern struct RSP rsp;
@@ -112,6 +111,9 @@ extern "C" {
 void gfx_init(struct GfxRenderingAPI *rapi, const char *window_title);
 struct GfxRenderingAPI *gfx_get_current_rendering_api(void);
 bool gfx_shader_stage_is(enum ShaderStage stage);
+bool gfx_backend_has(u32 caps);
+void gfx_register_layout_graph_node(void *geoLayout, void *graphNode);
+void *gfx_build_graph_node_mod(void *graphNode, float modelviewMatrix[4][4], u32 uid);
 void gfx_start_frame(void);
 void gfx_get_frame_pass_viewport_dimensions(struct FramePass *framePass, u32 *width, u32 *height);
 struct FramePass *gfx_get_current_frame_pass(void);
@@ -120,11 +122,15 @@ void gfx_run(Gfx *commands);
 void gfx_end_frame_render(void);
 void gfx_display_frame(void);
 void gfx_end_frame(void);
+void gfx_run_one_game_iter(void (*runOneGameIter)(void));
 void gfx_shutdown(void);
 void gfx_update_fog_uniforms(void);
 void gfx_update_matrices(void);
 void gfx_set_builtin_uniforms(void);
 void gfx_remove_all_color_combiners(void);
+void gfx_set_camera_perspective(float fovDegrees, float nearDist, float farDist, bool canInterpolate);
+void gfx_set_camera_matrix(float mat[4][4]);
+bool gfx_set_skybox(const Texture *const *tiles, float diffuseColor[3]);
 void gfx_pc_precomp_shader(uint32_t rgb1, uint32_t alpha1, uint32_t rgb2, uint32_t alpha2, uint32_t flags);
 
 #ifdef __cplusplus

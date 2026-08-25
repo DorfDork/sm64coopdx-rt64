@@ -18,6 +18,7 @@
 #include "pc/gfx/gfx_rendering_api.h"
 #include "pc/gfx/gfx_pc.h"
 #include "pc/gfx/gfx_shader.h"
+#include "pc/gfx/gfx_rt64.h"
 #include "include/level_misc_macros.h"
 #include "include/macro_presets.h"
 #include "utils/smlua_anim_utils.h"
@@ -847,6 +848,88 @@ int smlua_func_smlua_anim_util_register_animation(lua_State* L) {
     return 1;
 }
 
+  //////////
+ // RT64 //
+//////////
+
+#if defined(_WIN32)
+
+static int smlua_func_gfx_rt64_set_level_lights(lua_State* L) {
+    if (!smlua_functions_valid_param_count(L, 3)) { return 0; }
+
+    int levelNum = smlua_to_integer(L, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("gfx_rt64_set_level_lights: Failed to convert parameter 1"); return 0; }
+
+    int areaIndex = smlua_to_integer(L, 2);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("gfx_rt64_set_level_lights: Failed to convert parameter 2"); return 0; }
+
+    if (lua_type(L, 3) != LUA_TTABLE) {
+        LOG_LUA_LINE("Invalid type passed to gfx_rt64_set_level_lights: %s", luaL_typename(L, 3));
+        return 0;
+    }
+
+    gfx_rt64_lua_register_level_lights(L, levelNum, areaIndex, 3);
+    return 1;
+}
+
+static int smlua_func_gfx_rt64_set_geo_layout_mod(lua_State* L) {
+    if (!smlua_functions_valid_param_count(L, 2)) { return 0; }
+
+    const char* name = smlua_to_string(L, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("gfx_rt64_set_geo_layout_mod: Failed to convert parameter 1"); return 0; }
+
+    if (lua_type(L, 2) != LUA_TTABLE) {
+        LOG_LUA_LINE("Invalid type passed to gfx_rt64_set_geo_layout_mod: %s", luaL_typename(L, 2));
+        return 0;
+    }
+
+    gfx_rt64_lua_register_geo_layout_mod(L, name, 2);
+    return 1;
+}
+
+static int smlua_func_gfx_rt64_set_texture_mod(lua_State* L) {
+    if (!smlua_functions_valid_param_count(L, 2)) { return 0; }
+
+    const char* name = smlua_to_string(L, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("gfx_rt64_set_texture_mod: Failed to convert parameter 1"); return 0; }
+
+    if (lua_type(L, 2) != LUA_TTABLE) {
+        LOG_LUA_LINE("Invalid type passed to gfx_rt64_set_texture_mod: %s", luaL_typename(L, 2));
+        return 0;
+    }
+
+    gfx_rt64_lua_register_texture_mod(L, name, 2);
+    return 1;
+}
+
+static int smlua_func_gfx_rt64_is_active(lua_State* L) {
+    lua_pushboolean(L, gfx_rt64_lua_is_active());
+    return 1;
+}
+
+static int smlua_func_gfx_rt64_get_area_lighting(lua_State* L) {
+    if (!smlua_functions_valid_param_count(L, 2)) { return 0; }
+
+    int levelNum = smlua_to_integer(L, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("gfx_rt64_get_area_lighting: Failed to convert parameter 1"); return 0; }
+
+    int areaIndex = smlua_to_integer(L, 2);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("gfx_rt64_get_area_lighting: Failed to convert parameter 2"); return 0; }
+
+    smlua_push_object(L, LOT_RT64AREALIGHTING, gfx_rt64_lua_get_area_lighting(levelNum, areaIndex), NULL);
+    return 1;
+}
+
+#else
+
+static int smlua_func_gfx_rt64_set_level_lights(UNUSED lua_State* L) { return 1; }
+static int smlua_func_gfx_rt64_set_geo_layout_mod(UNUSED lua_State* L) { return 1; }
+static int smlua_func_gfx_rt64_set_texture_mod(UNUSED lua_State* L) { return 1; }
+static int smlua_func_gfx_rt64_is_active(lua_State* L) { lua_pushboolean(L, false); return 1; }
+static int smlua_func_gfx_rt64_get_area_lighting(lua_State* L) { lua_pushnil(L); return 1; }
+
+#endif
+
   /////////////
  // console //
 /////////////
@@ -1204,4 +1287,9 @@ void smlua_bind_functions(void) {
     smlua_bind_function(L, "gfx_shader_set_vec3_array", smlua_func_gfx_shader_set_vec3_array);
     smlua_bind_function(L, "gfx_shader_set_vec4_array", smlua_func_gfx_shader_set_vec4_array);
     smlua_bind_function(L, "gfx_shader_set_mat4_array", smlua_func_gfx_shader_set_mat4_array);
+    smlua_bind_function(L, "gfx_rt64_set_level_lights", smlua_func_gfx_rt64_set_level_lights);
+    smlua_bind_function(L, "gfx_rt64_set_geo_layout_mod", smlua_func_gfx_rt64_set_geo_layout_mod);
+    smlua_bind_function(L, "gfx_rt64_set_texture_mod", smlua_func_gfx_rt64_set_texture_mod);
+    smlua_bind_function(L, "gfx_rt64_is_active", smlua_func_gfx_rt64_is_active);
+    smlua_bind_function(L, "gfx_rt64_get_area_lighting", smlua_func_gfx_rt64_get_area_lighting);
 }

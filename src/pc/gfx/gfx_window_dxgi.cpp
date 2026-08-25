@@ -127,6 +127,10 @@ static bool gfx_window_dxgi_start_frame(void) {
 }
 
 static void gfx_window_dxgi_swap_buffers_begin(void) {
+    if (dxgi.swap_chain.Get() == nullptr) { // RT64 is null because it has it's own D3D12 device and swap chain
+        return;
+    }
+
     UINT syncInterval = configWindow.vsync;
     UINT presentFlags = 0;
     if (!syncInterval && dxgi.allow_tearing) {
@@ -167,7 +171,7 @@ void gfx_window_dxgi_create_factory_and_device(bool debug, int d3d_version, bool
     SDL_SetWindowTitle(sSdlWindow, dxgi.window_title.c_str());
 }
 
-ComPtr<IDXGISwapChain1> gfx_window_dxgi_create_swap_chain(IUnknown *device) {
+ComPtr<IDXGISwapChain1> gfx_window_dxgi_create_swap_chain(IUnknown *device, UINT max_frame_latency) {
     bool win8 = IsWindows8OrGreater(); // DXGI_SCALING_NONE is only supported on Win8 and beyond
     bool dxgi_13 = dxgi.CreateDXGIFactory2 != nullptr; // DXGI 1.3 introduced waitable object
 
@@ -181,7 +185,7 @@ ComPtr<IDXGISwapChain1> gfx_window_dxgi_create_swap_chain(IUnknown *device) {
     }
 
     DXGI_SWAP_CHAIN_DESC1 swap_chain_desc = {};
-    swap_chain_desc.BufferCount = 2;
+    swap_chain_desc.BufferCount = max_frame_latency + 1;
     swap_chain_desc.Width = 0;
     swap_chain_desc.Height = 0;
     swap_chain_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -203,18 +207,29 @@ ComPtr<IDXGISwapChain1> gfx_window_dxgi_create_swap_chain(IUnknown *device) {
 
     ComPtr<IDXGISwapChain2> swap_chain2;
     if (dxgi.swap_chain->QueryInterface(__uuidof(IDXGISwapChain2), &swap_chain2) == S_OK) {
-        ThrowIfFailed(swap_chain2->SetMaximumFrameLatency(1));
+        ThrowIfFailed(swap_chain2->SetMaximumFrameLatency(max_frame_latency));
         dxgi.waitable_object = swap_chain2->GetFrameLatencyWaitableObject();
         WaitForSingleObject(dxgi.waitable_object, INFINITE);
     } else {
+        dxgi.waitable_object = nullptr;
         ComPtr<IDXGIDevice1> device1;
-        ThrowIfFailed(device->QueryInterface(IID_PPV_ARGS(&device1)));
-        ThrowIfFailed(device1->SetMaximumFrameLatency(1));
+        if (SUCCEEDED(device->QueryInterface(IID_PPV_ARGS(&device1)))) {
+            ThrowIfFailed(device1->SetMaximumFrameLatency(max_frame_latency));
+        }
     }
 
     ThrowIfFailed(dxgi.swap_chain->GetDesc1(&swap_chain_desc));
 
     return dxgi.swap_chain;
+}
+
+void gfx_window_dxgi_release_swap_chain(void) {
+    if (dxgi.waitable_object != nullptr) {
+        CloseHandle(dxgi.waitable_object);
+        dxgi.waitable_object = nullptr;
+    }
+
+    dxgi.swap_chain.Reset();
 }
 
 static int gfx_window_dxgi_get_max_msaa(void) {

@@ -11,6 +11,8 @@
 #include "include/geo_commands.h"
 #include "pc/debuglog.h"
 
+u32 gCurGraphNodeUID = 0;
+
 /**
  * Initialize a geo node with a given type. Sets all links such that there
  * are no siblings, parent or children for this node.
@@ -25,6 +27,7 @@ void init_scene_graph_node_links(struct GraphNode *graphNode, s32 type) {
     graphNode->children = NULL;
     graphNode->georef = NULL;
     graphNode->hookProcess = 0;
+    graphNode->uid = gCurGraphNodeUID++;
 #ifdef DEBUG
     graphNode->_guard1 = GRAPH_NODE_GUARD;
     graphNode->_guard2 = GRAPH_NODE_GUARD;

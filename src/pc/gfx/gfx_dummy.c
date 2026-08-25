@@ -102,7 +102,7 @@ static void gfx_dummy_renderer_set_uniform_buffer(UNUSED enum ShaderStage stage,
 static void gfx_dummy_renderer_set_uniform(UNUSED struct ShaderProgram *prg, UNUSED const char *name, UNUSED ShaderUniformType type, UNUSED UNUSED const void *data, UNUSED u32 numElements) {
 }
 
-static uint32_t gfx_dummy_renderer_new_texture(void) {
+static uint32_t gfx_dummy_renderer_new_texture(UNUSED const char *name) {
     return 0;
 }
 

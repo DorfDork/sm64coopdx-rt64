@@ -20,9 +20,12 @@
 #include "config.h"
 #include "macros.h"
 
+#include "data/dynos.c.h"
+
 #include "engine/lighting_engine.h"
 #include "engine/math_util.h"
 
+#include "game/game_init.h"
 #include "game/object_helpers.h"
 #include "game/rendering_graph_node.h"
 
@@ -104,6 +107,7 @@ static struct RenderingState {
     u8 rdp_fog_color_b;
     struct Box viewport, scissor;
     struct ShaderProgram *shader_program;
+    struct ColorCombiner *colorCombiner;
     struct TextureHashmapNode *textures[2];
     ALIGNED16 Mat4 mvp_matrix;
     ALIGNED16 Mat4 mv_matrix;
@@ -111,17 +115,53 @@ static struct RenderingState {
     ALIGNED16 Mat4 v_matrix;
     ALIGNED16 Mat4 p_matrix;
     u32 x_adjust_4by3;
+    const Gfx *materialDisplayList;
+    bool textureGenEnabled;
+    float textureGenU[4];
+    float textureGenV[4];
 } sRenderingState;
+
+static const Gfx *sCurrentDisplayList = NULL;
+static const Gfx *sMaterialDisplayList = NULL;
 
 struct GfxDimensions gfx_current_dimensions = { 0 };
 
 static bool sDroppedFrame = false;
 
-static float buf_vbo[VERTEX_STRIDE] = { 0.0f };
+static float buf_vbo[VERTEX_STRIDE_MAX] = { 0.0f };
 static size_t buf_vbo_len = 0;
 static size_t buf_vbo_num_tris = 0;
+static size_t sMaxBufferedTris = MAX_BUFFERED;
+
+static Mat4 sLastMVPMatrix;
+static Mat4 sLastModelViewMatrix;
+static Mat4 sLastModelMatrix;
+static Mat4 sLastViewMatrix;
+static Mat4 sLastProjectionMatrix;
+static bool sMatrixCacheValid = false;
 
 static struct GfxRenderingAPI *gfx_rapi = NULL;
+
+static u32 sBackendCaps = 0;
+
+bool gfx_backend_has(u32 caps) {
+    return (sBackendCaps & caps) != 0;
+}
+
+static struct {
+    bool doubleSided;
+    u32 currentUid;
+    void *currentGraphNodeMod;
+    void *currentGraphNodeRoot;
+    Mat4 alignedModelMatrix;
+    Mat4 extraModelMatrix;
+    Mat4 cameraMatrix;
+    u32 cameraTimestamp;
+    bool cameraReported;
+    bool cameraActive;
+    bool perspTrianglesDrawn;
+    bool isOrtho;
+} sSceneState;
 
 static f32 sDepthZAdd = 0;
 static f32 sDepthZMult = 1;
@@ -190,9 +230,34 @@ void ext_gfx_run_dl(Gfx* cmd);
 /*static unsigned long get_time(void) {
     return 0;
 }*/
+
+static bool gfx_matrix_is_affine(Mat4 mat) {
+    return (mat[0][3] == 0.0f) && (mat[1][3] == 0.0f) && (mat[2][3] == 0.0f) && (mat[3][3] == 1.0f);
+}
+
+static bool gfx_matrix_is_identity(Mat4 mat) {
+    return memcmp(mat, gMat4Identity, sizeof(Mat4)) == 0;
+}
+
+static void gfx_update_model_matrix(void) {
+    mtxf_mul(rsp.M_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], gInverseCameraMatrix.m);
+    if (gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY)) {
+        mtxf_mul(rsp.M_matrix, rsp.M_matrix, sSceneState.extraModelMatrix);
+    }
+}
+
 static void gfx_flush(void) {
     if (buf_vbo_len > 0) {
-        gfx_rapi->draw_triangles(buf_vbo, buf_vbo_len, buf_vbo_num_tris);
+        if ((gfx_rapi->draw_triangles_ortho != NULL) && (gfx_rapi->draw_triangles_persp != NULL)) {
+            if (sSceneState.isOrtho) {
+                gfx_rapi->draw_triangles_ortho(buf_vbo, buf_vbo_len, buf_vbo_num_tris, sSceneState.doubleSided, sSceneState.currentUid);
+            } else {
+                gfx_rapi->draw_triangles_persp(buf_vbo, buf_vbo_len, buf_vbo_num_tris, rsp.M_matrix, sSceneState.doubleSided, sSceneState.currentUid);
+                sSceneState.perspTrianglesDrawn = true;
+            }
+        } else {
+            gfx_rapi->draw_triangles(buf_vbo, buf_vbo_len, buf_vbo_num_tris);
+        }
         buf_vbo_len = 0;
         buf_vbo_num_tris = 0;
     }
@@ -237,6 +302,7 @@ static struct ShaderProgram *gfx_lookup_or_create_shader_program(struct ColorCom
         gfx_rapi->unload_shader(sRenderingState.shader_program);
         prg = gfx_rapi->create_and_load_new_shader(cc);
         sRenderingState.shader_program = prg;
+        sRenderingState.colorCombiner = NULL;
     }
     return prg;
 }
@@ -324,6 +390,8 @@ static struct ColorCombiner *gfx_lookup_or_create_color_combiner(struct CombineM
     color_combiner_pool_index = (color_combiner_pool_index + 1) % CC_MAX_SHADERS;
     if (color_combiner_pool_size < CC_MAX_SHADERS) { color_combiner_pool_size++; }
 
+    if (sRenderingState.colorCombiner == comb) { sRenderingState.colorCombiner = NULL; }
+
     memcpy(&comb->cm, cm, sizeof(struct CombineMode));
     gfx_generate_cc(comb);
 
@@ -358,7 +426,9 @@ static bool gfx_texture_cache_lookup(int tile, struct TextureHashmapNode **n, co
     if (!node) { return false; }
     *node = &gfx_texture_cache.pool[gfx_texture_cache.pool_pos++];
     if ((*node)->texture_addr == NULL) {
-        (*node)->texture_id = gfx_rapi->new_texture();
+        struct TextureInfo texInfo = { 0 };
+        const char *texName = dynos_texture_get_from_data(orig_addr, &texInfo) ? texInfo.name : NULL;
+        (*node)->texture_id = gfx_rapi->new_texture(texName ? texName : "");
     }
     gfx_rapi->select_texture(tile, (*node)->texture_id);
     gfx_rapi->set_sampler_parameters(tile, false, 0, 0);
@@ -691,7 +761,20 @@ static void OPTIMIZE_O3 gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
     if (parameters & G_MTX_PROJECTION) {
         if (parameters & G_MTX_LOAD) {
             mtxf_copy(rsp.P_matrix, matrix);
+            mtxf_identity(sSceneState.extraModelMatrix);
+            sSceneState.isOrtho = (matrix[3][3] != 0.0f);
         } else {
+            if (gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY) && !sSceneState.isOrtho &&
+                gfx_matrix_is_affine(matrix) && !gfx_matrix_is_identity(matrix)) {
+                if (sSceneState.cameraActive && !sSceneState.perspTrianglesDrawn) {
+                    Mat4 modifiedCamera;
+                    mtxf_mul(modifiedCamera, sSceneState.cameraMatrix, matrix);
+                    gfx_rapi->set_camera_matrix(modifiedCamera);
+                } else {
+                    mtxf_mul(sSceneState.extraModelMatrix, matrix, sSceneState.extraModelMatrix);
+                }
+            }
+
             mtxf_mul(rsp.P_matrix, matrix, rsp.P_matrix);
         }
     } else { // G_MTX_MODELVIEW
@@ -707,7 +790,7 @@ static void OPTIMIZE_O3 gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
         rsp.lights_changed = 1;
     }
     mtxf_inverse(rsp.V_matrix, gInverseCameraMatrix.m);
-    mtxf_mul(rsp.M_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], gInverseCameraMatrix.m);
+    gfx_update_model_matrix();
     mtxf_mul(rsp.MVP_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], rsp.P_matrix);
 }
 
@@ -717,7 +800,7 @@ static void gfx_sp_pop_matrix(uint32_t count) {
         if (rsp.modelview_matrix_stack_size > 0) {
             --rsp.modelview_matrix_stack_size;
             if (rsp.modelview_matrix_stack_size > 0) {
-                mtxf_mul(rsp.M_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], gInverseCameraMatrix.m);
+                gfx_update_model_matrix();
                 mtxf_mul(rsp.MVP_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], rsp.P_matrix);
             }
         }
@@ -767,8 +850,59 @@ static OPTIMIZE_O3 void gfx_local_to_world_space(VEC_OUT Vec3f pos, VEC_OUT Vec3
     }
 }
 
+static OPTIMIZE_O3 void gfx_align_cached_vertex(struct GfxVertex *d, Mat4 offset) {
+    float x = d->localX * offset[0][0] + d->localY * offset[1][0] + d->localZ * offset[2][0] + offset[3][0];
+    float y = d->localX * offset[0][1] + d->localY * offset[1][1] + d->localZ * offset[2][1] + offset[3][1];
+    float z = d->localX * offset[0][2] + d->localY * offset[1][2] + d->localZ * offset[2][2] + offset[3][2];
+    d->localX = x;
+    d->localY = y;
+    d->localZ = z;
+
+    float nx = d->nx * offset[0][0] + d->ny * offset[1][0] + d->nz * offset[2][0];
+    float ny = d->nx * offset[0][1] + d->ny * offset[1][1] + d->nz * offset[2][1];
+    float nz = d->nx * offset[0][2] + d->ny * offset[1][2] + d->nz * offset[2][2];
+    d->nx = nx;
+    d->ny = ny;
+    d->nz = nz;
+}
+
+static OPTIMIZE_O3 void gfx_align_cached_vertices_to_matrix(size_t dest_index, size_t n_vertices) {
+    if (memcmp(sSceneState.alignedModelMatrix, rsp.M_matrix, sizeof(Mat4)) == 0) {
+        return;
+    }
+
+    f32 (*m)[4] = rsp.M_matrix;
+    f32 det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+            - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+            + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    bool invertible = (fabsf(det) > 1e-12f);
+
+    if (invertible && (dest_index > 0 || (dest_index + n_vertices) < MAX_VERTICES)) {
+        Mat4 invModel, offset;
+        mtxf_inverse(invModel, rsp.M_matrix);
+        mtxf_mul(offset, sSceneState.alignedModelMatrix, invModel);
+
+        for (size_t i = 0; i < dest_index; i++) {
+            gfx_align_cached_vertex(&rsp.loaded_vertices[i], offset);
+        }
+        for (size_t i = dest_index + n_vertices; i < MAX_VERTICES; i++) {
+            gfx_align_cached_vertex(&rsp.loaded_vertices[i], offset);
+        }
+    }
+
+    if (invertible) {
+        mtxf_copy(sSceneState.alignedModelMatrix, rsp.M_matrix);
+    }
+}
+
 static void OPTIMIZE_O3 gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *vertices, bool worldGeometry) {
     if (!vertices) { return; }
+
+    const bool modelSpaceGeometry = gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY);
+
+    if (modelSpaceGeometry) {
+        gfx_align_cached_vertices_to_matrix(dest_index, n_vertices);
+    }
 
     Vec3f globalLightCached[2] = { { 1.f, 1.f, 1.f }, { 1.f, 1.f, 1.f } };
     Vec3f vertexColorCached;
@@ -824,6 +958,8 @@ static void OPTIMIZE_O3 gfx_sp_vertex(size_t n_vertices, size_t dest_index, cons
 
         // are we on affect all shaded surfaces mode and on a vertex colorable surface
         bool leAffectAllVertexColored = (le_get_mode() == LE_MODE_AFFECT_ALL_SHADED_AND_COLORED && worldGeometry);
+
+        d->nx = d->ny = d->nz = 0.0f;
 
         if (rsp.geometry_mode & G_LIGHTING) {
             if (rsp.lights_changed) {
@@ -883,13 +1019,15 @@ static void OPTIMIZE_O3 gfx_sp_vertex(size_t n_vertices, size_t dest_index, cons
 
             if (!gFullbright) {
                 for (int32_t i = 0; i < rsp.current_num_lights - 1; i++) {
-                    float intensity = 0;
+                    float intensity = 0.6f;
+                    if (!modelSpaceGeometry) {
+                        intensity = 0;
+                        intensity += nx * rsp.current_lights_coeffs[i][0];
+                        intensity += ny * rsp.current_lights_coeffs[i][1];
+                        intensity += nz * rsp.current_lights_coeffs[i][2];
+                        intensity /= 127.0f;
+                    }
 
-                    intensity += nx * rsp.current_lights_coeffs[i][0];
-                    intensity += ny * rsp.current_lights_coeffs[i][1];
-                    intensity += nz * rsp.current_lights_coeffs[i][2];
-
-                    intensity /= 127.0f;
                     if (intensity > 0.0f) {
                         r += intensity * rsp.current_lights[i].col[0] * globalLightCached[0][0];
                         g += intensity * rsp.current_lights[i].col[1] * globalLightCached[0][1];
@@ -938,7 +1076,7 @@ static void OPTIMIZE_O3 gfx_sp_vertex(size_t n_vertices, size_t dest_index, cons
                 }
             }
 
-            if (rsp.geometry_mode & G_TEXTURE_GEN) {
+            if ((rsp.geometry_mode & G_TEXTURE_GEN) && !modelSpaceGeometry) {
                 float dotx = 0, doty = 0;
                 dotx += nx * rsp.current_lookat_coeffs[0][0];
                 dotx += ny * rsp.current_lookat_coeffs[0][1];
@@ -1047,18 +1185,56 @@ static void OPTIMIZE_O3 gfx_sp_vertex(size_t n_vertices, size_t dest_index, cons
     }
 }
 
+static inline float gfx_apply_tile_shift(float scale, u8 shift) {
+    if (shift == 0) { return scale; }
+    return (shift <= 10) ? (scale / (1 << shift)) : (scale * (1 << (16 - shift)));
+}
+
+struct TextureTileTransform {
+    float uScale, vScale;
+    float uOffset, vOffset;
+    float uBias, vBias;
+};
+
+static struct TextureTileTransform gfx_texture_tile_transform(void) {
+    const struct TextureTile *tile = &rdp.texture_tile[0];
+    const u32 tileW = (tile->lrs - tile->uls + 4) / 4;
+    const u32 tileH = (tile->lrt - tile->ult + 4) / 4;
+    const float texWidth = (float)(tileW ? tileW : 1);
+    const float texHeight = (float)(tileH ? tileH : 1);
+    const bool filtered = ((rdp.other_mode_h & (3U << G_MDSFT_TEXTFILT)) != G_TF_POINT);
+
+    struct TextureTileTransform t;
+    t.uScale = gfx_apply_tile_shift((1.0f / 32.0f) / texWidth, tile->shifts);
+    t.vScale = gfx_apply_tile_shift((1.0f / 32.0f) / texHeight, tile->shiftt);
+    t.uOffset = (float)(tile->uls * 8);
+    t.vOffset = (float)(tile->ult * 8);
+    t.uBias = filtered ? (0.5f / texWidth) : 0.0f;
+    t.vBias = filtered ? (0.5f / texHeight) : 0.0f;
+    return t;
+}
+
 static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx) {
     struct GfxVertex *v1 = &rsp.loaded_vertices[vtx1_idx];
     struct GfxVertex *v2 = &rsp.loaded_vertices[vtx2_idx];
     struct GfxVertex *v3 = &rsp.loaded_vertices[vtx3_idx];
     struct GfxVertex *v_arr[3] = { v1, v2, v3 };
 
-    if (v1->clip_rej & v2->clip_rej & v3->clip_rej && gCullingEnabled) {
+    const bool gpuVisibility = gfx_backend_has(GFX_BACKEND_GPU_VISIBILITY);
+    const bool modelSpaceGeometry = gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY);
+
+    if (!gpuVisibility && (v1->clip_rej & v2->clip_rej & v3->clip_rej) && gCullingEnabled) {
         // The whole triangle lies outside the visible area
         return;
     }
 
-    if ((rsp.geometry_mode & G_CULL_BOTH) != 0 && gCullingEnabled) {
+    if (gpuVisibility) {
+        bool doubleSided = ((rsp.geometry_mode & G_CULL_BOTH) == 0) || !gCullingEnabled;
+        if (doubleSided != sSceneState.doubleSided) {
+            gfx_flush();
+            sSceneState.doubleSided = doubleSided;
+        }
+    } else if ((rsp.geometry_mode & G_CULL_BOTH) != 0 && gCullingEnabled) {
         float dx1 = v1->x / (v1->w) - v2->x / (v2->w);
         float dy1 = v1->y / (v1->w) - v2->y / (v2->w);
         float dx2 = v3->x / (v3->w) - v2->x / (v2->w);
@@ -1118,37 +1294,51 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
         sRenderingState.fog_enabled = fog_enabled;
     }
 
-    if (sDepthZAdd != sRenderingState.depth_z_add) {
+    if (sDepthZAdd != sRenderingState.depth_z_add ||
+        sDepthZMult != sRenderingState.depth_z_mult ||
+        sDepthZSub != sRenderingState.depth_z_sub) {
         gfx_flush();
         sRenderingState.depth_z_add = sDepthZAdd;
-    }
-
-    if (sDepthZMult != sRenderingState.depth_z_mult) {
-        gfx_flush();
         sRenderingState.depth_z_mult = sDepthZMult;
-    }
-
-    if (sDepthZSub != sRenderingState.depth_z_sub) {
-        gfx_flush();
         sRenderingState.depth_z_sub = sDepthZSub;
     }
 
-    if (rsp.fog_mul != sRenderingState.fog_mul) {
-        gfx_flush();
-        sRenderingState.fog_mul = rsp.fog_mul;
+    if (modelSpaceGeometry && (gfx_rapi->set_texture_gen != NULL)) {
+        const u32 textureGenBits = (G_LIGHTING | G_TEXTURE_GEN);
+        const bool textureGenEnabled = ((rsp.geometry_mode & textureGenBits) == textureGenBits);
+        float coeffU[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        float coeffV[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        if (textureGenEnabled) {
+            const struct TextureTileTransform tile = gfx_texture_tile_transform();
+            const float texRadiusU = rsp.texture_scaling_factor.s / 4.0f;
+            const float texRadiusV = rsp.texture_scaling_factor.t / 4.0f;
+            const float gainU = texRadiusU * tile.uScale;
+            const float gainV = texRadiusV * tile.vScale;
+            for (s32 i = 0; i < 3; i++) {
+                coeffU[i] = rsp.current_lookat_coeffs[0][i] * gainU;
+                coeffV[i] = rsp.current_lookat_coeffs[1][i] * gainV;
+            }
+
+            coeffU[3] = (texRadiusU - tile.uOffset) * tile.uScale + tile.uBias;
+            coeffV[3] = (texRadiusV - tile.vOffset) * tile.vScale + tile.vBias;
+        }
+
+        if ((textureGenEnabled != sRenderingState.textureGenEnabled) ||
+            (memcmp(coeffU, sRenderingState.textureGenU, sizeof(coeffU)) != 0) ||
+            (memcmp(coeffV, sRenderingState.textureGenV, sizeof(coeffV)) != 0)) {
+
+            gfx_flush();
+            sRenderingState.textureGenEnabled = textureGenEnabled;
+            memcpy(sRenderingState.textureGenU, coeffU, sizeof(coeffU));
+            memcpy(sRenderingState.textureGenV, coeffV, sizeof(coeffV));
+            gfx_rapi->set_texture_gen(textureGenEnabled, coeffU, coeffV);
+        }
     }
 
-    if (gFogIntensity != sRenderingState.fog_intensity) {
-        gfx_flush();
-        sRenderingState.fog_intensity = gFogIntensity;
-    }
-
-    if (rsp.fog_offset != sRenderingState.fog_offset) {
-        gfx_flush();
-        sRenderingState.fog_offset = rsp.fog_offset;
-    }
-
-    if (gFogColor[0] != sRenderingState.fog_color_r ||
+    if (gFogIntensity != sRenderingState.fog_intensity ||
+        rsp.fog_mul != sRenderingState.fog_mul ||
+        rsp.fog_offset != sRenderingState.fog_offset ||
+        gFogColor[0] != sRenderingState.fog_color_r ||
         gFogColor[1] != sRenderingState.fog_color_g ||
         gFogColor[2] != sRenderingState.fog_color_b ||
         rdp.fog_color.r != sRenderingState.rdp_fog_color_r ||
@@ -1157,12 +1347,19 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
 
         gfx_flush();
 
+        sRenderingState.fog_intensity = gFogIntensity;
+        sRenderingState.fog_mul = rsp.fog_mul;
+        sRenderingState.fog_offset = rsp.fog_offset;
         sRenderingState.fog_color_r = gFogColor[0];
         sRenderingState.fog_color_g = gFogColor[1];
         sRenderingState.fog_color_b = gFogColor[2];
         sRenderingState.rdp_fog_color_r = rdp.fog_color.r;
         sRenderingState.rdp_fog_color_g = rdp.fog_color.g;
         sRenderingState.rdp_fog_color_b = rdp.fog_color.b;
+
+        if (gfx_rapi->set_fog != NULL) {
+            gfx_rapi->set_fog(rdp.fog_color.r, rdp.fog_color.g, rdp.fog_color.b, (s16)(rsp.fog_mul * gFogIntensity), rsp.fog_offset);
+        }
     }
 
     if (rdp.viewport_or_scissor_changed) {
@@ -1209,11 +1406,18 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
     cm = &comb->cm;
 
     struct ShaderProgram *prg = comb->prg;
-    if (prg != sRenderingState.shader_program) {
+
+    const bool programChanged = (prg != sRenderingState.shader_program);
+    const bool combinerChanged = (comb != sRenderingState.colorCombiner);
+    if (programChanged || combinerChanged) {
         gfx_flush();
-        gfx_rapi->unload_shader(sRenderingState.shader_program);
-        gfx_rapi->load_shader(prg);
-        sRenderingState.shader_program = prg;
+        if (programChanged) {
+            gfx_rapi->unload_shader(sRenderingState.shader_program);
+            gfx_rapi->load_shader(prg);
+            sRenderingState.shader_program = prg;
+            sMatrixCacheValid = false;
+        }
+        sRenderingState.colorCombiner = comb;
         gfx_set_builtin_uniforms();
         smlua_call_event_hooks(HOOK_ON_SET_SHADER_PROGRAM);
     }
@@ -1222,9 +1426,17 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
         gfx_rapi->set_use_alpha(cm->use_alpha);
         sRenderingState.alpha_blend = cm->use_alpha;
     }
+
+    if (gfx_rapi->set_material_display_list != NULL && sMaterialDisplayList != sRenderingState.materialDisplayList) {
+        gfx_flush();
+        gfx_rapi->set_material_display_list(sMaterialDisplayList);
+        sRenderingState.materialDisplayList = sMaterialDisplayList;
+    }
     uint8_t num_inputs;
     bool used_textures[2];
     gfx_rapi->shader_get_info(prg, &num_inputs, used_textures);
+    const bool fullVertexLayout = (gfx_rapi->shader_uses_full_vertex_layout != NULL) &&
+                                    gfx_rapi->shader_uses_full_vertex_layout(prg);
 
     for (int32_t i = 0; i < 2; i++) {
         if (used_textures[i]) {
@@ -1245,6 +1457,98 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
                 }
             }
         }
+    }
+
+    if (modelSpaceGeometry && !(fullVertexLayout && sSceneState.isOrtho)) {
+        const bool isOrtho = sSceneState.isOrtho;
+        const bool useTexture = used_textures[0] || used_textures[1];
+        struct TextureTileTransform tex = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+        if (useTexture) {
+            tex = gfx_texture_tile_transform();
+        }
+
+        enum { VTX_COLOR_CONST = 0, VTX_COLOR_SHADE, VTX_COLOR_SHADEA, VTX_COLOR_LOD };
+        static const struct RGBA sZeroColor = { 0, 0, 0, 0 };
+        struct RGBA primAlpha, envAlpha;
+        memset(&primAlpha, rdp.prim_color.a, sizeof(primAlpha));
+        memset(&envAlpha, rdp.env_color.a, sizeof(envAlpha));
+        u8 inputSource[CC_MAX_INPUTS];
+        const struct RGBA *inputConstant[CC_MAX_INPUTS];
+        for (s32 j = 0; j < num_inputs; j++) {
+            inputSource[j] = VTX_COLOR_CONST;
+            inputConstant[j] = &sZeroColor;
+            switch (comb->shader_input_mapping[j]) {
+                case CCS_PRIM:   inputConstant[j] = &rdp.prim_color; break;
+                case CCS_ENV:    inputConstant[j] = &rdp.env_color; break;
+                case CCS_PRIMA:  inputConstant[j] = &primAlpha; break;
+                case CCS_ENVA:   inputConstant[j] = &envAlpha; break;
+                case CCS_SHADE:  inputSource[j] = VTX_COLOR_SHADE; break;
+                case CCS_SHADEA: inputSource[j] = VTX_COLOR_SHADEA; break;
+                case CCS_LOD:    inputSource[j] = VTX_COLOR_LOD; break;
+                default: break;
+            }
+        }
+
+        for (s32 i = 0; i < 3; i++) {
+            struct GfxVertex *v = v_arr[i];
+
+            if (isOrtho) {
+                buf_vbo[buf_vbo_len++] = v->x;
+                buf_vbo[buf_vbo_len++] = v->y;
+                buf_vbo[buf_vbo_len++] = v->z;
+                buf_vbo[buf_vbo_len++] = v->w;
+            } else {
+                buf_vbo[buf_vbo_len++] = v->localX;
+                buf_vbo[buf_vbo_len++] = v->localY;
+                buf_vbo[buf_vbo_len++] = v->localZ;
+                buf_vbo[buf_vbo_len++] = 1.0f;
+            }
+
+            buf_vbo[buf_vbo_len++] = v->nx;
+            buf_vbo[buf_vbo_len++] = v->ny;
+            buf_vbo[buf_vbo_len++] = v->nz;
+
+            if (useTexture) {
+                float u = (v->u - tex.uOffset) * tex.uScale;
+                float texV = (v->v - tex.vOffset) * tex.vScale;
+                buf_vbo[buf_vbo_len++] = u + tex.uBias;
+                buf_vbo[buf_vbo_len++] = texV + tex.vBias;
+            }
+
+            for (s32 j = 0; j < num_inputs; j++) {
+                const struct RGBA *color;
+                struct RGBA tmp;
+                switch (inputSource[j]) {
+                    case VTX_COLOR_SHADE:  color = &v->color; break;
+                    case VTX_COLOR_SHADEA:
+                        memset(&tmp, v->color.a, sizeof(tmp));
+                        color = &tmp;
+                        break;
+                    case VTX_COLOR_LOD: {
+                        float distance_frac = (v->w - 3000.0f) / 3000.0f;
+                        if (distance_frac < 0.0f) { distance_frac = 0.0f; }
+                        if (distance_frac > 1.0f) { distance_frac = 1.0f; }
+                        tmp.r = tmp.g = tmp.b = tmp.a = distance_frac * 255.0f;
+                        color = &tmp;
+                        break;
+                    }
+                    default: color = inputConstant[j]; break;
+                }
+
+                buf_vbo[buf_vbo_len++] = color->r * (1.0f / 255.0f);
+                buf_vbo[buf_vbo_len++] = color->g * (1.0f / 255.0f);
+                buf_vbo[buf_vbo_len++] = color->b * (1.0f / 255.0f);
+
+                if (cm->use_alpha) {
+                    buf_vbo[buf_vbo_len++] = color->a * (1.0f / 255.0f);
+                }
+            }
+        }
+
+        if (++buf_vbo_num_tris == sMaxBufferedTris) {
+            gfx_flush();
+        }
+        return;
     }
 
     for (int32_t i = 0; i < 3; i++) {
@@ -1393,7 +1697,7 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
         buf_vbo[buf_vbo_len++] = i == 1 ? 1.0f : 0.0f;
         buf_vbo[buf_vbo_len++] = i == 2 ? 1.0f : 0.0f;
     }
-    if (++buf_vbo_num_tris == MAX_BUFFERED) {
+    if (++buf_vbo_num_tris == sMaxBufferedTris) {
         gfx_flush();
     }
 }
@@ -1647,6 +1951,9 @@ static void gfx_dp_load_tile(uint8_t tile, uint32_t uls, uint32_t ult, uint32_t 
 
 static void gfx_dp_set_combine_mode(uint32_t rgb1, uint32_t alpha1, uint32_t rgb2, uint32_t alpha2) {
     //printf(">>> combine: %08x %08x %08x %08x\n", rgb1, alpha1, rgb2, alpha2);
+
+    sMaterialDisplayList = sCurrentDisplayList;
+
     memset(&rdp.combine_mode, 0, sizeof(struct CombineMode));
 
     rdp.combine_mode.rgb1 = rgb1;
@@ -1759,6 +2066,9 @@ static void gfx_draw_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int32_t lr
     mtxf_identity(rsp.V_matrix);
     mtxf_identity(rsp.P_matrix);
 
+    const bool wasOrtho = sSceneState.isOrtho;
+    sSceneState.isOrtho = true;
+
     u32 viewportWidth, viewportHeight;
     gfx_get_frame_pass_viewport_dimensions(gfx_get_current_frame_pass(), &viewportWidth, &viewportHeight);
 
@@ -1773,10 +2083,15 @@ static void gfx_draw_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int32_t lr
     gfx_sp_tri1(MAX_VERTICES + 0, MAX_VERTICES + 1, MAX_VERTICES + 3);
     gfx_sp_tri1(MAX_VERTICES + 1, MAX_VERTICES + 2, MAX_VERTICES + 3);
 
+    if (gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY)) {
+        gfx_flush();
+    }
+
     mtxf_copy(rsp.MVP_matrix, oldMatrixMVP);
     mtxf_copy(rsp.M_matrix, oldMatrixM);
     mtxf_copy(rsp.V_matrix, oldMatrixV);
     mtxf_copy(rsp.P_matrix, oldMatrixP);
+    sSceneState.isOrtho = wasOrtho;
 
     rsp.geometry_mode = geometry_mode_saved;
     rdp.viewport = viewport_saved;
@@ -1812,6 +2127,8 @@ static void gfx_draw_fullscreen_quad() {
 #endif
 
     gfx_rapi->create_or_load_post_process_shader();
+    sRenderingState.shader_program = NULL;
+    sRenderingState.colorCombiner = NULL;
 
     gfx_rapi->set_use_alpha(false);
     sRenderingState.alpha_blend = false;
@@ -1942,6 +2259,9 @@ static inline void *seg_addr(uintptr_t w1) {
 static void OPTIMIZE_O3 gfx_run_dl(Gfx* cmd) {
     if (!cmd) { return; }
 
+    const Gfx *callerDisplayList = sCurrentDisplayList;
+    sCurrentDisplayList = cmd;
+
     for (;;) {
         uint32_t opcode = cmd->words.w0 >> 24;
 
@@ -2002,10 +2322,15 @@ static void OPTIMIZE_O3 gfx_run_dl(Gfx* cmd) {
                     gfx_run_dl((Gfx *)seg_addr(cmd->words.w1));
                 } else {
                     cmd = (Gfx *)seg_addr(cmd->words.w1);
+                    sCurrentDisplayList = cmd;
                     --cmd; // increase after break
                 }
                 break;
             case (uint8_t)G_ENDDL:
+                if (gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY | GFX_BACKEND_OBJECT_IDENTITY)) {
+                    gfx_flush();
+                }
+                sCurrentDisplayList = callerDisplayList;
                 return;
 #ifdef F3DEX_GBI_2
             case G_GEOMETRYMODE:
@@ -2047,6 +2372,28 @@ static void OPTIMIZE_O3 gfx_run_dl(Gfx* cmd) {
 #else
                 gfx_sp_set_other_mode(C0(8, 8) + 32, C0(0, 8), (uint64_t) cmd->words.w1 << 32);
 #endif
+                break;
+            case (uint8_t)G_NOOP:
+                if (gfx_backend_has(GFX_BACKEND_OBJECT_IDENTITY)) {
+                    struct DisplayListNode *listNode = (struct DisplayListNode *)cmd->words.w1;
+                    u32 uid = (listNode != NULL) ? listNode->uid : 0;
+                    void *graphNodeMod = (listNode != NULL) ? listNode->graphNodeMod : NULL;
+                    void *graphNodeRoot = (listNode != NULL) ? listNode->graphNodeRoot : NULL;
+
+                    if (sSceneState.currentUid != uid || sSceneState.currentGraphNodeMod != graphNodeMod ||
+                        sSceneState.currentGraphNodeRoot != graphNodeRoot) {
+                        gfx_flush();
+                        sSceneState.currentUid = uid;
+                        sSceneState.currentGraphNodeMod = graphNodeMod;
+                        sSceneState.currentGraphNodeRoot = graphNodeRoot;
+                        if (gfx_rapi->set_graph_node_mod != NULL) {
+                            gfx_rapi->set_graph_node_mod(graphNodeMod);
+                        }
+                        if (gfx_rapi->set_graph_node_root != NULL) {
+                            gfx_rapi->set_graph_node_root(graphNodeRoot);
+                        }
+                    }
+                }
                 break;
 
             // RDP Commands:
@@ -2188,6 +2535,19 @@ static void gfx_sp_reset(void) {
     num_gfx_states = 0;
     sRenderingState.x_adjust_4by3 = 0;
     rdp.viewport_or_scissor_changed = true;
+
+    memset(&sRenderingState.viewport, 0, sizeof(sRenderingState.viewport));
+    memset(&sRenderingState.scissor, 0, sizeof(sRenderingState.scissor));
+
+    sSceneState.currentUid = 0;
+    sSceneState.currentGraphNodeMod = NULL;
+    sSceneState.currentGraphNodeRoot = NULL;
+    mtxf_identity(sSceneState.alignedModelMatrix);
+    mtxf_identity(sSceneState.extraModelMatrix);
+
+    sSceneState.perspTrianglesDrawn = false;
+
+    sMatrixCacheValid = false;
 }
 
 void gfx_get_dimensions(u32 *width, u32 *height) {
@@ -2204,6 +2564,8 @@ void gfx_get_adjusted_dimensions(u32 *width, u32 *height) {
 void gfx_init(struct GfxRenderingAPI *rapi, const char *window_title) {
     gfx_wm_init(window_title);
     gfx_rapi = rapi;
+    sBackendCaps = (rapi->get_capabilities != NULL) ? rapi->get_capabilities() : 0;
+    sMaxBufferedTris = gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY) ? MAX_BUFFERED_MODEL_SPACE : MAX_BUFFERED;
     gfx_rapi->init();
 
     gfx_init_shaders();
@@ -2220,12 +2582,40 @@ bool gfx_shader_stage_is(enum ShaderStage stage) {
     return (gSelectedShaderStage == stage || gSelectedShaderStage == SHADER_STAGE_ANY);
 }
 
+void gfx_register_layout_graph_node(void *geoLayout, void *graphNode) {
+    if ((gfx_rapi != NULL) && (gfx_rapi->register_layout_graph_node != NULL)) {
+        gfx_rapi->register_layout_graph_node(geoLayout, graphNode);
+    }
+}
+
+void *gfx_build_graph_node_mod(void *graphNode, float modelviewMatrix[4][4], u32 uid) {
+    if ((gfx_rapi != NULL) && (gfx_rapi->build_graph_node_mod != NULL)) {
+        return gfx_rapi->build_graph_node_mod(graphNode, modelviewMatrix, uid);
+    }
+    return NULL;
+}
+
 void gfx_start_frame(void) {
+    if (sSceneState.cameraTimestamp != gGlobalTimer) {
+        sSceneState.cameraTimestamp = gGlobalTimer;
+        sSceneState.cameraActive = sSceneState.cameraReported;
+        sSceneState.cameraReported = false;
+    }
+
     sFrameCount += 1;
     if (gGfxPcResetTex1 > 0) {
         gGfxPcResetTex1--;
         rdp.loaded_texture[1].addr = NULL;
         rdp.loaded_texture[1].size_bytes = 0;
+    }
+
+    if (!sSceneState.cameraActive && gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY) &&
+        gfx_rapi != NULL && gfx_rapi->set_camera_matrix != NULL) {
+        Mat4 view;
+        mtxf_identity(view);
+        mtxf_identity(gInverseCameraMatrix.m);
+        mtxf_copy(sSceneState.cameraMatrix, view);
+        gfx_rapi->set_camera_matrix(view);
     }
     gfx_wm_handle_events();
     gfx_wm_get_dimensions(&gfx_current_dimensions.width, &gfx_current_dimensions.height);
@@ -2268,6 +2658,18 @@ struct FramePass *gfx_get_current_frame_pass(void) {
 }
 
 static void gfx_process_lua_passes(Gfx *commands, bool *isLuaPassesActive) {
+    if (gfx_backend_has(GFX_BACKEND_PRESENTS_DIRECTLY)) {
+        for (int i = 0; i < MAX_CUSTOM_FRAME_PASSES; i++) {
+            if (gFramePasses[i].active) {
+                gfx_rapi->create_framebuffer(&gFramePasses[i]);
+                break;
+            }
+        }
+
+        *isLuaPassesActive = false;
+        return;
+    }
+
     for (int i = 0; i < MAX_CUSTOM_FRAME_PASSES; i++) {
         struct FramePass *framePass = &gFramePasses[i];
         if (!framePass->active) { continue; }
@@ -2314,6 +2716,7 @@ static void gfx_process_lua_passes(Gfx *commands, bool *isLuaPassesActive) {
             for (int j = 0; j < CC_MAX_SHADERS; j++) {
                 color_combiner_pool[j].prg = NULL;
             }
+            sRenderingState.colorCombiner = NULL;
 
             // render world
             smlua_call_event_hooks(HOOK_BEFORE_DRAW_GEOMETRY);
@@ -2351,6 +2754,8 @@ void gfx_run(Gfx *commands) {
     }
     sDroppedFrame = false;
 
+    const bool presentsDirectly = gfx_backend_has(GFX_BACKEND_PRESENTS_DIRECTLY);
+
     bool isLuaPassesActive = false;
     gfx_process_lua_passes(commands, &isLuaPassesActive);
 
@@ -2367,13 +2772,18 @@ void gfx_run(Gfx *commands) {
         }
 
         // create/update fbo
-        if (gDefaultGeoFramePass.fbo == 0 || gDefaultGeoFramePass.width != gfx_current_dimensions.width || gDefaultGeoFramePass.height != gfx_current_dimensions.height) {
-            gfx_rapi->delete_framebuffer(&gDefaultGeoFramePass);
-            gfx_get_dimensions(&gDefaultGeoFramePass.width, &gDefaultGeoFramePass.height);
-            gfx_rapi->create_framebuffer(&gDefaultGeoFramePass);
-        }
+        if (!presentsDirectly) {
+            u32 targetWidth, targetHeight;
+            gfx_get_dimensions(&targetWidth, &targetHeight);
+            if (gDefaultGeoFramePass.fbo == 0 || gDefaultGeoFramePass.width != targetWidth || gDefaultGeoFramePass.height != targetHeight) {
+                gfx_rapi->delete_framebuffer(&gDefaultGeoFramePass);
+                gDefaultGeoFramePass.width = targetWidth;
+                gDefaultGeoFramePass.height = targetHeight;
+                gfx_rapi->create_framebuffer(&gDefaultGeoFramePass);
+            }
 
-        gfx_rapi->set_framebuffer(&gDefaultGeoFramePass);
+            gfx_rapi->set_framebuffer(&gDefaultGeoFramePass);
+        }
 
         gfx_sp_reset(); // resets the rsp
 
@@ -2384,6 +2794,10 @@ void gfx_run(Gfx *commands) {
         gfx_run_dl(commands);
         gfx_end_frame_render();
         smlua_call_event_hooks(HOOK_ON_DRAW_GEOMETRY);
+    }
+
+    if (presentsDirectly) {
+        return;
     }
 
     gfx_sp_reset(); // resets the rsp
@@ -2438,10 +2852,20 @@ void gfx_end_frame(void) {
     gfx_display_frame();
 }
 
+void gfx_run_one_game_iter(void (*runOneGameIter)(void)) {
+    if (gfx_rapi != NULL && gfx_rapi->main_loop_iter != NULL) {
+        gfx_rapi->main_loop_iter(runOneGameIter);
+    } else {
+        gfx_wm_main_loop(runOneGameIter);
+    }
+}
+
 void gfx_shutdown(void) {
     if (gfx_rapi) {
         if (gfx_rapi->shutdown) gfx_rapi->shutdown();
         gfx_rapi = NULL;
+        sBackendCaps = 0;
+        sMaxBufferedTris = MAX_BUFFERED;
     }
     gfx_wm_shutdown();
     gGfxInited = false;
@@ -2477,13 +2901,32 @@ void gfx_update_matrices(void) {
     gSelectedShaderStage = SHADER_STAGE_ANY;
     gSelectedVertexUniformBuffer = 0;
     gSelectedFragmentUniformBuffer = 0;
-    gfx_rapi->set_uniform(NULL, "uModelViewProjectionMatrix", SHADER_UNIFORM_TYPE_MAT4, rsp.MVP_matrix, 1);
-    if (rsp.modelview_matrix_stack_size > 0) {
-        gfx_rapi->set_uniform(NULL, "uModelViewMatrix", SHADER_UNIFORM_TYPE_MAT4, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], 1);
+
+    if (!sMatrixCacheValid || memcmp(sLastMVPMatrix, rsp.MVP_matrix, sizeof(Mat4)) != 0) {
+        gfx_rapi->set_uniform(NULL, "uModelViewProjectionMatrix", SHADER_UNIFORM_TYPE_MAT4, rsp.MVP_matrix, 1);
+        mtxf_copy(sLastMVPMatrix, rsp.MVP_matrix);
     }
-    gfx_rapi->set_uniform(NULL, "uModelMatrix", SHADER_UNIFORM_TYPE_MAT4, rsp.M_matrix, 1);
-    gfx_rapi->set_uniform(NULL, "uViewMatrix", SHADER_UNIFORM_TYPE_MAT4, rsp.V_matrix, 1);
-    gfx_rapi->set_uniform(NULL, "uProjectionMatrix", SHADER_UNIFORM_TYPE_MAT4, rsp.P_matrix, 1);
+    if (rsp.modelview_matrix_stack_size > 0) {
+        f32 (*modelViewMatrix)[4] = rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1];
+        if (!sMatrixCacheValid || memcmp(sLastModelViewMatrix, modelViewMatrix, sizeof(Mat4)) != 0) {
+            gfx_rapi->set_uniform(NULL, "uModelViewMatrix", SHADER_UNIFORM_TYPE_MAT4, modelViewMatrix, 1);
+            mtxf_copy(sLastModelViewMatrix, modelViewMatrix);
+        }
+    }
+    if (!sMatrixCacheValid || memcmp(sLastModelMatrix, rsp.M_matrix, sizeof(Mat4)) != 0) {
+        gfx_rapi->set_uniform(NULL, "uModelMatrix", SHADER_UNIFORM_TYPE_MAT4, rsp.M_matrix, 1);
+        mtxf_copy(sLastModelMatrix, rsp.M_matrix);
+    }
+    if (!sMatrixCacheValid || memcmp(sLastViewMatrix, rsp.V_matrix, sizeof(Mat4)) != 0) {
+        gfx_rapi->set_uniform(NULL, "uViewMatrix", SHADER_UNIFORM_TYPE_MAT4, rsp.V_matrix, 1);
+        mtxf_copy(sLastViewMatrix, rsp.V_matrix);
+    }
+    if (!sMatrixCacheValid || memcmp(sLastProjectionMatrix, rsp.P_matrix, sizeof(Mat4)) != 0) {
+        gfx_rapi->set_uniform(NULL, "uProjectionMatrix", SHADER_UNIFORM_TYPE_MAT4, rsp.P_matrix, 1);
+        mtxf_copy(sLastProjectionMatrix, rsp.P_matrix);
+    }
+
+    sMatrixCacheValid = true;
 }
 
 void gfx_set_builtin_uniforms(void) {
@@ -2523,6 +2966,29 @@ void gfx_remove_all_color_combiners(void) {
     color_combiner_pool_index = 0;
     color_combiner_pool_size = 0;
     sPrevCombinerForLookup = NULL;
+    sRenderingState.colorCombiner = NULL;
+}
+
+void gfx_set_camera_perspective(float fovDegrees, float nearDist, float farDist, bool canInterpolate) {
+    if (gfx_rapi != NULL && gfx_rapi->set_camera_perspective != NULL) {
+        gfx_rapi->set_camera_perspective(fovDegrees, nearDist, farDist, canInterpolate);
+    }
+}
+
+void gfx_set_camera_matrix(float mat[4][4]) {
+    if (gfx_rapi != NULL && gfx_rapi->set_camera_matrix != NULL) {
+        mtxf_copy(sSceneState.cameraMatrix, mat);
+        sSceneState.cameraReported = true;
+        gfx_rapi->set_camera_matrix(mat);
+    }
+}
+
+bool gfx_set_skybox(const Texture *const *tiles, float diffuseColor[3]) {
+    if ((gfx_rapi == NULL) || (gfx_rapi->set_skybox == NULL)) {
+        return false;
+    }
+
+    return gfx_rapi->set_skybox(tiles, diffuseColor);
 }
 
   /////////////////////////

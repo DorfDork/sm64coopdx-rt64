@@ -81,8 +81,11 @@ struct ShaderUniformBlock {
     struct ShaderUniform uniforms[MAX_SHADER_UNIFORMS];
     int uniformCount;
     bool isGlobalBlock;
+    bool dirty; // skip re-uploading a block which was not touched since the last draw.
 #ifdef _WIN32
     ID3D11Buffer *dxConstantBuffer; // dx11 doesn't use buffer, it uses a d3d11buffer
+    u64 d3d12GpuAddr;
+    u64 d3d12Generation;
 #endif
     unsigned int glBufferId; // opengl uses a buffer id
 };
@@ -115,6 +118,8 @@ extern struct ShaderBinding *gPostProcessShaderBindings;
 
 extern const char *gDefaultPostProcessVertexShader;
 extern const char *gDefaultPostProcessFragmentShader;
+
+extern bool gPostProcessShaderCustomWindowSize;
 
 char *gfx_get_default_vertex_shader_from_cc(UNUSED struct ColorCombiner *cc);
 char *gfx_get_default_fragment_shader_from_cc(struct ColorCombiner *cc);

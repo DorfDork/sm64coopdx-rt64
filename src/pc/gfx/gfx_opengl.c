@@ -551,7 +551,7 @@ void gfx_opengl_set_uniform(struct ShaderProgram *prg, const char *name, UNUSED 
     }
 }
 
-static GLuint gfx_opengl_new_texture(void) {
+static GLuint gfx_opengl_new_texture(UNUSED const char *name) {
     if (num_textures >= tex_cache_size) {
         tex_cache_size += TEX_CACHE_STEP;
         tex_cache = realloc(tex_cache, sizeof(struct GLTexture) * tex_cache_size);

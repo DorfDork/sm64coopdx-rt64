@@ -31,6 +31,7 @@ Save file locations:
 - [gMarioStates](guides/mario-state.md)
 - [Behavior Object Lists](guides/object-lists.md)
 - [Lighting Engine](guides/lighting-engine.md)
+- [RT64 Lighting](guides/rt64-lighting.md)
 - [ModFS](guides/modfs.md)
 
 ## Important notes on player indices

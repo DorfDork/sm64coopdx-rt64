@@ -12,6 +12,8 @@
 #include "rendering_graph_node.h"
 #include "shadow.h"
 #include "sm64.h"
+#include "pc/gfx/gfx_pc.h"
+#include "pc/gfx/gfx_rendering_api.h"
 #include "game/level_update.h"
 #include "pc/lua/smlua_hooks.h"
 #include "pc/utils/misc.h"
@@ -208,6 +210,10 @@ struct GraphNodeHeldObject *gCurGraphNodeHeldObject = NULL;
 struct MarioBodyState *gCurMarioBodyState = NULL;
 u16 gAreaUpdateCounter = 0;
 
+static u32 sCurGraphNodeUIDHash = 0;
+
+static void *sCurGraphNodeMod = NULL;
+
 #ifdef F3DEX_GBI_2
 LookAt lookAt;
 #endif
@@ -320,6 +326,8 @@ void patch_mtx_interpolated(f32 delta) {
 
         guPerspective(sPerspectiveMtx, &perspNorm, fovInterpolated, sPerspectiveAspect, near, far, 1.0f);
         gSPMatrix(sPerspectivePos, VIRTUAL_TO_PHYSICAL(sPerspectiveNode), G_MTX_PROJECTION | G_MTX_LOAD | G_MTX_NOPUSH);
+
+        gfx_set_camera_perspective(fovInterpolated, near, far, gGlobalTimer != gLakituState.skipCameraInterpolationTimestamp);
     }
 
     if (sViewportClipPos != NULL) {
@@ -387,6 +395,7 @@ void patch_mtx_interpolated(f32 delta) {
         mtxf_lookat(camInterp.m, posInterp, focusInterp, sCameraNode->roll);
         mtxf_to_mtx(&camInterp, camInterp.m);
         mtxf_inverse(gInverseCameraMatrix.m, camInterp.m);
+        gfx_set_camera_matrix(camInterp.m);
     }
 
     for (u32 i = 0; i < sMtxTbl->count; i++) {
@@ -534,6 +543,8 @@ static void geo_process_master_list_sub(struct GraphNodeMasterList *node) {
         gSPSetGeometryMode(gDisplayListHead++, G_ZBUFFER);
     }
 
+    const bool shouldTagObjectID = gfx_backend_has(GFX_BACKEND_OBJECT_IDENTITY);
+
     for (s32 i = 0; i < GFX_NUM_MASTER_LISTS; i++) {
         if ((currList = node->listHeads[i]) != NULL) {
             gDPSetRenderMode(gDisplayListHead++, modeList->modes[i], mode2List->modes[i]);
@@ -550,6 +561,9 @@ static void geo_process_master_list_sub(struct GraphNodeMasterList *node) {
                 gSPMatrix(gDisplayListHead++, VIRTUAL_TO_PHYSICAL(currList->transformPrev),
                           G_MTX_MODELVIEW | G_MTX_LOAD | G_MTX_NOPUSH);
 
+                if (shouldTagObjectID) {
+                    gDPNoOpTag(gDisplayListHead++, (uintptr_t)(currList));
+                }
                 gSPDisplayList(gDisplayListHead++, currList->displayList);
 
                 currList = currList->next;
@@ -559,6 +573,10 @@ static void geo_process_master_list_sub(struct GraphNodeMasterList *node) {
     if (enableZBuffer != 0) {
         gDPPipeSync(gDisplayListHead++);
         gSPClearGeometryMode(gDisplayListHead++, G_ZBUFFER);
+    }
+
+    if (shouldTagObjectID) {
+        gDPNoOpTag(gDisplayListHead++, (uintptr_t)(NULL));
     }
 }
 
@@ -575,6 +593,9 @@ static void geo_append_display_list(void *displayList, s16 layer) {
     if (gCurGraphNodeMasterList != 0) {
         struct DisplayListNode *listNode = growing_pool_alloc(gDisplayListHeap, sizeof(struct DisplayListNode));
 
+        listNode->uid = sCurGraphNodeUIDHash;
+        listNode->graphNodeMod = sCurGraphNodeMod;
+        listNode->graphNodeRoot = (gCurGraphNodeObject != NULL) ? (void *)(gCurGraphNodeObject->sharedChild) : NULL;
         listNode->transform = gMatStackFixed[gMatStackIndex];
         listNode->transformPrev = gMatStackPrevFixed[gMatStackIndex];
         listNode->displayList = displayList;
@@ -662,6 +683,8 @@ static void geo_process_perspective(struct GraphNodePerspective *node) {
 
     // "infinite" draw distance
     if (gOverrideFar == 0 && configDrawDistance == 6) { far = max(far, MAX_FAR_PLANE_DIST); }
+
+    gfx_set_camera_perspective(node->prevFov, near, far, gGlobalTimer != gLakituState.skipCameraInterpolationTimestamp);
 
     guPerspective(mtx, &perspNorm, node->prevFov, aspect, near, far, 1.0f);
 
@@ -767,6 +790,7 @@ static void geo_process_camera(struct GraphNodeCamera *node) {
     // save the camera matrix
     if (gCamera) {
         mtxf_copy(gCamera->mtx, gMatStack[gMatStackIndex]);
+        gfx_set_camera_matrix(gCamera->mtx);
     }
 
     if (node->fnNode.node.children != 0) {
@@ -1443,6 +1467,10 @@ static s32 obj_is_in_view(struct GraphNodeObject *node, Mat4 matrix) {
         return TRUE;
     }
 
+    if (gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY)) {
+        return TRUE;
+    }
+
     // ! @bug The aspect ratio is not accounted for. When the fov value is 45,
     // the horizontal effective fov is actually 60 degrees, so you can see objects
     // visibly pop in or out at the edge of the screen.
@@ -1957,6 +1985,16 @@ void geo_process_node_and_siblings(struct GraphNode *firstNode) {
         }
 
         if (curGraphNode->flags & GRAPH_RENDER_ACTIVE) {
+            u32 previousGraphNodeUIDHash = sCurGraphNodeUIDHash;
+
+            sCurGraphNodeUIDHash = (97 * sCurGraphNodeUIDHash) + curGraphNode->uid;
+
+            void *previousGraphNodeMod = sCurGraphNodeMod;
+            void *graphNodeMod = gfx_build_graph_node_mod(curGraphNode, gMatStack[gMatStackIndex], sCurGraphNodeUIDHash);
+            if (graphNodeMod != NULL) {
+                sCurGraphNodeMod = graphNodeMod;
+            }
+
             if (curGraphNode->hookProcess) smlua_call_event_hooks(HOOK_BEFORE_GEO_PROCESS, curGraphNode, gMatStackIndex);
             if (curGraphNode->flags & GRAPH_RENDER_CHILDREN_FIRST) {
                 geo_try_process_children(curGraphNode);
@@ -2031,6 +2069,8 @@ void geo_process_node_and_siblings(struct GraphNode *firstNode) {
                         break;
                 }
             }
+            sCurGraphNodeUIDHash = previousGraphNodeUIDHash;
+            sCurGraphNodeMod = previousGraphNodeMod;
             if (curGraphNode->hookProcess) smlua_call_event_hooks(HOOK_ON_GEO_PROCESS, curGraphNode, gMatStackIndex + 1);
         } else {
             if (curGraphNode && curGraphNode->type == GRAPH_NODE_TYPE_OBJECT) {
@@ -2115,9 +2155,11 @@ void geo_process_root(struct GraphNodeRoot *node, Vp *b, Vp *c, s32 clearColor) 
         gSPMatrix(gDisplayListHead++, VIRTUAL_TO_PHYSICAL(gMatStackFixed[gMatStackIndex]), G_MTX_MODELVIEW | G_MTX_LOAD | G_MTX_NOPUSH);
 
         gCurGraphNodeRoot = node;
+        sCurGraphNodeMod = gfx_build_graph_node_mod(gCurGraphNodeRoot, gMatStack[gMatStackIndex], sCurGraphNodeUIDHash);
         if (node->node.children != NULL) {
             geo_process_node_and_siblings(node->node.children);
         }
+        sCurGraphNodeMod = NULL;
 
         gCurGraphNodeRoot = NULL;
     }

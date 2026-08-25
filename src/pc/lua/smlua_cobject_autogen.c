@@ -33,6 +33,7 @@
 #include "src/game/player_palette.h"
 #include "src/engine/graph_node.h"
 #include "include/PR/gbi.h"
+#include "src/pc/gfx/gfx_rt64_lua.h"
 
 #include "include/object_fields.h"
 
@@ -781,12 +782,15 @@ static struct LuaObjectField sDialogEntryFields[LUA_DIALOG_ENTRY_FIELD_COUNT] = 
     { "width",       LVT_S16,      offsetof(struct DialogEntry, width),       true, LOT_NONE },
 };
 
-#define LUA_DISPLAY_LIST_NODE_FIELD_COUNT 3
+#define LUA_DISPLAY_LIST_NODE_FIELD_COUNT 4
 static struct LuaObjectField sDisplayListNodeFields[LUA_DISPLAY_LIST_NODE_FIELD_COUNT] = {
     { "displayList",   LVT_COBJECT_P, offsetof(struct DisplayListNode, displayList),   false, LOT_GFX             },
+//  { "graphNodeMod",  LVT_???,       offsetof(struct DisplayListNode, graphNodeMod),  false, LOT_???             }, <--- UNIMPLEMENTED
+//  { "graphNodeRoot", LVT_???,       offsetof(struct DisplayListNode, graphNodeRoot), false, LOT_???             }, <--- UNIMPLEMENTED
     { "next",          LVT_COBJECT_P, offsetof(struct DisplayListNode, next),          false, LOT_DISPLAYLISTNODE },
 //  { "transform",     LVT_???,       offsetof(struct DisplayListNode, transform),     false, LOT_???             }, <--- UNIMPLEMENTED
 //  { "transformPrev", LVT_???,       offsetof(struct DisplayListNode, transformPrev), false, LOT_???             }, <--- UNIMPLEMENTED
+    { "uid",           LVT_U32,       offsetof(struct DisplayListNode, uid),           false, LOT_NONE            },
     { "usingCamSpace", LVT_U8,        offsetof(struct DisplayListNode, usingCamSpace), false, LOT_NONE            },
 };
 
@@ -1057,7 +1061,7 @@ static struct LuaObjectField sGlobalTexturesFields[LUA_GLOBAL_TEXTURES_FIELD_COU
     { "wario_head",   LVT_COBJECT, offsetof(struct GlobalTextures, wario_head),   true, LOT_TEXTUREINFO },
 };
 
-#define LUA_GRAPH_NODE_FIELD_COUNT 8
+#define LUA_GRAPH_NODE_FIELD_COUNT 9
 static struct LuaObjectField sGraphNodeFields[LUA_GRAPH_NODE_FIELD_COUNT] = {
     { "children",    LVT_COBJECT_P, offsetof(struct GraphNode, children),    true,  LOT_GRAPHNODE },
     { "extraFlags",  LVT_U8,        offsetof(struct GraphNode, extraFlags),  false, LOT_NONE      },
@@ -1068,6 +1072,7 @@ static struct LuaObjectField sGraphNodeFields[LUA_GRAPH_NODE_FIELD_COUNT] = {
     { "parent",      LVT_COBJECT_P, offsetof(struct GraphNode, parent),      true,  LOT_GRAPHNODE },
     { "prev",        LVT_COBJECT_P, offsetof(struct GraphNode, prev),        true,  LOT_GRAPHNODE },
     { "type",        LVT_S16,       offsetof(struct GraphNode, type),        true,  LOT_NONE      },
+    { "uid",         LVT_U32,       offsetof(struct GraphNode, uid),         false, LOT_NONE      },
 };
 
 #define LUA_GRAPH_NODE_ANIMATED_PART_FIELD_COUNT 3
@@ -2565,6 +2570,52 @@ static struct LuaObjectField sRomhackCameraSettingsFields[LUA_ROMHACK_CAMERA_SET
     { "zoomedOutHeight", LVT_U32, offsetof(struct RomhackCameraSettings, zoomedOutHeight), false, LOT_NONE },
 };
 
+#define LUA_RT64_AREA_LIGHTING_FIELD_COUNT 3
+static struct LuaObjectField sRt64AreaLightingFields[LUA_RT64_AREA_LIGHTING_FIELD_COUNT] = {
+    { "lightCount", LVT_S32,     offsetof(struct Rt64AreaLighting, lightCount), false, LOT_NONE                                                                  },
+    { "lights",     LVT_COBJECT, offsetof(struct Rt64AreaLighting, lights),     true,  LOT_RT64LIGHT,   RT64_LUA_MAX_AREA_LIGHTS, sizeof(struct Rt64Light), true },
+    { "scene",      LVT_COBJECT, offsetof(struct Rt64AreaLighting, scene),      true,  LOT_RT64SCENEDESC                                                         },
+};
+
+#define LUA_RT64_LIGHT_FIELD_COUNT 22
+static struct LuaObjectField sRt64LightFields[LUA_RT64_LIGHT_FIELD_COUNT] = {
+    { "apertureEnabled",     LVT_U32,     offsetof(struct Rt64Light, apertureEnabled),     false, LOT_NONE  },
+    { "aperturePitch",       LVT_F32,     offsetof(struct Rt64Light, aperturePitch),       false, LOT_NONE  },
+    { "apertureYaw",         LVT_F32,     offsetof(struct Rt64Light, apertureYaw),         false, LOT_NONE  },
+    { "attenuationExponent", LVT_F32,     offsetof(struct Rt64Light, attenuationExponent), false, LOT_NONE  },
+    { "attenuationRadius",   LVT_F32,     offsetof(struct Rt64Light, attenuationRadius),   false, LOT_NONE  },
+    { "diffuseColor",        LVT_COBJECT, offsetof(struct Rt64Light, diffuseColor),        true,  LOT_VEC3F },
+    { "flickerIntensity",    LVT_F32,     offsetof(struct Rt64Light, flickerIntensity),    false, LOT_NONE  },
+    { "groupBits",           LVT_U32,     offsetof(struct Rt64Light, groupBits),           false, LOT_NONE  },
+    { "intensity",           LVT_F32,     offsetof(struct Rt64Light, intensity),           false, LOT_NONE  },
+    { "lightShape",          LVT_U32,     offsetof(struct Rt64Light, lightShape),          false, LOT_NONE  },
+    { "lightType",           LVT_U32,     offsetof(struct Rt64Light, lightType),           false, LOT_NONE  },
+    { "pitch",               LVT_F32,     offsetof(struct Rt64Light, pitch),               false, LOT_NONE  },
+    { "pointRadius",         LVT_F32,     offsetof(struct Rt64Light, pointRadius),         false, LOT_NONE  },
+    { "position",            LVT_COBJECT, offsetof(struct Rt64Light, position),            true,  LOT_VEC3F },
+    { "roll",                LVT_F32,     offsetof(struct Rt64Light, roll),                false, LOT_NONE  },
+    { "scaleX",              LVT_F32,     offsetof(struct Rt64Light, scaleX),              false, LOT_NONE  },
+    { "scaleY",              LVT_F32,     offsetof(struct Rt64Light, scaleY),              false, LOT_NONE  },
+    { "shadowOffset",        LVT_F32,     offsetof(struct Rt64Light, shadowOffset),        false, LOT_NONE  },
+    { "specularColor",       LVT_COBJECT, offsetof(struct Rt64Light, specularColor),       true,  LOT_VEC3F },
+    { "volumetricEnabled",   LVT_U32,     offsetof(struct Rt64Light, volumetricEnabled),   false, LOT_NONE  },
+    { "volumetricIntensity", LVT_F32,     offsetof(struct Rt64Light, volumetricIntensity), false, LOT_NONE  },
+    { "yaw",                 LVT_F32,     offsetof(struct Rt64Light, yaw),                 false, LOT_NONE  },
+};
+
+#define LUA_RT64_SCENE_DESC_FIELD_COUNT 9
+static struct LuaObjectField sRt64SceneDescFields[LUA_RT64_SCENE_DESC_FIELD_COUNT] = {
+    { "ambientBaseColor",      LVT_COBJECT, offsetof(struct Rt64SceneDesc, ambientBaseColor),      true,  LOT_VEC3F },
+    { "ambientNoGIColor",      LVT_COBJECT, offsetof(struct Rt64SceneDesc, ambientNoGIColor),      true,  LOT_VEC3F },
+    { "eyeLightDiffuseColor",  LVT_COBJECT, offsetof(struct Rt64SceneDesc, eyeLightDiffuseColor),  true,  LOT_VEC3F },
+    { "eyeLightSpecularColor", LVT_COBJECT, offsetof(struct Rt64SceneDesc, eyeLightSpecularColor), true,  LOT_VEC3F },
+    { "giDiffuseStrength",     LVT_F32,     offsetof(struct Rt64SceneDesc, giDiffuseStrength),     false, LOT_NONE  },
+    { "giSkyStrength",         LVT_F32,     offsetof(struct Rt64SceneDesc, giSkyStrength),         false, LOT_NONE  },
+    { "skyDiffuseMultiplier",  LVT_COBJECT, offsetof(struct Rt64SceneDesc, skyDiffuseMultiplier),  true,  LOT_VEC3F },
+    { "skyHSLModifier",        LVT_COBJECT, offsetof(struct Rt64SceneDesc, skyHSLModifier),        true,  LOT_VEC3F },
+    { "skyYawOffset",          LVT_F32,     offsetof(struct Rt64SceneDesc, skyYawOffset),          false, LOT_NONE  },
+};
+
 #define LUA_SERVER_SETTINGS_FIELD_COUNT 13
 static struct LuaObjectField sServerSettingsFields[LUA_SERVER_SETTINGS_FIELD_COUNT] = {
     { "bouncyLevelBounds",           LVT_S32, offsetof(struct ServerSettings, bouncyLevelBounds),           false, LOT_NONE },
@@ -2834,6 +2885,9 @@ struct LuaObjectTable sLuaObjectAutogenTable[LOT_AUTOGEN_MAX - LOT_AUTOGEN_MIN] 
     { LOT_PLAYERPALETTE,                sPlayerPaletteFields,                LUA_PLAYER_PALETTE_FIELD_COUNT                  },
     { LOT_RAYINTERSECTIONINFO,          sRayIntersectionInfoFields,          LUA_RAY_INTERSECTION_INFO_FIELD_COUNT           },
     { LOT_ROMHACKCAMERASETTINGS,        sRomhackCameraSettingsFields,        LUA_ROMHACK_CAMERA_SETTINGS_FIELD_COUNT         },
+    { LOT_RT64AREALIGHTING,             sRt64AreaLightingFields,             LUA_RT64_AREA_LIGHTING_FIELD_COUNT              },
+    { LOT_RT64LIGHT,                    sRt64LightFields,                    LUA_RT64_LIGHT_FIELD_COUNT                      },
+    { LOT_RT64SCENEDESC,                sRt64SceneDescFields,                LUA_RT64_SCENE_DESC_FIELD_COUNT                 },
     { LOT_SERVERSETTINGS,               sServerSettingsFields,               LUA_SERVER_SETTINGS_FIELD_COUNT                 },
     { LOT_SPAWNINFO,                    sSpawnInfoFields,                    LUA_SPAWN_INFO_FIELD_COUNT                      },
     { LOT_SPAWNPARTICLESINFO,           sSpawnParticlesInfoFields,           LUA_SPAWN_PARTICLES_INFO_FIELD_COUNT            },
@@ -2945,6 +2999,9 @@ const char *sLuaLotNames[] = {
     [LOT_PLAYERPALETTE] = "PlayerPalette",
     [LOT_RAYINTERSECTIONINFO] = "RayIntersectionInfo",
     [LOT_ROMHACKCAMERASETTINGS] = "RomhackCameraSettings",
+    [LOT_RT64AREALIGHTING] = "Rt64AreaLighting",
+    [LOT_RT64LIGHT] = "Rt64Light",
+    [LOT_RT64SCENEDESC] = "Rt64SceneDesc",
     [LOT_SERVERSETTINGS] = "ServerSettings",
     [LOT_SPAWNINFO] = "SpawnInfo",
     [LOT_SPAWNPARTICLESINFO] = "SpawnParticlesInfo",

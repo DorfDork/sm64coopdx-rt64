@@ -43,8 +43,10 @@ u8 dynos_audio_alloc_sequence(void);
 
 // -- geos -- //
 void dynos_actor_override(struct Object* obj, void** aSharedChild);
+void dynos_actor_override_report(struct GraphNode *originalNode, struct GraphNode *replacementNode);
 bool dynos_add_actor_custom(s32 modIndex, s32 modFileIndex, const char *filePath, const char* geoName);
 const void* dynos_geolayout_get(const char *name);
+const char* dynos_actor_get_custom_name(const void *geoLayout);
 bool dynos_actor_get_mod_index_and_token(struct GraphNode *graphNode, u32 tokenIndex, s32 *modIndex, s32 *modFileIndex, const char **token);
 void dynos_actor_register_modified_graph_node(struct GraphNode *node);
 
@@ -56,6 +58,7 @@ Collision* dynos_collision_get(const char* collisionName);
 bool dynos_add_texture(const char *filePath, const char* textureName);
 bool dynos_texture_get(const char* textureName, struct TextureInfo* outTextureInfo);
 bool dynos_texture_get_from_data(const Texture *tex, struct TextureInfo* outTextureInfo);
+u32 dynos_texture_get_generation(void);
 void dynos_texture_override_set(const char* textureName, struct TextureInfo* overrideTextureInfo);
 void dynos_texture_override_reset(const char* textureName);
 u8 *dynos_texture_convert_to_rgba32(const Texture *tex, u32 width, u32 height, u8 fmt, u8 siz);
@@ -99,6 +102,7 @@ void dynos_model_clear_pool(enum ModelPool aModelPool);
 Gfx *dynos_gfx_get_writable_display_list(Gfx* gfx);
 Gfx *dynos_gfx_get(const char *name, u32 *outLength);
 const char *dynos_gfx_get_name(Gfx *gfx);
+const char *dynos_gfx_get_custom_name(Gfx *gfx);
 Gfx *dynos_gfx_create(const char *name, u32 length);
 bool dynos_gfx_resize(Gfx *gfx, u32 newLength);
 bool dynos_gfx_delete(Gfx *gfx);

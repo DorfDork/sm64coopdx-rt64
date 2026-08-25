@@ -47,6 +47,12 @@ static std::vector<std::pair<std::string, DataNode<TexData> *>> &DynosCustomTexs
 
 static bool sDynosDumpTextureCache = false;
 
+static u32 sDynosTexGeneration = 0;
+
+u32 DynOS_Tex_GetGeneration(void) {
+    return sDynosTexGeneration;
+}
+
 //
 // Conversion
 //
@@ -259,7 +265,7 @@ static bool DynOS_Tex_Cache(THN **aOutput, DataNode<TexData> *aNode, s32 aTile, 
     // Add new texture to cache
     (*_Node) = &aPool[(*aPoolPos)++];
     if (!(*_Node)->texture_addr) {
-        (*_Node)->texture_id = aGfxRApi->new_texture();
+        (*_Node)->texture_id = aGfxRApi->new_texture(aNode->mName.begin());
     }
     aGfxRApi->select_texture(aTile, (*_Node)->texture_id);
     aGfxRApi->set_sampler_parameters(aTile, false, 0, 0);
@@ -398,6 +404,7 @@ void DynOS_Tex_Activate(DataNode<TexData>* aNode, bool aCustomTexture) {
             _Override->customTexture = aCustomTexture;
             _Override->node = aNode;
             _DynosOverrideTextures[_BuiltinTex] = _Override;
+            sDynosTexGeneration++;
         }
     }
 
@@ -431,6 +438,7 @@ void DynOS_Tex_Deactivate(DataNode<TexData>* aNode) {
         auto _Override = _DynosOverrideTextures[_BuiltinTex];
         if (_Override && _Override->node == aNode) {
             _DynosOverrideTextures.erase(_BuiltinTex);
+            sDynosTexGeneration++;
         }
     }
 

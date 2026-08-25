@@ -447,3 +447,169 @@ end
 function gfx_shader_set_mat4_array(name, values)
     -- ...
 end
+
+--- @class Rt64Vector
+--- Three numbers, either `{ 200, 180, 0 }` or `{ x = 200, y = 180, z = 0 }`.
+--- RT64 colors use whole numbers from 0 to 255.
+
+--- @class Rt64Vector4
+--- Four numbers, either `{ 200, 180, 0, 0.5 }` or `{ x = 200, y = 180, z = 0, w = 0.5 }`.
+
+--- @class Rt64LightTable
+--- @field position Rt64Vector Light position. World space for level lights, model space for `lightMod`.
+--- @field diffuseColor Rt64Vector Light color, 0-255.
+--- @field specularColor Rt64Vector Optional highlight color.
+--- @field intensity number Optional brightness multiplier.
+--- @field attenuationRadius number Optional light range.
+--- @field pointRadius number Optional emitter size for soft shadows.
+--- @field shadowOffset number Optional shadow offset.
+--- @field attenuationExponent number Optional falloff strength.
+--- @field flickerIntensity number Optional light flicker strength.
+--- @field groupBits integer Optional light group mask.
+--- @field type string Optional light type: `"area"` or `"point"`.
+--- @field pitch number Optional point light vertical angle, in degrees.
+--- @field yaw number Optional point light horizontal angle, in degrees.
+--- @field roll number Optional point light opening rotation, in degrees.
+--- @field shape string Optional point light opening: `"circle"` or `"square"`.
+--- @field scaleX number Optional point light opening half-width.
+--- @field scaleY number Optional point light opening half-height.
+--- @field aperturePitch number Optional point light opening pitch, in degrees.
+--- @field apertureYaw number Optional point light opening yaw, in degrees.
+--- @field volumetricIntensity number Optional point light beam brightness. Adds a visible light beam.
+
+--- @class Rt64SceneDescTable
+--- @field ambientBaseColor Rt64Vector Optional ambient color, 0-255.
+--- @field ambientNoGIColor Rt64Vector Optional ambient color when GI is disabled, 0-255.
+--- @field eyeLightDiffuseColor Rt64Vector Optional camera light color, 0-255.
+--- @field eyeLightSpecularColor Rt64Vector Optional camera light highlight color, 0-255.
+--- @field skyDiffuseMultiplier Rt64Vector Optional sky lighting multiplier.
+--- @field skyHSLModifier Rt64Vector Optional sky hue, saturation, and lightness modifier.
+--- @field skyYawOffset number Optional sky rotation, in degrees.
+--- @field giDiffuseStrength number Optional indirect lighting strength.
+--- @field giSkyStrength number Optional sky contribution to indirect lighting.
+
+--- @class Rt64MaterialModTable
+--- Every field is optional.
+--- @field ignoreNormalFactor integer Ignore surface normals when lighting. `1` or `0`.
+--- @field uvDetailScale number Normal and specular map UV scale.
+--- @field reflectionFactor number Reflection strength.
+--- @field reflectionFresnelFactor number Reflection strength based on viewing angle.
+--- @field reflectionShineFactor number Reflected light contribution to highlights.
+--- @field reflectionColor Rt64Vector Reflection tint, 0-255.
+--- @field refractionFactor number Refraction strength.
+--- @field specularColor Rt64Vector Highlight color, 0-255.
+--- @field specularIntensity number Highlight brightness multiplier.
+--- @field specularShinyness number Phong highlight sharpness.
+--- @field specularEccentricity number Blinn highlight width.
+--- @field specularFactor number Highlight brightness.
+--- @field specularTint boolean Tint highlights with the surface color.
+--- @field shadingModel string `"lambert"`, `"phong"`, or `"blinn"`.
+--- @field diffuseIntensity number Diffuse lighting strength.
+--- @field solidAlphaMultiplier number Surface alpha multiplier.
+--- @field shadowAlphaMultiplier number Shadow alpha multiplier.
+--- @field shadowEnabled boolean Whether the surface receives shadows.
+--- @field shadowCenter boolean Keeps the surface's shadow directly underneath it.
+--- @field depthBias integer Depth offset in game units.
+--- @field shadowRayBias integer Shadow ray origin offset in game units.
+--- @field selfLightColor Rt64Vector Self-light color, 0-255.
+--- @field selfLightIntensity number Self-light brightness multiplier.
+--- @field lightGroupMaskBits integer Light groups that can affect the material.
+--- @field diffuseColorMix Rt64Vector4 Color mixed into the diffuse color. `w` controls the mix amount.
+--- @field bumpStrength number Bump map strength.
+--- @field normalStrength number Normal map strength.
+
+--- @class Rt64ModTable
+--- @field materialMod Rt64MaterialModTable Optional material settings.
+--- @field lightMod Rt64LightTable Optional light attached to the object.
+--- @field bumpMap string Optional bump map texture.
+--- @field normalMap string Optional normal map texture.
+--- @field specularMap string Optional specular map texture.
+
+--- @class Rt64AreaLightingTable
+--- @field scene Rt64SceneDescTable Optional scene and GI settings.
+--- @field lights Rt64LightTable[] Optional area lights. Replaces the existing lights. Maximum 128.
+
+--- @param levelNum LevelNum | integer Level to modify.
+--- @param areaIndex integer Area to modify. Vanilla areas start at 1.
+--- @param lighting Rt64AreaLightingTable Lighting settings.
+--- Registers RT64 lighting for a level area.
+---
+--- `scene` only changes the fields provided. `lights` replaces the area's lights.
+--- Omitting `lights` keeps the existing lights; an empty table removes them.
+--- Lights require `position` and `diffuseColor`.
+---
+--- ### Lua Example
+--- ```lua
+--- gfx_rt64_set_level_lights(LEVEL_BOB, 1, {
+---     scene = {
+---         ambientBaseColor = { 51, 51, 64 },
+---         giSkyStrength = 0.35,
+---     },
+---     lights = {
+---         {
+---             position = { 100000, 200000, 100000 },
+---             diffuseColor = { 204, 191, 166 },
+---             attenuationRadius = 1e11,
+---             pointRadius = 5000,
+---         },
+---     },
+--- })
+--- ```
+
+--- @param name string Texture name.
+--- @param mod Rt64ModTable Material, light, and texture settings.
+--- Registers RT64 settings for a texture.
+---
+--- ### Lua Example
+--- ```lua
+--- gfx_rt64_set_texture_mod("texture_waterbox_water", {
+---     materialMod = {
+---         reflectionFactor = 0.60,
+---         specularColor = { 255, 255, 255 },
+---         specularShinyness = 12,
+---     },
+---     normalMap = "texture_water_nrm",
+--- })
+--- ```
+
+--- @param name string Geo layout name.
+--- @param mod Rt64ModTable Material, light, and texture settings.
+--- Registers RT64 settings for every model using the geo layout.
+---
+--- ### Lua Example
+--- ```lua
+--- gfx_rt64_set_geo_layout_mod("bowser_geo", {
+---     materialMod = {
+---         selfLightColor = { 102, 26, 0 },
+---         reflectionFactor = 0.25,
+---     },
+--- })
+--- ```
+
+--- Checks whether RT64 is the active renderer.
+--- @return boolean
+
+--- @param levelNum LevelNum | integer Level to access.
+--- @param areaIndex integer Area to access.
+--- @return Rt64AreaLighting?
+--- Returns the live RT64 lighting for a level area.
+--- Changes made to the returned data are applied on the next frame.
+--- Returns `nil` when RT64 is inactive.
+---
+--- `lighting.lights` always contains 128 lights. `lighting.lightCount` gives the number in use.
+---
+--- ### Lua Example
+--- ```lua
+--- hook_event(HOOK_UPDATE, function()
+---     if not gfx_rt64_is_active() then return end
+---     local np = gNetworkPlayers[0]
+---     local lighting = gfx_rt64_get_area_lighting(np.currLevelNum, np.currAreaIndex)
+---
+---     local sun = lighting.lights[0]
+---     sun.diffuseColor.x = 204
+---     sun.yaw = (get_global_timer() % 3600) / 10.0
+--- end)
+--- ```
+function gfx_rt64_get_area_lighting(levelNum, areaIndex)
+    -- ...
+end

@@ -23,6 +23,7 @@
 #define HALF_SCREEN_HEIGHT (SCREEN_HEIGHT / 2)
 
 #define MAX_BUFFERED 256
+#define MAX_BUFFERED_MODEL_SPACE 4096
 #define MAX_MATRIX_STACK_SIZE 11
 #define MAX_LIGHTS 18
 #define MAX_VERTICES 64
@@ -30,7 +31,9 @@
 #define MAX_TEXTURES 2
 #define MAX_CACHED_TEXTURES 4096 // for preloading purposes
 #define MAX_GFX_STATES 8
-#define VERTEX_STRIDE MAX_BUFFERED * ((16 + (CC_MAX_INPUTS * 4) + (2 * MAX_TEXTURES)) * 3) // 3 vertices in a triangle and 16 floats per verticies plus the 4 floats per input for verticies plus the 2 per texture
+// 3 vertices in a triangle and 16 floats per verticies plus the 4 floats per input for verticies plus the 2 per texture
+#define VERTEX_STRIDE (MAX_BUFFERED * ((16 + (CC_MAX_INPUTS * 4) + (2 * MAX_TEXTURES)) * 3))
+#define VERTEX_STRIDE_MAX (MAX_BUFFERED_MODEL_SPACE * ((16 + (CC_MAX_INPUTS * 4) + (2 * MAX_TEXTURES)) * 3))
 
 #define HASH_SHIFT 0
 #define HASHMAP_LEN (MAX_CACHED_TEXTURES * 2)

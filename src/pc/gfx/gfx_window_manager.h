@@ -21,6 +21,7 @@ enum GfxWindowBackend {
     #ifdef _WIN32
         GFX_WINDOW_BACKEND_DIRECTX11,
         GFX_WINDOW_BACKEND_DIRECTX12,
+        GFX_WINDOW_BACKEND_RT64,
     #endif
     #ifdef __APPLE__
         GFX_WINDOW_BACKEND_METAL,

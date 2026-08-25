@@ -10,6 +10,7 @@
 #include "pc/controller/controller_keyboard.h"
 #include "pc/utils/misc.h"
 #include "pc/network/network.h"
+#include "pc/lua/utils/smlua_gfx_utils.h"
 
 #include "sounds.h"
 #include "audio/external.h"
@@ -229,6 +230,14 @@ bool djui_interactable_on_key_down(int scancode) {
     if (scancode == SCANCODE_ESCAPE && djui_panel_is_active()) {
         // pressed escape button on keyboard
         djui_panel_back();
+        return true;
+    }
+
+    if (scancode == SCANCODE_F2 && smlua_gfx_util_toggle_inspector()) {
+        return true;
+    }
+
+    if (scancode == SCANCODE_F5 && smlua_gfx_util_save_configs()) {
         return true;
     }
 

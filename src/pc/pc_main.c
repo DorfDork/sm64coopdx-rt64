@@ -250,6 +250,10 @@ static void select_graphics_backend(void) {
             gRenderApi = &gfx_direct3d12_api;
             gAudioApi  = &audio_sdl;
             break;
+        case GFX_WINDOW_BACKEND_RT64:
+            gRenderApi = &gfx_rt64_api;
+            gAudioApi  = &audio_sdl;
+            break;
 #endif
 #ifdef OSX_BUILD
         case GFX_WINDOW_BACKEND_METAL:
@@ -276,8 +280,10 @@ void produce_interpolation_frames_and_delay(void) {
     u32 displayRefreshRate = get_display_refresh_rate();
     bool shouldDelay = configFramerateMode != RRM_UNLIMITED;
     if (configWindow.vsync && displayRefreshRate <= refreshRate) {
-        shouldDelay = false;
         refreshRate = displayRefreshRate;
+        if (!gfx_backend_has(GFX_BACKEND_PRESENTS_DIRECTLY)) {
+            shouldDelay = false;
+        }
     }
 
     f64 targetTime = sFrameTimeStart + sFrameTime;
@@ -638,7 +644,7 @@ int main(int argc, char *argv[]) {
     while (true) {
         debug_context_reset();
         CTX_BEGIN(CTX_TOTAL);
-        gfx_wm_main_loop(produce_one_frame);
+        gfx_run_one_game_iter(produce_one_frame);
 #ifdef DISCORD_SDK
         discord_update();
 #endif

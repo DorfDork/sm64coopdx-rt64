@@ -37,7 +37,7 @@ static void print_help(void) {
     log_to_terminal("--enable-mod MODNAME      Enables a mod.\n");
     log_to_terminal("--headless                Enable Headless mode.\n");
 #if defined(_WIN32)
-    log_to_terminal("--backend                 Sets the backend to 'opengl', 'directx11' (or 'directx'), or 'directx12'.");
+    log_to_terminal("--backend                 Sets the backend to 'opengl', 'directx11', 'directx12', or 'rt64'.");
 #elif defined(OSX_BUILD)
     log_to_terminal("--backend                 Sets the backend to either 'opengl' or 'metal'.");
 #endif
@@ -133,6 +133,8 @@ bool parse_cli_opts(int argc, char* argv[]) {
                 gCLIOpts.backend = GFX_WINDOW_BACKEND_DIRECTX11;
             } else if (!strcmp(argv[i + 1], "directx12")) {
                 gCLIOpts.backend = GFX_WINDOW_BACKEND_DIRECTX12;
+            } else if (!strcmp(argv[i + 1], "rt64")) {
+                gCLIOpts.backend = GFX_WINDOW_BACKEND_RT64;
 #else
             } else if (!strcmp(argv[i + 1], "metal")) {
                 gCLIOpts.backend = GFX_WINDOW_BACKEND_METAL;

@@ -6,6 +6,9 @@ extern "C" {
 #include "pc/configfile.h"
 #include "pc/lua/smlua_hooks.h"
 #include "pc/mods/mod_fs.h"
+#include "pc/gfx/gfx_rendering_api.h"
+
+struct GfxRenderingAPI *gfx_get_current_rendering_api(void);
 }
 
 static ObjectList sObjectListsToOverride[] = {
@@ -82,6 +85,17 @@ bool DynOS_Actor_AddCustom(s32 aModIndex, s32 aModFileIndex, const SysPath &aFil
     // Add to list
     DynOS_Actor_Valid(georef, actorGfx);
     return true;
+}
+
+// Reverse of the DynosCustomActors()
+const char *DynOS_Actor_GetNameFromLayout(const void *aGeoLayout) {
+    if (aGeoLayout == NULL) { return NULL; }
+
+    for (auto& pair : DynosCustomActors()) {
+        if ((const void *) pair.second == aGeoLayout) { return pair.first.c_str(); }
+    }
+
+    return NULL;
 }
 
 const void *DynOS_Actor_GetLayoutFromName(const char *aActorName) {
@@ -195,6 +209,13 @@ void DynOS_Actor_Invalid(const void* aGeoref, s32 aPackIndex) {
     _ValidActors.erase(aGeoref);
 }
 
+void DynOS_Actor_Override_Report(GraphNode *aOriginalNode, GraphNode *aReplacementNode) {
+    struct GfxRenderingAPI *api = gfx_get_current_rendering_api();
+    if (api && api->inherit_graph_node_mod) {
+        api->inherit_graph_node_mod(aOriginalNode, aReplacementNode);
+    }
+}
+
 void DynOS_Actor_Override(struct Object* obj, void** aSharedChild) {
     if ((aSharedChild == NULL) || (*aSharedChild == NULL)) { return; }
 
@@ -217,6 +238,10 @@ void DynOS_Actor_Override(struct Object* obj, void** aSharedChild) {
         if (np != NULL && np->localIndex > 0 && configDynosLocalPlayerModelOnly && it->second.mPackIndex != MOD_PACK_INDEX) {
             return;
         }
+    }
+
+    if (*aSharedChild != (void*)it->second.mGraphNode) {
+        DynOS_Actor_Override_Report(*(GraphNode**)aSharedChild, it->second.mGraphNode);
     }
 
     *aSharedChild = (void*)it->second.mGraphNode;

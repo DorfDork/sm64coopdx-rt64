@@ -21,6 +21,8 @@
 #define SCANCODE_C              46
 #define SCANCODE_V              47
 #define SCANCODE_SHIFT_RIGHT    54
+#define SCANCODE_F2             60
+#define SCANCODE_F5             63
 #ifdef __APPLE__
     #define SCANCODE_CONTROL_RIGHT 92
 #else

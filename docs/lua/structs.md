@@ -82,6 +82,9 @@
 - [PlayerPalette](#PlayerPalette)
 - [RayIntersectionInfo](#RayIntersectionInfo)
 - [RomhackCameraSettings](#RomhackCameraSettings)
+- [Rt64AreaLighting](#Rt64AreaLighting)
+- [Rt64Light](#Rt64Light)
+- [Rt64SceneDesc](#Rt64SceneDesc)
 - [ServerSettings](#ServerSettings)
 - [SpawnInfo](#SpawnInfo)
 - [SpawnParticlesInfo](#SpawnParticlesInfo)
@@ -819,6 +822,7 @@
 | displayList | `Pointer` <`Gfx`> |  |
 | next | [DisplayListNode](structs.md#DisplayListNode) |  |
 | usingCamSpace | `integer` |  |
+| uid | `integer` |  |
 
 [:arrow_up_small:](#)
 
@@ -1167,6 +1171,7 @@
 | flags | `integer` |  |
 | extraFlags | `integer` |  |
 | hookProcess | `integer` |  |
+| uid | `integer` |  |
 
 [:arrow_up_small:](#)
 
@@ -2919,6 +2924,67 @@
 | zoomedInHeight | `integer` |  |
 | zoomedOutHeight | `integer` |  |
 | modsOnly | `integer` |  |
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [Rt64AreaLighting](#Rt64AreaLighting)
+
+| Field | Type | Access |
+| ----- | ---- | ------ |
+| scene | [Rt64SceneDesc](structs.md#Rt64SceneDesc) | read-only |
+| lights | `Array` <`Rt64Light`> | read-only, starts at index 0 |
+| lightCount | `integer` |  |
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [Rt64Light](#Rt64Light)
+
+| Field | Type | Access |
+| ----- | ---- | ------ |
+| position | [Vec3f](structs.md#Vec3f) | read-only |
+| diffuseColor | [Vec3f](structs.md#Vec3f) | read-only |
+| attenuationRadius | `number` |  |
+| pointRadius | `number` |  |
+| specularColor | [Vec3f](structs.md#Vec3f) | read-only |
+| shadowOffset | `number` |  |
+| attenuationExponent | `number` |  |
+| flickerIntensity | `number` |  |
+| groupBits | `integer` |  |
+| lightType | `integer` |  |
+| pitch | `number` |  |
+| yaw | `number` |  |
+| roll | `number` |  |
+| scaleX | `number` |  |
+| scaleY | `number` |  |
+| lightShape | `integer` |  |
+| apertureEnabled | `integer` |  |
+| aperturePitch | `number` |  |
+| apertureYaw | `number` |  |
+| volumetricEnabled | `integer` |  |
+| volumetricIntensity | `number` |  |
+| intensity | `number` |  |
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [Rt64SceneDesc](#Rt64SceneDesc)
+
+| Field | Type | Access |
+| ----- | ---- | ------ |
+| ambientBaseColor | [Vec3f](structs.md#Vec3f) | read-only |
+| ambientNoGIColor | [Vec3f](structs.md#Vec3f) | read-only |
+| eyeLightDiffuseColor | [Vec3f](structs.md#Vec3f) | read-only |
+| eyeLightSpecularColor | [Vec3f](structs.md#Vec3f) | read-only |
+| skyDiffuseMultiplier | [Vec3f](structs.md#Vec3f) | read-only |
+| skyHSLModifier | [Vec3f](structs.md#Vec3f) | read-only |
+| skyYawOffset | `number` |  |
+| giDiffuseStrength | `number` |  |
+| giSkyStrength | `number` |  |
 
 [:arrow_up_small:](#)
 

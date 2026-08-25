@@ -4,6 +4,7 @@
 #include "game/rendering_graph_node.h"
 #include "game/skybox.h"
 #include "geo_commands.h"
+#include "pc/gfx/gfx_rendering_api.h"
 
 bool get_shader_flag_enabled(enum ShaderFlag flag) {
     if (flag < 0 || flag >= SHADER_FLAG_MAX) { return false; }
@@ -659,4 +660,33 @@ void vtx_delete(Vtx *vtx) {
 
 void vtx_delete_all() {
     dynos_vtx_delete_all();
+}
+
+  ////////////////
+ // Lua config //
+////////////////
+
+void smlua_gfx_util_reset(void) {
+    struct GfxRenderingAPI *api = gfx_get_current_rendering_api();
+    if (api && api->lua_config_reset) {
+        api->lua_config_reset();
+    }
+}
+
+bool smlua_gfx_util_save_configs(void) {
+    struct GfxRenderingAPI *api = gfx_get_current_rendering_api();
+    if (api && api->lua_config_save) {
+        api->lua_config_save();
+        return true;
+    }
+    return false;
+}
+
+bool smlua_gfx_util_toggle_inspector(void) {
+    struct GfxRenderingAPI *api = gfx_get_current_rendering_api();
+    if (api && api->toggle_inspector) {
+        api->toggle_inspector();
+        return true;
+    }
+    return false;
 }

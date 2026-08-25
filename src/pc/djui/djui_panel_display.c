@@ -79,6 +79,7 @@ void djui_panel_display_create(struct DjuiBase* caller) {
 #elif defined(_WIN32)
                 (char *)gfx_direct3d11_api.get_name(),
                 (char *)gfx_direct3d12_api.get_name(),
+                (char *)gfx_rt64_api.get_name(),
 #endif
                 (char *)gfx_opengl_api.get_name(),
             };

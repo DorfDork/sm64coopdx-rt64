@@ -571,6 +571,7 @@
 --- @field public displayList Pointer_Gfx
 --- @field public next DisplayListNode
 --- @field public usingCamSpace integer
+--- @field public uid integer
 
 --- @class DjuiColor
 --- @field public r integer
@@ -821,6 +822,7 @@
 --- @field public flags integer
 --- @field public extraFlags integer
 --- @field public hookProcess integer
+--- @field public uid integer
 
 --- @class GraphNodeAnimatedPart
 --- @field public node GraphNode
@@ -2198,6 +2200,46 @@
 --- @field public zoomedInHeight integer
 --- @field public zoomedOutHeight integer
 --- @field public modsOnly integer
+
+--- @class Rt64AreaLighting
+--- @field public scene Rt64SceneDesc
+--- @field public lights Rt64Light[]
+--- @field public lightCount integer
+
+--- @class Rt64Light
+--- @field public position Vec3f
+--- @field public diffuseColor Vec3f
+--- @field public attenuationRadius number
+--- @field public pointRadius number
+--- @field public specularColor Vec3f
+--- @field public shadowOffset number
+--- @field public attenuationExponent number
+--- @field public flickerIntensity number
+--- @field public groupBits integer
+--- @field public lightType integer
+--- @field public pitch number
+--- @field public yaw number
+--- @field public roll number
+--- @field public scaleX number
+--- @field public scaleY number
+--- @field public lightShape integer
+--- @field public apertureEnabled integer
+--- @field public aperturePitch number
+--- @field public apertureYaw number
+--- @field public volumetricEnabled integer
+--- @field public volumetricIntensity number
+--- @field public intensity number
+
+--- @class Rt64SceneDesc
+--- @field public ambientBaseColor Vec3f
+--- @field public ambientNoGIColor Vec3f
+--- @field public eyeLightDiffuseColor Vec3f
+--- @field public eyeLightSpecularColor Vec3f
+--- @field public skyDiffuseMultiplier Vec3f
+--- @field public skyHSLModifier Vec3f
+--- @field public skyYawOffset number
+--- @field public giDiffuseStrength number
+--- @field public giSkyStrength number
 
 --- @class ServerSettings
 --- @field public playerInteractions PlayerInteractions

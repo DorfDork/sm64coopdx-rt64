@@ -133,12 +133,20 @@ void dynos_actor_override(struct Object* obj, void** aSharedChild) {
     DynOS_Actor_Override(obj, aSharedChild);
 }
 
+void dynos_actor_override_report(struct GraphNode *originalNode, struct GraphNode *replacementNode) {
+    DynOS_Actor_Override_Report(originalNode, replacementNode);
+}
+
 bool dynos_add_actor_custom(s32 modIndex, s32 modFileIndex, const char *filePath, const char* geoName) {
     return DynOS_Actor_AddCustom(modIndex, modFileIndex, filePath, geoName);
 }
 
 const void* dynos_geolayout_get(const char *name) {
     return DynOS_Actor_GetLayoutFromName(name);
+}
+
+const char* dynos_actor_get_custom_name(const void *geoLayout) {
+    return DynOS_Actor_GetNameFromLayout(geoLayout);
 }
 
 bool dynos_actor_get_mod_index_and_token(struct GraphNode *graphNode, u32 tokenIndex, s32 *modIndex, s32 *modFileIndex, const char **token) {
@@ -172,6 +180,10 @@ bool dynos_texture_get(const char* textureName, struct TextureInfo* outTextureIn
 
 bool dynos_texture_get_from_data(const Texture *tex, struct TextureInfo* outTextureInfo) {
     return DynOS_Tex_GetFromData(tex, outTextureInfo);
+}
+
+u32 dynos_texture_get_generation(void) {
+    return DynOS_Tex_GetGeneration();
 }
 
 void dynos_texture_override_set(const char* textureName, struct TextureInfo* overrideTextureInfo) {
@@ -326,6 +338,10 @@ Gfx *dynos_gfx_get(const char *name, u32 *outLength) {
 
 const char *dynos_gfx_get_name(Gfx *gfx) {
     return DynOS_Gfx_GetName(gfx);
+}
+
+const char *dynos_gfx_get_custom_name(Gfx *gfx) {
+    return DynOS_Gfx_GetCustomName(gfx);
 }
 
 Gfx *dynos_gfx_create(const char *name, u32 length) {

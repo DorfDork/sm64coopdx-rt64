@@ -2,6 +2,7 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#include <SDL2/SDL_system.h>
 #endif
 
 #include <stdio.h>
@@ -12,6 +13,8 @@
 #include "gfx_window_metal.h"
 #include "gfx_window_dxgi.h"
 #include "gfx_screen_config.h"
+#include "gfx_pc.h"
+#include "gfx_rendering_api.h"
 
 #include "pc/pc_main.h"
 #include "pc/configfile.h"
@@ -28,6 +31,7 @@ static struct GfxWindowBackendAPI *sBackends[GFX_WINDOW_BACKEND_COUNT] = {
     #if defined(_WIN32)
         [GFX_WINDOW_BACKEND_DIRECTX11] = &gfx_window_dxgi,
         [GFX_WINDOW_BACKEND_DIRECTX12] = &gfx_window_dxgi,
+        [GFX_WINDOW_BACKEND_RT64] = &gfx_window_dxgi,
     #endif
     #if defined(__APPLE__)
         [GFX_WINDOW_BACKEND_METAL] = &gfx_window_metal,
@@ -102,6 +106,16 @@ static void gfx_wm_reset_dimension_and_pos(void) {
     SDL_SetWindowPosition(sSdlWindow, xpos, ypos);
 }
 
+#if defined(_WIN32)
+static void SDLCALL gfx_wm_windows_message_hook(void *userdata, void *hWnd, unsigned int message, Uint64 wParam, Sint64 lParam) {
+    (void)(userdata);
+    struct GfxRenderingAPI *api = gfx_get_current_rendering_api();
+    if (api && api->handle_window_message) {
+        api->handle_window_message(hWnd, message, (uintptr_t)(wParam), (intptr_t)(lParam));
+    }
+}
+#endif
+
 void gfx_wm_init(const char *window_title) {
     if (gCLIOpts.headless) { return; }
 #if defined(_WIN32)
@@ -119,6 +133,10 @@ void gfx_wm_init(const char *window_title) {
     currBackend = configGraphicsBackend;
 #endif
     sBackends[currBackend]->init(window_title);
+
+#if defined(_WIN32)
+    SDL_SetWindowsMessageHook(gfx_wm_windows_message_hook, NULL);
+#endif
 
     gfx_wm_set_fullscreen();
     if (configWindow.fullscreen) {
@@ -189,8 +207,32 @@ static void gfx_wm_ondropfile(char* path) {
 #endif
 }
 
+static void gfx_wm_update_inspector_cursor(void) {
+    static bool sWasInspectorActive = false;
+    static SDL_bool sPrevRelativeMode = SDL_FALSE;
+    static int sPrevCursorShown = SDL_ENABLE;
+
+    struct GfxRenderingAPI *api = gfx_get_current_rendering_api();
+    bool isInspectorActive = api && api->inspector_active && api->inspector_active();
+    if (isInspectorActive == sWasInspectorActive) {
+        return;
+    }
+
+    sWasInspectorActive = isInspectorActive;
+    if (isInspectorActive) {
+        sPrevRelativeMode = SDL_GetRelativeMouseMode();
+        sPrevCursorShown = SDL_ShowCursor(SDL_QUERY);
+        SDL_SetRelativeMouseMode(SDL_FALSE);
+        SDL_ShowCursor(SDL_ENABLE);
+    } else {
+        SDL_SetRelativeMouseMode(sPrevRelativeMode);
+        SDL_ShowCursor(sPrevCursorShown);
+    }
+}
+
 void gfx_wm_handle_events(void) {
     if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    gfx_wm_update_inspector_cursor();
     SDL_Event event = { 0 };
     while (SDL_PollEvent(&event)) {
         switch (event.type) {

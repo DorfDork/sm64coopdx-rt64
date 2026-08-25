@@ -13,6 +13,10 @@ Gfx *gfx_allocate_internal(Gfx *gfx, u32 length);
 Vtx *vtx_allocate_internal(Vtx *vtx, u32 count);
 u32 gfx_get_length_no_sentinel(const Gfx *gfx);
 
+void smlua_gfx_util_reset(void);
+bool smlua_gfx_util_save_configs(void);
+bool smlua_gfx_util_toggle_inspector(void);
+
 /* |description|Gets if a custom shader flag (`SHADER_FLAG_*`) is enabled or not|descriptionEnd| */
 bool get_shader_flag_enabled(enum ShaderFlag flag);
 /* |description|Enables a custom shader flag (`SHADER_FLAG_*`) for the renderer|descriptionEnd| */

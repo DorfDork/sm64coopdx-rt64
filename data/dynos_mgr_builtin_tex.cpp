@@ -1164,6 +1164,7 @@ static const struct BuiltinTexInfo sDynosBuiltinTexs[] = {
     define_builtin_tex(waluigi_texture_eyes_up, "actors/waluigi/custom_waluigi_eyes_up_unused.rgba16.png", 64, 32, G_IM_FMT_RGBA, G_IM_SIZ_16b),
     define_builtin_tex(waluigi_texture_eyes_down, "actors/waluigi/custom_waluigi_eyes_down_unused.rgba16.png", 64, 32, G_IM_FMT_RGBA, G_IM_SIZ_16b),
     define_builtin_tex(waluigi_texture_eyes_dead, "actors/waluigi/custom_waluigi_eyes_dead.rgba16.png", 64, 32, G_IM_FMT_RGBA, G_IM_SIZ_16b),
+    define_builtin_tex(texture_water_nrm, "textures/segment2/custom_water_nrm.rgba32.png", 256, 256, G_IM_FMT_RGBA, G_IM_SIZ_32b),
 
     // DJUI
     define_builtin_tex(texture_font_normal, "textures/custom_font/custom_font_normal.rgba32.png", 256, 128, G_IM_FMT_RGBA, G_IM_SIZ_32b),

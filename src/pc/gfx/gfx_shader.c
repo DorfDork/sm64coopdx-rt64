@@ -49,6 +49,8 @@ const char *gDefaultPostProcessFragmentShader = ""
     "    fragColor = texture(uPassTex, vTexCoord);\n"
     "}\n";
 
+bool gPostProcessShaderCustomWindowSize = false;
+
 static int sShaderInputCount = 0;
 static int sShaderOutputCount = 0;
 static int sShaderUniformBlockCount = 0;
@@ -1367,7 +1369,7 @@ bool gfx_generate_post_process_vertex_and_fragment_shader(struct Shader *vertexS
         sys_fatal("Failed to generate vertex and fragment shader, ran out of memory!");
     }
 
-    smlua_call_event_hooks(HOOK_ON_POST_PROCESS_VERTEX_SHADER_CREATE, (const char **)&vsShaderCode);
+    bool customVs = smlua_call_event_hooks(HOOK_ON_POST_PROCESS_VERTEX_SHADER_CREATE, (const char **)&vsShaderCode);
 
     if (!vsShaderCode) {
         vsShaderCode = strdup(fallbackVsCode);
@@ -1375,13 +1377,15 @@ bool gfx_generate_post_process_vertex_and_fragment_shader(struct Shader *vertexS
         vsShaderCode = strdup(vsShaderCode); // lua handles its own memory, we need to escape it
     }
 
-    smlua_call_event_hooks(HOOK_ON_POST_PROCESS_FRAGMENT_SHADER_CREATE, (const char **)&fsShaderCode);
+    bool customFs = smlua_call_event_hooks(HOOK_ON_POST_PROCESS_FRAGMENT_SHADER_CREATE, (const char **)&fsShaderCode);
 
     if (!fsShaderCode) {
         fsShaderCode = strdup(fallbackFsCode);
     } else {
         fsShaderCode = strdup(fsShaderCode); // lua handles its own memory, we need to escape it
     }
+
+    gPostProcessShaderCustomWindowSize = customVs || customFs;
 
     return gfx_generate_vertex_and_fragment_shader(vertexShader, fragmentShader, gPostProcessShaderInputs, gPostProcessShaderBindings, vsShaderCode, fsShaderCode, fallbackVsCode, fallbackFsCode, outVertShader, outFragShader);
 }

@@ -36,6 +36,11 @@
    - [gfx_shader_set_vec3_array](#gfx_shader_set_vec3_array)
    - [gfx_shader_set_vec4_array](#gfx_shader_set_vec4_array)
    - [gfx_shader_set_mat4_array](#gfx_shader_set_mat4_array)
+   - [gfx_rt64_set_level_lights](#gfx_rt64_set_level_lights)
+   - [gfx_rt64_set_texture_mod](#gfx_rt64_set_texture_mod)
+   - [gfx_rt64_set_geo_layout_mod](#gfx_rt64_set_geo_layout_mod)
+   - [gfx_rt64_is_active](#gfx_rt64_is_active)
+   - [gfx_rt64_get_area_lighting](#gfx_rt64_get_area_lighting)
 
 <br />
 
@@ -3050,6 +3055,154 @@ gfx_shader_set_mat4_array("uIdentityMatrix", matrix)
 
 ### Returns
 - None
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [gfx_rt64_set_level_lights](#gfx_rt64_set_level_lights)
+
+### Description
+Registers ray traced lighting for one level area. Has no effect unless the RT64 backend is
+running.
+
+### Lua Example
+```lua
+gfx_rt64_set_level_lights(LEVEL_BOB, 1, {
+    scene = {
+        ambientBaseColor = { 51, 51, 64 },
+        giSkyStrength = 0.35,
+    },
+    lights = {
+        {
+            position = { 100000, 200000, 100000 },
+            diffuseColor = { 204, 191, 166 },
+            attenuationRadius = 1e11,
+            pointRadius = 5000,
+        },
+    },
+})
+```
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| levelNum | [enum LevelNum](./constants.md#enum-LevelNum) \| `integer` |
+| areaIndex | `integer` |
+| lighting | `table` |
+
+### Returns
+- None
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [gfx_rt64_set_texture_mod](#gfx_rt64_set_texture_mod)
+
+### Description
+Registers ray traced material properties for one texture. Has no effect unless the RT64 backend
+is running. 
+
+### Lua Example
+```lua
+gfx_rt64_set_texture_mod("texture_waterbox_water", {
+    materialMod = {
+        reflectionFactor = 0.60,
+        specularColor = { 255, 255, 255 },
+        specularShinyness = 12,
+    },
+    normalMap = "texture_water_nrm",
+})
+```
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| name | `string` |
+| mod | `table` |
+
+### Returns
+- None
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [gfx_rt64_set_geo_layout_mod](#gfx_rt64_set_geo_layout_mod)
+
+### Description
+Registers ray traced material properties for every model built from an actor's geo layout. Has
+no effect unless the RT64 backend is running.
+
+### Lua Example
+```lua
+gfx_rt64_set_geo_layout_mod("bowser_geo", {
+    materialMod = {
+        selfLightColor = { 102, 26, 0 },
+        reflectionFactor = 0.25,
+    },
+})
+```
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| name | `string` |
+| mod | `table` |
+
+### Returns
+- None
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [gfx_rt64_is_active](#gfx_rt64_is_active)
+
+### Description
+
+
+### Lua Example
+
+
+### Parameters
+- None
+
+### Returns
+- `bool`
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [gfx_rt64_get_area_lighting](#gfx_rt64_get_area_lighting)
+
+### Description
+Hands back a live reference to one level area's ray traced lighting.
+
+### Lua Example
+```lua
+hook_event(HOOK_UPDATE, function()
+    if not gfx_rt64_is_active() then return end
+    local np = gNetworkPlayers[0]
+    local lighting = gfx_rt64_get_area_lighting(np.currLevelNum, np.currAreaIndex)
+
+    -- cobject arrays start at 0
+    local sun = lighting.lights[0]
+    sun.diffuseColor.x = 204
+    sun.yaw = (get_global_timer() % 3600) / 10.0
+end)
+```
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| levelNum | [enum LevelNum](./constants.md#enum-LevelNum) \| `integer` |
+| areaIndex | `integer` |
+
+### Returns
+- [Rt64AreaLighting](./structs.md#Rt64AreaLighting)
 
 [:arrow_up_small:](#)
 

@@ -58,3 +58,7 @@ ALIGNED8 const Texture texture_ping_four[] = {
 ALIGNED8 const Texture texture_ping_full[] = {
 #include "textures/segment2/custom_ping_full.rgba16.inc.c"
 };
+
+ALIGNED8 const Texture texture_water_nrm[] = {
+#include "textures/segment2/custom_water_nrm.rgba32.inc.c"
+};
