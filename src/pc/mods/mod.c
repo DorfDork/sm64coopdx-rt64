@@ -149,6 +149,29 @@ static void mod_activate_bhv(struct Mod *mod, struct ModFile *file) {
     dynos_add_behavior(mod->index, file->cachedPath, bhvName);
 }
 
+static void mod_activate_gd(struct ModFile* file) {
+    // copy gd name
+    char gdName[64] = { 0 };
+    if (snprintf(gdName, 63, "%s", path_basename(file->relativePath)) < 0) {
+        LOG_ERROR("Truncated gd name");
+        return;
+    }
+
+    // remove '.gd'
+    char* g = gdName;
+    while (*g != '\0') {
+        if (*g == '.') {
+            *g = '\0';
+            break;
+        }
+        g++;
+    }
+
+    // Add to goddard heads
+    LOG_INFO("Activating DynOS gd: '%s', '%s'", file->cachedPath, gdName);
+    dynos_goddard_add_mod_head(file->cachedPath, gdName);
+}
+
 void mod_activate(struct Mod* mod) {
     // activate dynos models
     for (int i = 0; i < mod->fileCount; i++) {
@@ -175,6 +198,9 @@ void mod_activate(struct Mod* mod) {
         }
         if (path_ends_with(file->relativePath, ".tex")) {
             mod_activate_tex(file);
+        }
+        if (path_ends_with(file->relativePath, ".gd")) {
+            mod_activate_gd(file);
         }
     }
 }
@@ -390,6 +416,12 @@ static bool mod_load_files(struct Mod* mod, char* fullPath) {
     {
         const char* fileTypes[] = { ".m64", ".mp3", ".aiff", ".ogg", NULL };
         if (!mod_load_files_dir(mod, fullPath, "sound", fileTypes, false)) { return false; }
+    }
+
+    // deal with goddard directory
+    {
+        const char* fileTypes[] = { ".gd", NULL };
+        if (!mod_load_files_dir(mod, fullPath, "goddard", fileTypes, false)) { return false; }
     }
 
     return true;

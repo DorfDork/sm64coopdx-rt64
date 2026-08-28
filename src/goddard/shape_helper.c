@@ -435,34 +435,11 @@ failed:
     sGoddardOverride.last_size = 0;
 }
 
-bool gd_goddard_has_skin_weights(void) {
-    return sGoddardOverride.has_skin_weights;
-}
-
-u32 gd_goddard_get_skin_joint_count(void) {
-    return sGoddardOverride.joint_skin_count;
-}
-
-bool gd_goddard_get_skin_joint_data(u32 index, u32 *out_joint_id, u32 *out_weight_count) {
-    if (index >= sGoddardOverride.joint_skin_count) return false;
-    *out_joint_id = sGoddardOverride.joint_skins[index].joint_id;
-    *out_weight_count = sGoddardOverride.joint_skins[index].weight_count;
-    return true;
-}
-
-bool gd_goddard_get_skin_weight(u32 joint_index, u32 weight_index, u16 *out_vtx_idx, f32 *out_weight) {
-    if (joint_index >= sGoddardOverride.joint_skin_count) return false;
-    if (weight_index >= sGoddardOverride.joint_skins[joint_index].weight_count) return false;
-    *out_vtx_idx = sGoddardOverride.joint_skins[joint_index].weights[weight_index].vtx_idx;
-    *out_weight = sGoddardOverride.joint_skins[joint_index].weights[weight_index].weight;
-    return true;
-}
-
 /**
  * Apply GDB2 skin weights to joint objects.
  * This must be called after the Mario head dynlist is processed.
  */
-void gd_apply_gdb2_skin_weights(void) {
+static void gd_apply_gdb2_skin_weights(void) {
     if (!sGoddardOverride.has_skin_weights) return;
     
     for (u32 i = 0; i < sGoddardOverride.joint_skin_count; i++) {
@@ -1228,7 +1205,7 @@ void get_OBJ_shape(struct ObjShape *shape) {
                 func_8019807C(vtxArr[vtxCount]);
                 vtxCount++;
 
-                if (vtxCount >= 100000) {
+                if (vtxCount >= GD_CFG_MAX_SHAPE_VERTICES) {
                     fatal_printf("Too many vertices in shape data");
                 }
 
@@ -1240,7 +1217,7 @@ void get_OBJ_shape(struct ObjShape *shape) {
                 faceArr[faceCount] = newFace;
                 faceCount++;
 
-                if (faceCount >= 100000) {
+                if (faceCount >= GD_CFG_MAX_SHAPE_FACES) {
                     fatal_printf("Too many faces in shape data");
                 }
 

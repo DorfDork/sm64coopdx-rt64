@@ -32,11 +32,10 @@ const char* dynos_pack_get_name(s32 index);
 bool dynos_pack_get_enabled(s32 index);
 void dynos_pack_set_enabled(s32 index, bool value);
 bool dynos_pack_get_exists(s32 index);
-const char* dynos_pack_get_goddard_mario_head_bin(s32 index);
-const char* dynos_get_active_goddard_mario_head_bin(void);
 const u8* dynos_get_active_goddard_mario_head_bin_data(void);
 s32 dynos_get_active_goddard_mario_head_bin_size(void);
 void dynos_generate_mod_pack(char* modPath);
+void dynos_goddard_add_mod_head(const char* filePath, const char* headName);
 void dynos_generate_packs(const char* directory);
 
 // -- geos -- //

@@ -10,10 +10,6 @@
 #define GD_CFG_MAX_SHAPE_VERTICES 100000
 #define GD_CFG_MAX_SHAPE_FACES    100000
 
-// Dynamic object and vertex buffer sizes for dynlist processing
-#define GD_CFG_DYNOBJ_LIST_SIZE   20000
-#define GD_CFG_VTX_BUF_SIZE       20000
-
 // Static display list allocation (gfx commands, vertices)
 #define GD_CFG_STATIC_DL_GFX      50000
 #define GD_CFG_STATIC_DL_VTX      100000

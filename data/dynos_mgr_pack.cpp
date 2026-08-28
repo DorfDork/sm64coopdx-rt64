@@ -38,7 +38,7 @@ static void ScanPackBins(struct PackData* aPack) {
         }
     }
 
-    goddard_scan_pack_bins(aPack);
+    DynOS_Goddard_ScanPackBins(aPack);
 }
 
 static void DynOS_Pack_ActivateActor(s32 aPackIndex, std::pair<std::string, GfxData *> &pair) {
@@ -118,14 +118,8 @@ void DynOS_Pack_SetEnabled(PackData* aPack, bool aEnabled) {
         }
     }
 
-    // Check if active goddard head changed and reload if needed
-    SysPath _NewActiveHead = Goddard_CalculateActiveMarioHeadBin();
-    if (_NewActiveHead != goddard_get_active_mario_head_bin()) {
-        // Update the active head
-        extern void goddard_set_active_mario_head_bin(const SysPath& path);
-        goddard_set_active_mario_head_bin(_NewActiveHead);
-        Goddard_LoadActiveMarioHeadBinIfNeeded();
-    }
+    // This pack may have added or removed a goddard head
+    DynOS_Goddard_RefreshActiveMarioHeadBin();
 
     DynOS_Actor_Override_All();
 }
@@ -185,7 +179,6 @@ PackData* DynOS_Pack_Add(const SysPath& aPath) {
         .mDisplayName = "",
         .mGfxData = {},
         .mTextures = {},
-        .mGoddardMarioHeadBin = "",
         .mGoddardCharacterHeadBins = {},
         .mLoaded = false,
     };

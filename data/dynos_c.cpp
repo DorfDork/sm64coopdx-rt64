@@ -101,30 +101,20 @@ bool dynos_pack_get_exists(s32 index) {
     return false;
 }
 
-const char* dynos_pack_get_goddard_mario_head_bin(s32 index) {
-    PackData* _Pack = DynOS_Pack_GetFromIndex(index);
-    if (_Pack) {
-        const SysPath& _Path = pack_get_goddard_mario_head_bin(_Pack);
-        return _Path.c_str();
-    }
-    return NULL;
-}
-
-const char* dynos_get_active_goddard_mario_head_bin(void) {
-    const SysPath& _Path = goddard_get_active_mario_head_bin();
-    return _Path.c_str();
-}
-
 const u8* dynos_get_active_goddard_mario_head_bin_data(void) {
-    return goddard_get_active_mario_head_bin_data();
+    return DynOS_Goddard_GetActiveMarioHeadBinData();
 }
 
 s32 dynos_get_active_goddard_mario_head_bin_size(void) {
-    return goddard_get_active_mario_head_bin_size();
+    return DynOS_Goddard_GetActiveMarioHeadBinSize();
 }
 
 void dynos_generate_mod_pack(char* modPath) {
     DynOS_Gfx_GenerateModPacks(modPath);
+}
+
+void dynos_goddard_add_mod_head(const char* filePath, const char* headName) {
+    DynOS_Goddard_AddModHead(SysPath(filePath), headName);
 }
 
 void dynos_generate_packs(const char* directory) {

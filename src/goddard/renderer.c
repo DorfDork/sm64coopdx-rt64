@@ -957,15 +957,19 @@ void gd_exit(UNUSED s32 code) {
     }
 }
 
+#define GD_MALLOC_HEADER_SIZE 8
+
 /* 24A1D4 -> 24A220; orig name: func_8019BA04 */
 void gd_free(void *ptr) {
-    /*C MEM*/
-    sAllocMemory -= sizeof(ptr);
-    free(ptr);
-    return;
-    /*C MEM*/
+    u8 *block;
 
-    sAllocMemory -= gd_free_mem(ptr);
+    if (ptr == NULL) {
+        return;
+    }
+
+    block = (u8 *) ptr - GD_MALLOC_HEADER_SIZE;
+    sAllocMemory -= *(u32 *) block;
+    free(block);
 }
 
 /* 24A220 -> 24A318 */
@@ -988,18 +992,13 @@ void *gd_allocblock(u32 size) {
 }
 
 /* 24A318 -> 24A3E8 */
-void *gd_malloc(u32 size, u8 perm) {
-    /*C MEM*/
-    size = ALIGN(size, 8);
-    sAllocMemory += size;
-    return malloc(size);
-    /*C MEM*/
+void *gd_malloc(u32 size, UNUSED u8 perm) {
+    u8 *block; // 1c
 
-    void *ptr; // 1c
     size = ALIGN(size, 8);
-    ptr = gd_request_mem(size, perm);
+    block = malloc(size + GD_MALLOC_HEADER_SIZE);
 
-    if (ptr == NULL) {
+    if (block == NULL) {
         gd_printf("gd_malloc(): Failed request: %dk (%d bytes)\n", size / 1024, size);
         gd_printf("gd_malloc(): Heap usage: %dk (%d bytes) \n", sAllocMemory / 1024, sAllocMemory);
         print_all_memtrackers();
@@ -1007,9 +1006,10 @@ void *gd_malloc(u32 size, u8 perm) {
         return NULL;
     }
 
+    *(u32 *) block = size;
     sAllocMemory += size;
 
-    return ptr;
+    return block + GD_MALLOC_HEADER_SIZE;
 }
 
 /* 24A3E8 -> 24A420; orig name: func_8019BC18 */
@@ -2888,6 +2888,7 @@ void *load_texture_from_file(const char *file, s32 fmt, s32 size, u32 arg3, u32 
     u16 *txHalf;           // 2C
     u8 buf[3];             // 28
     u8 alpha;              // 27
+    s32 dl;                // 20
 
     txFile = gd_fopen(file, "r");
     if (txFile == NULL) {
@@ -2905,11 +2906,11 @@ void *load_texture_from_file(const char *file, s32 fmt, s32 size, u32 arg3, u32 
         *txHalf = ((buf[2] >> 3) << 11) | ((buf[1] >> 3) << 6) | ((buf[0] >> 3) << 1) | (alpha >> 7);
         txHalf++;
     }
-    //gd_printf("Loaded texture '%s' (%d bytes)\n", file, txSize);
+    gd_printf("Loaded texture '%s' (%d bytes)\n", file, txSize);
     gd_fclose(txFile);
-    gd_gentexture(texture, fmt, size, arg3, arg4);
-    //gd_printf("Generated '%s' (%d) display list ok.\n", file, dl);
- 
+    dl = gd_gentexture(texture, fmt, size, arg3, arg4);
+    gd_printf("Generated '%s' (%d) display list ok.\n", file, dl);
+
     return texture;
 }
 
@@ -3743,7 +3744,7 @@ void func_801A71CC(struct ObjNet *net) {
         net->unk21C = make_group(0);
     }
 
-    //gd_print_bounding_box("making zones for net=", &net->boundingBox);
+    gd_print_bounding_box("making zones for net=", &net->boundingBox);
 
     sp64.x = (ABS(net->boundingBox.minX) + ABS(net->boundingBox.maxX)) / 16.0f;
     sp64.z = (ABS(net->boundingBox.minZ) + ABS(net->boundingBox.maxZ)) / 16.0f;

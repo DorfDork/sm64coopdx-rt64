@@ -656,8 +656,7 @@ struct PackData {
     String mDisplayName;
     std::vector<std::pair<std::string, GfxData *>> mGfxData;
     std::vector<DataNode<TexData>*> mTextures;
-    SysPath mGoddardMarioHeadBin;
-    SysPath mGoddardCharacterHeadBins[16];
+    SysPath mGoddardCharacterHeadBins[CT_MAX];
     bool mLoaded;
 };
 
@@ -900,16 +899,14 @@ std::pair<std::string, GfxData *>* DynOS_Pack_GetActor(PackData* aPackData, cons
 void DynOS_Pack_AddActor(PackData* aPackData, const char* aActorName, GfxData* aGfxData);
 DataNode<TexData>* DynOS_Pack_GetTex(PackData* aPackData, const char* aTexName);
 void DynOS_Pack_AddTex(PackData* aPackData, DataNode<TexData>* aTexData);
-const SysPath& pack_get_goddard_mario_head_bin(PackData* aPackData);
-const SysPath& goddard_get_active_mario_head_bin();
-void goddard_set_active_mario_head_bin(const SysPath& path);
-void goddard_mod_shutdown();
-const u8* goddard_get_active_mario_head_bin_data();
-s32 goddard_get_active_mario_head_bin_size();
-SysPath Goddard_CalculateActiveMarioHeadBin();
+const u8 *DynOS_Goddard_GetActiveMarioHeadBinData();
+s32 DynOS_Goddard_GetActiveMarioHeadBinSize();
+void DynOS_Goddard_RefreshActiveMarioHeadBin();
+void DynOS_Goddard_Update();
+void DynOS_Goddard_ModShutdown();
+void DynOS_Goddard_ScanPackBins(struct PackData *aPack);
+void DynOS_Goddard_AddModHead(const SysPath &aFilename, const char *aHeadName);
 std::deque<PackData>& DynosPacks();
-void Goddard_LoadActiveMarioHeadBinIfNeeded();
-void goddard_scan_pack_bins(struct PackData* aPack);
 
 //
 // Actor Manager

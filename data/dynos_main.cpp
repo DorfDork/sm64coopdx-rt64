@@ -25,6 +25,7 @@ void *DynOS_UpdateCmd(void *aCmd) {
 void DynOS_UpdateGfx() {
     DynOS_Mod_Update();
     DynOS_Tex_Update();
+    DynOS_Goddard_Update();
 }
 
 bool DynOS_IsTransitionActive() {
@@ -45,7 +46,7 @@ void DynOS_Mod_Update() {
         DynOS_Bhv_ModShutdown();
         DynOS_MovtexQC_ModShutdown();
         DynOS_Tex_ModShutdown();
-        goddard_mod_shutdown();
+        DynOS_Goddard_ModShutdown();
         DynOS_Gfx_ModShutdown();
     }
 }
