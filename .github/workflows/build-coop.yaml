@@ -112,6 +112,7 @@ jobs:
               run: |
                 cd ./build/us_pc
                 zip -r sm64coopdx_Windows.zip dynos lang mods palettes coop.map discord_game_sdk.dll sm64coopdx.exe coopdx_updater.exe
+                zip -j sm64coopdx_Windows.zip ../../lib/rt64/*.dll
 
             - name: Upload artifact
               uses: actions/upload-artifact@v4
