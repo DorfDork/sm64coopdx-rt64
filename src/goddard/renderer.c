@@ -957,19 +957,46 @@ void gd_exit(UNUSED s32 code) {
     }
 }
 
-#define GD_MALLOC_HEADER_SIZE 8
+struct GdAlloc {
+    struct GdAlloc *next;
+    struct GdAlloc *prev;
+    u32 size;
+    u32 pad;
+};
+
+static struct GdAlloc *sGdAllocList = NULL;
 
 /* 24A1D4 -> 24A220; orig name: func_8019BA04 */
 void gd_free(void *ptr) {
-    u8 *block;
+    struct GdAlloc *block;
 
     if (ptr == NULL) {
         return;
     }
 
-    block = (u8 *) ptr - GD_MALLOC_HEADER_SIZE;
-    sAllocMemory -= *(u32 *) block;
+    block = (struct GdAlloc *) ptr - 1;
+
+    if (block->prev != NULL) {
+        block->prev->next = block->next;
+    } else {
+        sGdAllocList = block->next;
+    }
+    if (block->next != NULL) {
+        block->next->prev = block->prev;
+    }
+
+    sAllocMemory -= block->size;
     free(block);
+}
+
+static void gd_free_all(void) {
+    while (sGdAllocList != NULL) {
+        struct GdAlloc *next = sGdAllocList->next;
+        free(sGdAllocList);
+        sGdAllocList = next;
+    }
+
+    sAllocMemory = 0;
 }
 
 /* 24A220 -> 24A318 */
@@ -993,10 +1020,10 @@ void *gd_allocblock(u32 size) {
 
 /* 24A318 -> 24A3E8 */
 void *gd_malloc(u32 size, UNUSED u8 perm) {
-    u8 *block; // 1c
+    struct GdAlloc *block; // 1c
 
     size = ALIGN(size, 8);
-    block = malloc(size + GD_MALLOC_HEADER_SIZE);
+    block = malloc(sizeof(struct GdAlloc) + size);
 
     if (block == NULL) {
         gd_printf("gd_malloc(): Failed request: %dk (%d bytes)\n", size / 1024, size);
@@ -1006,10 +1033,17 @@ void *gd_malloc(u32 size, UNUSED u8 perm) {
         return NULL;
     }
 
-    *(u32 *) block = size;
+    block->size = size;
+    block->prev = NULL;
+    block->next = sGdAllocList;
+    if (sGdAllocList != NULL) {
+        sGdAllocList->prev = block;
+    }
+    sGdAllocList = block;
+
     sAllocMemory += size;
 
-    return block + GD_MALLOC_HEADER_SIZE;
+    return block + 1;
 }
 
 /* 24A3E8 -> 24A420; orig name: func_8019BC18 */
@@ -1156,7 +1190,7 @@ void gdm_init(void *blockpool, u32 size) {
     sMemBlockPoolBase = blockpool;
     sMemBlockPoolSize = size;
     sMemBlockPoolUsed = 0;
-    sAllocMemory = 0;
+    gd_free_all();
     init_mem_block_lists();
     gd_reset_sfx();
     imout();

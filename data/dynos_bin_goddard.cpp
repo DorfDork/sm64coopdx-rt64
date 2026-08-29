@@ -2,6 +2,10 @@
 #include <array>
 #include "dynos.cpp.h"
 
+extern "C" {
+#include "pc/network/network_player.h"
+}
+
 static constexpr std::array<const char *, CT_MAX> sCharacterHeadNames = {
     "mario_head",
     "luigi_head",
@@ -12,71 +16,58 @@ static constexpr std::array<const char *, CT_MAX> sCharacterHeadNames = {
 
 static_assert(sCharacterHeadNames.back() != nullptr, "sCharacterHeadNames needs an entry for every character up to CT_MAX");
 
-static SysPath sActiveMarioHeadBin = "";
-static u8 *sActiveMarioHeadBinData = NULL;
-static s32 sActiveMarioHeadBinSize = 0;
+static SysPath sHeadPath = "";
+static u8 *sHeadData = NULL;
+static s32 sHeadSize = 0;
 
-// Heads found in activated mod folders, indexed by character. DynOS packs are searched
-// first, so a pack the user explicitly enabled always wins over one a mod happens to ship.
-static SysPath sModCharacterHeadBins[CT_MAX];
+// Heads found in activated mod folders, keyed by file name. DynOS packs are 
+// searched first, so a pack the user explicitly enabled wins over a mod's head.
+static std::map<std::string, SysPath> sModHeads;
 
-// Character the active head was last resolved for. CT_MAX means "not resolved yet".
-static u32 sActiveCharacterIndex = CT_MAX;
+static std::string sHeadOverride = "";
 
-const u8 *DynOS_Goddard_GetActiveMarioHeadBinData() {
-    return sActiveMarioHeadBinData;
+const u8 *DynOS_Goddard_GetData() {
+    return sHeadData;
 }
 
-s32 DynOS_Goddard_GetActiveMarioHeadBinSize() {
-    return sActiveMarioHeadBinSize;
+s32 DynOS_Goddard_GetSize() {
+    return sHeadSize;
 }
 
-static u32 DynOS_Goddard_GetCharacterIndex() {
-    return (configPlayerModel >= CT_MAX) ? CT_MARIO : configPlayerModel;
-}
-
-static const SysPath &DynOS_Goddard_FindHeadBin(u32 aCharacterIndex) {
-    static const SysPath sNone = "";
+static SysPath DynOS_Goddard_FindHead(const std::string &aHeadName) {
+    if (aHeadName.empty()) { return ""; }
 
     for (auto &_Pack : DynosPacks()) {
         if (!_Pack.mEnabled) { continue; }
-        if (!_Pack.mGoddardCharacterHeadBins[aCharacterIndex].empty()) {
-            return _Pack.mGoddardCharacterHeadBins[aCharacterIndex];
-        }
-        if (!_Pack.mGoddardCharacterHeadBins[CT_MARIO].empty()) {
-            return _Pack.mGoddardCharacterHeadBins[CT_MARIO];
-        }
+        auto _PackIt = _Pack.mGoddardHeads.find(aHeadName);
+        if (_PackIt != _Pack.mGoddardHeads.end()) { return _PackIt->second; }
     }
 
-    if (!sModCharacterHeadBins[aCharacterIndex].empty()) {
-        return sModCharacterHeadBins[aCharacterIndex];
-    }
-    if (!sModCharacterHeadBins[CT_MARIO].empty()) {
-        return sModCharacterHeadBins[CT_MARIO];
-    }
+    auto _ModIt = sModHeads.find(aHeadName);
+    if (_ModIt != sModHeads.end()) { return _ModIt->second; }
 
-    return sNone;
+    return "";
 }
 
-static void DynOS_Goddard_LoadActiveMarioHeadBin() {
-    if (sActiveMarioHeadBinData != NULL) {
-        free(sActiveMarioHeadBinData);
-        sActiveMarioHeadBinData = NULL;
+static void DynOS_Goddard_LoadHead() {
+    if (sHeadData != NULL) {
+        free(sHeadData);
+        sHeadData = NULL;
     }
-    sActiveMarioHeadBinSize = 0;
+    sHeadSize = 0;
 
-    if (sActiveMarioHeadBin.empty()) { return; }
+    if (sHeadPath.empty()) { return; }
 
-    BinFile *_File = BinFile::OpenR(sActiveMarioHeadBin.c_str());
+    BinFile *_File = BinFile::OpenR(sHeadPath.c_str());
     if (_File == NULL) {
-        Print("[DynOS] Goddard: failed to open %s", sActiveMarioHeadBin.c_str());
+        Print("[DynOS] Goddard: failed to open %s", sHeadPath.c_str());
         return;
     }
 
     s32 _Size = _File->Size();
     if (_Size <= 0) {
         BinFile::Close(_File);
-        Print("[DynOS] Goddard: %s is empty", sActiveMarioHeadBin.c_str());
+        Print("[DynOS] Goddard: %s is empty", sHeadPath.c_str());
         return;
     }
 
@@ -84,58 +75,59 @@ static void DynOS_Goddard_LoadActiveMarioHeadBin() {
     _File->Read<u8>(_Data, _Size);
     BinFile::Close(_File);
 
-    sActiveMarioHeadBinData = _Data;
-    sActiveMarioHeadBinSize = _Size;
+    sHeadData = _Data;
+    sHeadSize = _Size;
 
-    Print("[DynOS] Goddard: loaded %s (%d bytes)", sActiveMarioHeadBin.c_str(), _Size);
+    Print("[DynOS] Goddard: loaded %s (%d bytes)", sHeadPath.c_str(), _Size);
 }
 
-// Re-resolves the head for the current character and reloads if the character has changed.
-void DynOS_Goddard_RefreshActiveMarioHeadBin() {
-    sActiveCharacterIndex = DynOS_Goddard_GetCharacterIndex();
-
-    const SysPath &_HeadBin = DynOS_Goddard_FindHeadBin(sActiveCharacterIndex);
-    if (_HeadBin == sActiveMarioHeadBin) { return; }
-
-    sActiveMarioHeadBin = _HeadBin;
-    DynOS_Goddard_LoadActiveMarioHeadBin();
+void DynOS_Goddard_SetHead(const char *aHeadName) {
+    sHeadOverride = (aHeadName != NULL) ? aHeadName : "";
 }
 
 void DynOS_Goddard_Update() {
-    if (DynOS_Goddard_GetCharacterIndex() == sActiveCharacterIndex) { return; }
-    DynOS_Goddard_RefreshActiveMarioHeadBin();
+    u8 _CharacterIndex = gNetworkPlayers[0].overrideModelIndex;
+    if (_CharacterIndex >= CT_MAX) { _CharacterIndex = CT_MARIO; }
+
+    SysPath _HeadPath = DynOS_Goddard_FindHead(sHeadOverride);
+    if (_HeadPath.empty()) { _HeadPath = DynOS_Goddard_FindHead(sCharacterHeadNames[_CharacterIndex]); }
+    if (_HeadPath.empty()) { _HeadPath = DynOS_Goddard_FindHead(sCharacterHeadNames[CT_MARIO]); }
+    if (_HeadPath == sHeadPath) { return; }
+
+    sHeadPath = _HeadPath;
+    DynOS_Goddard_LoadHead();
 }
 
 void DynOS_Goddard_ModShutdown() {
-    for (SysPath &_HeadBin : sModCharacterHeadBins) {
-        _HeadBin = "";
-    }
+    sModHeads.clear();
+    sHeadPath = "";
 
-    sActiveMarioHeadBin = "";
-    sActiveCharacterIndex = CT_MAX;
-
-    if (sActiveMarioHeadBinData != NULL) {
-        free(sActiveMarioHeadBinData);
-        sActiveMarioHeadBinData = NULL;
+    if (sHeadData != NULL) {
+        free(sHeadData);
+        sHeadData = NULL;
     }
-    sActiveMarioHeadBinSize = 0;
+    sHeadSize = 0;
 }
 
-void DynOS_Goddard_ScanPackBins(struct PackData *aPack) {
-    for (u32 i = 0; i != CT_MAX; ++i) {
-        SysPath _HeadBin = fstring("%s/goddard/%s.gd", aPack->mPath.c_str(), sCharacterHeadNames[i]);
-        if (fs_sys_file_exists(_HeadBin.c_str())) {
-            aPack->mGoddardCharacterHeadBins[i] = _HeadBin;
+void DynOS_Goddard_ScanPack(struct PackData *aPack) {
+    SysPath _GoddardFolder = fstring("%s/goddard", aPack->mPath.c_str());
+    DIR *_GoddardDir = opendir(_GoddardFolder.c_str());
+    if (!_GoddardDir) { return; }
+
+    struct dirent *_GoddardEnt = NULL;
+    while ((_GoddardEnt = readdir(_GoddardDir)) != NULL) {
+        s32 length = strlen(_GoddardEnt->d_name);
+
+        // check for goddard heads
+        if (length > 3 && !strncmp(&_GoddardEnt->d_name[length - 3], ".gd", 3)) {
+            std::string _HeadName(_GoddardEnt->d_name, length - 3);
+            aPack->mGoddardHeads[_HeadName] = fstring("%s/%s", _GoddardFolder.c_str(), _GoddardEnt->d_name);
         }
     }
+
+    closedir(_GoddardDir);
 }
 
-void DynOS_Goddard_AddModHead(const SysPath &aFilename, const char *aHeadName) {
-    for (u32 i = 0; i != CT_MAX; ++i) {
-        if (!strcmp(aHeadName, sCharacterHeadNames[i])) {
-            sModCharacterHeadBins[i] = aFilename;
-            DynOS_Goddard_RefreshActiveMarioHeadBin();
-            return;
-        }
-    }
+void DynOS_Goddard_AddHead(const SysPath &aFilename, const char *aHeadName) {
+    sModHeads[aHeadName] = aFilename;
 }

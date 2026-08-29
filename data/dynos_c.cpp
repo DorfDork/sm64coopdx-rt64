@@ -101,24 +101,28 @@ bool dynos_pack_get_exists(s32 index) {
     return false;
 }
 
-const u8* dynos_get_active_goddard_mario_head_bin_data(void) {
-    return DynOS_Goddard_GetActiveMarioHeadBinData();
-}
-
-s32 dynos_get_active_goddard_mario_head_bin_size(void) {
-    return DynOS_Goddard_GetActiveMarioHeadBinSize();
-}
-
 void dynos_generate_mod_pack(char* modPath) {
     DynOS_Gfx_GenerateModPacks(modPath);
 }
 
-void dynos_goddard_add_mod_head(const char* filePath, const char* headName) {
-    DynOS_Goddard_AddModHead(SysPath(filePath), headName);
-}
-
 void dynos_generate_packs(const char* directory) {
     DynOS_Gfx_GeneratePacks(directory);
+}
+
+const u8* dynos_goddard_get_data(void) {
+    return DynOS_Goddard_GetData();
+}
+
+s32 dynos_goddard_get_size(void) {
+    return DynOS_Goddard_GetSize();
+}
+
+void dynos_goddard_add_head(const char* filePath, const char* headName) {
+    DynOS_Goddard_AddHead(SysPath(filePath), headName);
+}
+
+void dynos_goddard_set_head(const char* headName) {
+    DynOS_Goddard_SetHead(headName);
 }
 
 // -- audio -- //

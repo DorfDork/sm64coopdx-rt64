@@ -344,8 +344,8 @@ static bool gd_goddard_read_skin_weights(const u8** io_ptr, const u8* end) {
 static void gd_goddard_apply_override_if_present(void) {
     gd_goddard_capture_originals();
 
-    const u8* data = dynos_get_active_goddard_mario_head_bin_data();
-    s32 size = dynos_get_active_goddard_mario_head_bin_size();
+    const u8* data = dynos_goddard_get_data();
+    s32 size = dynos_goddard_get_size();
     if (!data || size < 12) {
         gd_goddard_free_override_arrays();
         gd_goddard_restore_vanilla();

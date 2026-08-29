@@ -4,6 +4,7 @@
 
 #include "dynos.h"
 #include <deque>
+#include <map>
 #include <vector>
 
 extern "C" {
@@ -668,7 +669,7 @@ struct PackData {
     String mDisplayName;
     std::vector<std::pair<std::string, GfxData *>> mGfxData;
     std::vector<DataNode<TexData>*> mTextures;
-    SysPath mGoddardCharacterHeadBins[CT_MAX];
+    std::map<std::string, SysPath> mGoddardHeads;
     std::vector<struct AudioOverrideEntry *> mAudioOverrides;
     bool mLoaded;
 };
@@ -914,13 +915,13 @@ std::pair<std::string, GfxData *>* DynOS_Pack_GetActor(PackData* aPackData, cons
 void DynOS_Pack_AddActor(PackData* aPackData, const char* aActorName, GfxData* aGfxData);
 DataNode<TexData>* DynOS_Pack_GetTex(PackData* aPackData, const char* aTexName);
 void DynOS_Pack_AddTex(PackData* aPackData, DataNode<TexData>* aTexData);
-const u8 *DynOS_Goddard_GetActiveMarioHeadBinData();
-s32 DynOS_Goddard_GetActiveMarioHeadBinSize();
-void DynOS_Goddard_RefreshActiveMarioHeadBin();
+const u8 *DynOS_Goddard_GetData();
+s32 DynOS_Goddard_GetSize();
+void DynOS_Goddard_SetHead(const char *aHeadName);
+void DynOS_Goddard_AddHead(const SysPath &aFilename, const char *aHeadName);
+void DynOS_Goddard_ScanPack(struct PackData *aPack);
 void DynOS_Goddard_Update();
 void DynOS_Goddard_ModShutdown();
-void DynOS_Goddard_ScanPackBins(struct PackData *aPack);
-void DynOS_Goddard_AddModHead(const SysPath &aFilename, const char *aHeadName);
 std::deque<PackData>& DynosPacks();
 
 //

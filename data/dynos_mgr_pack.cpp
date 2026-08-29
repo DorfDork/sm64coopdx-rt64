@@ -88,7 +88,7 @@ static void ScanPackBins(struct PackData* aPack) {
         }
     }
 
-    DynOS_Goddard_ScanPackBins(aPack);
+    DynOS_Goddard_ScanPack(aPack);
 }
 
 static void DynOS_Pack_ActivateActor(s32 aPackIndex, std::pair<std::string, GfxData *> &pair) {
@@ -174,9 +174,6 @@ void DynOS_Pack_SetEnabled(PackData* aPack, bool aEnabled) {
         }
     }
 
-    // This pack may have added or removed a goddard head
-    DynOS_Goddard_RefreshActiveMarioHeadBin();
-
     DynOS_Actor_Override_All();
 }
 
@@ -235,7 +232,7 @@ PackData* DynOS_Pack_Add(const SysPath& aPath) {
         .mDisplayName = "",
         .mGfxData = {},
         .mTextures = {},
-        .mGoddardCharacterHeadBins = {},
+        .mGoddardHeads = {},
         .mLoaded = false,
     };
     _DynosPacks.push_back(packData);

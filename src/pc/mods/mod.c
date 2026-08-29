@@ -170,7 +170,7 @@ static void mod_activate_gd(struct ModFile* file) {
 
     // Add to goddard heads
     LOG_INFO("Activating DynOS gd: '%s', '%s'", file->cachedPath, gdName);
-    dynos_goddard_add_mod_head(file->cachedPath, gdName);
+    dynos_goddard_add_head(file->cachedPath, gdName);
 }
 
 void mod_activate(struct Mod* mod) {
