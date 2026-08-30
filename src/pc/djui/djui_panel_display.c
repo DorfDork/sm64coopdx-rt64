@@ -13,7 +13,6 @@ static struct DjuiSelectionbox* sInterpolationSelectionBox = NULL;
 static struct DjuiText* sRestartText = NULL;
 static u32 sMsaaSelection = 0;
 static u32 sMsaaOriginal = OPTION_ORIGINAL_UNSET;
-static u32 sGfxWindowBackendOriginal = OPTION_ORIGINAL_UNSET;
 
 static void djui_panel_display_apply(UNUSED struct DjuiBase* caller) {
     configWindow.settings_changed = true;
@@ -39,11 +38,15 @@ static void djui_panel_display_frame_limit_text_change(struct DjuiBase* caller) 
 }
 
 static void djui_panel_display_update_restart_text(UNUSED struct DjuiBase* caller) {
-    if (sMsaaOriginal != configWindow.msaa || sGfxWindowBackendOriginal != configGraphicsBackend) {
+    if (sMsaaOriginal != configWindow.msaa) {
         djui_text_set_text(sRestartText, DLANG(DISPLAY, MUST_RESTART));
     } else {
         djui_text_set_text(sRestartText, "");
     }
+}
+
+static void djui_panel_display_graphics_backend_change(UNUSED struct DjuiBase* caller) {
+    request_graphics_backend_change();
 }
 
 static void djui_panel_display_msaa_change(struct DjuiBase* caller) {
@@ -64,7 +67,6 @@ void djui_panel_display_create(struct DjuiBase* caller) {
 
     // save original msaa value
     if (sMsaaOriginal == OPTION_ORIGINAL_UNSET) { sMsaaOriginal = configWindow.msaa; }
-    if (sGfxWindowBackendOriginal == OPTION_ORIGINAL_UNSET) { sGfxWindowBackendOriginal = configGraphicsBackend; }
 
     {
         djui_checkbox_create(body, DLANG(DISPLAY, FULLSCREEN), &configWindow.fullscreen, djui_panel_display_apply);
@@ -83,7 +85,7 @@ void djui_panel_display_create(struct DjuiBase* caller) {
 #endif
                 (char *)gfx_opengl_api.get_name(),
             };
-            djui_selectionbox_create(body, DLANG(DISPLAY, GRAPHICS_BACKEND), gfxBackendChoices, GFX_WINDOW_BACKEND_MAX, &configGraphicsBackend, djui_panel_display_update_restart_text);
+            djui_selectionbox_create(body, DLANG(DISPLAY, GRAPHICS_BACKEND), gfxBackendChoices, GFX_WINDOW_BACKEND_MAX, &configGraphicsBackend, djui_panel_display_graphics_backend_change);
         }
 
         char* framerateModeChoices[3] = { DLANG(DISPLAY, AUTO), DLANG(DISPLAY, MANUAL), DLANG(DISPLAY, UNCAPPED) };

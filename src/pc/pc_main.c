@@ -221,6 +221,27 @@ static u32 get_target_refresh_rate(void) {
     return get_display_refresh_rate();
 }
 
+static struct GfxRenderingAPI *get_rendering_api_for_backend(enum GfxWindowBackend backend) {
+    switch (backend) {
+        case GFX_WINDOW_BACKEND_OPENGL:
+            return &gfx_opengl_api;
+#if defined(_WIN32)
+        case GFX_WINDOW_BACKEND_DIRECTX11:
+            return &gfx_direct3d11_api;
+        case GFX_WINDOW_BACKEND_DIRECTX12:
+            return &gfx_direct3d12_api;
+        case GFX_WINDOW_BACKEND_RT64:
+            return &gfx_rt64_api;
+#endif
+#ifdef OSX_BUILD
+        case GFX_WINDOW_BACKEND_METAL:
+            return &gfx_metal_api;
+#endif
+        default:
+            return &gfx_dummy_renderer_api;
+    }
+}
+
 static void select_graphics_backend(void) {
     if (gCLIOpts.headless) {
         return;
@@ -231,45 +252,51 @@ static void select_graphics_backend(void) {
         configGraphicsBackend = GFX_WINDOW_BACKEND_DIRECTX11;
     }
 #endif
-    int backend = configGraphicsBackend;
+    enum GfxWindowBackend backend = configGraphicsBackend;
 #if defined(_WIN32) || defined(OSX_BUILD)
     if (gCLIOpts.backend < GFX_WINDOW_BACKEND_COUNT) { backend = gCLIOpts.backend; }
 #endif
 
-    switch (backend) {
-        case GFX_WINDOW_BACKEND_OPENGL:
-            gRenderApi = &gfx_opengl_api;
-            gAudioApi  = &audio_sdl;
-            break;
-#if defined(_WIN32)
-        case GFX_WINDOW_BACKEND_DIRECTX11:
-            gRenderApi = &gfx_direct3d11_api;
-            gAudioApi  = &audio_sdl;
-            break;
-        case GFX_WINDOW_BACKEND_DIRECTX12:
-            gRenderApi = &gfx_direct3d12_api;
-            gAudioApi  = &audio_sdl;
-            break;
-        case GFX_WINDOW_BACKEND_RT64:
-            gRenderApi = &gfx_rt64_api;
-            gAudioApi  = &audio_sdl;
-            break;
-#endif
-#ifdef OSX_BUILD
-        case GFX_WINDOW_BACKEND_METAL:
-            gRenderApi = &gfx_metal_api;
-            gAudioApi  = &audio_sdl;
-            break;
-#endif
-        default:
-            gRenderApi = &gfx_dummy_renderer_api;
-            gAudioApi  = &audio_null;
-            break;
-    }
+    gRenderApi = get_rendering_api_for_backend(backend);
+    gAudioApi  = (gRenderApi == &gfx_dummy_renderer_api) ? &audio_null : &audio_sdl;
 
     if (!gAudioApi->init()) {
         gAudioApi = &audio_null;
     }
+}
+
+static bool sGraphicsBackendChangePending = false;
+
+void request_graphics_backend_change(void) {
+    sGraphicsBackendChangePending = true;
+}
+
+static void apply_graphics_backend_change(void) {
+    if (!sGraphicsBackendChangePending) { return; }
+    sGraphicsBackendChangePending = false;
+
+    if (gCLIOpts.headless || !gGfxInited) { return; }
+
+    enum GfxWindowBackend backend = configGraphicsBackend;
+    if (backend >= GFX_WINDOW_BACKEND_COUNT || backend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    if (backend == gfx_wm_get_backend()) { return; }
+
+#if defined(_WIN32)
+    if (backend == GFX_WINDOW_BACKEND_OPENGL && !gfx_window_opengl_check_compatibility()) {
+        configGraphicsBackend = gfx_wm_get_backend();
+        return;
+    }
+#endif
+
+    gfx_shutdown_rendering_api();
+    gfx_wm_switch_backend(backend);
+
+    // some backends check gRenderApi from inside their own init, so publish it first
+    gRenderApi = get_rendering_api_for_backend(backend);
+    gfx_init_rendering_api(gRenderApi);
+
+    // every shader and texture the mods handed us belonged to the old backend
+    smlua_call_event_hooks(HOOK_ON_REFRESH_SHADERS);
 }
 
 void produce_interpolation_frames_and_delay(void) {
@@ -644,6 +671,7 @@ int main(int argc, char *argv[]) {
     while (true) {
         debug_context_reset();
         CTX_BEGIN(CTX_TOTAL);
+        apply_graphics_backend_change();
         gfx_run_one_game_iter(produce_one_frame);
 #ifdef DISCORD_SDK
         discord_update();

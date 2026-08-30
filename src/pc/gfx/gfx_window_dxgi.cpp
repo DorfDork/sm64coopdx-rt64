@@ -236,6 +236,22 @@ static int gfx_window_dxgi_get_max_msaa(void) {
     return 0;
 }
 
+static void gfx_window_dxgi_shutdown(void) {
+    gfx_window_dxgi_release_swap_chain();
+    dxgi.factory.Reset();
+
+    if (dxgi.dxgi_module != nullptr) {
+        FreeLibrary(dxgi.dxgi_module);
+        dxgi.dxgi_module = nullptr;
+        dxgi.CreateDXGIFactory1 = nullptr;
+        dxgi.CreateDXGIFactory2 = nullptr;
+    }
+
+    dxgi.h_wnd = nullptr;
+    dxgi.allow_tearing = false;
+    sSdlWindow = nullptr;
+}
+
 extern "C" HWND gfx_window_dxgi_get_h_wnd(void) {
     return dxgi.h_wnd;
 }
@@ -266,6 +282,7 @@ struct GfxWindowBackendAPI gfx_window_dxgi = {
     gfx_window_dxgi_swap_buffers_end,
     gfx_window_dxgi_get_time,
     gfx_window_dxgi_get_max_msaa,
+    gfx_window_dxgi_shutdown,
 };
 
 #endif

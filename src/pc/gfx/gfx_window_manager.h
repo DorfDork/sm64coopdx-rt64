@@ -15,6 +15,8 @@ extern "C" {
 
 #define WAPI_CLIPBOARD_BUFSIZ 1024
 
+#define WAPI_WINDOW_TITLE_BUFSIZ 256
+
 typedef bool (*kb_callback_t)(int code);
 
 enum GfxWindowBackend {
@@ -41,12 +43,15 @@ struct GfxWindowBackendAPI {
     void (*swap_buffers_end)(void);
     double (*get_time)(void); // For debug
     int  (*get_max_msaa)(void);
+    void (*shutdown)(void);
 };
 
 void gfx_wm_set_window(SDL_Window *window);
 SDL_Window *gfx_wm_get_window(void);
 
 void gfx_wm_init(const char *window_title);
+enum GfxWindowBackend gfx_wm_get_backend(void);
+void gfx_wm_switch_backend(enum GfxWindowBackend backend);
 void gfx_wm_set_keyboard_callbacks(kb_callback_t on_key_down, kb_callback_t on_key_up, void (*on_all_keys_up)(void),
     void (*on_text_input)(char*), void (*on_text_editing)(char*, int));
 void gfx_wm_set_scroll_callback(void (*on_scroll)(float, float));

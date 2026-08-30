@@ -715,6 +715,11 @@ void gfx_rt64_render_thread(void) {
     RT64.scene = RT64.lib.CreateScene(RT64.device);
     RT64.view = RT64.lib.CreateView(RT64.scene);
 
+    {
+        const std::lock_guard<std::mutex> lock(RT64.renderViewDescMutex);
+        RT64.renderViewDescChanged = true;
+    }
+
     // Draw at least one empty frame to fill the window.
     RT64.lib.DrawDevice(RT64.device, gfx_rt64_use_vsync() ? 1 : 0, 0.0f);
 

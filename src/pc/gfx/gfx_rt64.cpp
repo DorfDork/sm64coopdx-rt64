@@ -32,6 +32,7 @@ extern "C" {
 #include "gfx_rt64_context.hpp"
 #include "gfx_rt64_serialization.hpp"
 #include "gfx_pc.h"
+#include "gfx_window_manager.h"
 
 #define RT64_LUA_ASSERT_FIELD(luaType, realType, luaField, realField) \
     static_assert(offsetof(luaType, luaField) == offsetof(realType, realField), #luaType "::" #luaField " must match " #realType "::" #realField); \
@@ -1335,6 +1336,37 @@ static void gfx_rt64_rapi_shutdown(void) {
         RT64.device = nullptr;
     }
 
+    for (int i = 0; i < MAX_RENDER_FRAMES; i++) {
+        GameFrame &frame = RT64.frames[i];
+        for (auto &dlPair : frame.displayLists) {
+            for (auto &mesh : dlPair.second.meshes) { free(mesh.vertexBuffer); }
+        }
+        frame.displayLists.clear();
+        frame.areaLightCount = 0;
+        frame.skyTextureKey = 0;
+    }
+
+    RT64.cpuFrameIndex = 0;
+    RT64.gpuFrameIndex = -1;
+    RT64.barrierFrameIndex = -1;
+
+    RT64.textures.clear();
+    RT64.textureHashIdMap.clear();
+    RT64.stitchedSkyTextureKeys.clear();
+    RT64.mapTexturesLoaded.clear();
+    RT64.currentTextureIds[0] = 0;
+    RT64.currentTextureIds[1] = 0;
+    RT64.skyTextureKey = 0;
+
+    RT64.inspectorViewDesc = {};
+    RT64.inspectorViewDescValid = false;
+    RT64.renderViewDescChanged = false;
+
+    while (!RT64.textureUploadQueue.empty()) {
+        free(RT64.textureUploadQueue.front().desc.bytes);
+        RT64.textureUploadQueue.pop();
+    }
+    RT64.inspectorMessageQueue = {};
 }
 
 static void gfx_rt64_rapi_start_frame(void) {
@@ -1774,7 +1806,11 @@ static bool gfx_rt64_rapi_set_skybox(const Texture *const *tiles, float diffuseC
 }
 
 static void gfx_rt64_rapi_main_loop_iter(void (*run_one_game_iter)(void)) {
-    if (RT64.pauseMode) { return; }
+    if (RT64.pauseMode) {
+        gfx_wm_handle_events();
+        gfx_wm_delay(1);
+        return;
+    }
 
     RT64.skyTextureKey = 0;
     vec3f_set(RT64.skyDiffuseMultiplier, 1.0f, 1.0f, 1.0f);

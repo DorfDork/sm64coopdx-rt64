@@ -71,6 +71,10 @@ static int gfx_window_metal_get_max_msaa(void) {
     return 0;
 }
 
+static void gfx_window_metal_shutdown(void) {
+    sSdlWindow = NULL;
+}
+
 struct GfxWindowBackendAPI gfx_window_metal = {
     gfx_window_metal_init,
     gfx_window_metal_set_fullscreen,
@@ -80,6 +84,7 @@ struct GfxWindowBackendAPI gfx_window_metal = {
     gfx_window_metal_swap_buffers_end,
     gfx_window_metal_get_time,
     gfx_window_metal_get_max_msaa,
+    gfx_window_metal_shutdown,
 };
 
 #endif

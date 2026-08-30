@@ -1188,6 +1188,60 @@ static bool gfx_d3d11_is_legacy(void) {
 static void gfx_d3d11_finish_render(void) {
 }
 
+static void gfx_d3d11_shutdown(void) {
+    gfx_d3d11_remove_shaders();
+
+    gfx_d3d11_delete_framebuffer(&gDefaultGeoFramePass);
+    for (int i = 0; i < MAX_CUSTOM_FRAME_PASSES; i++) {
+        gfx_d3d11_delete_framebuffer(&gFramePasses[i]);
+    }
+
+    d3d.textures.clear();
+    d3d.current_tile = 0;
+    d3d.current_texture_ids[0] = 0;
+    d3d.current_texture_ids[1] = 0;
+
+    d3d.last_vertex_buffer_stride = 0;
+    d3d.last_blend_state = nullptr;
+    d3d.last_resource_views[0] = nullptr;
+    d3d.last_resource_views[1] = nullptr;
+    d3d.last_sampler_states[0] = nullptr;
+    d3d.last_sampler_states[1] = nullptr;
+    d3d.last_depth_test = -1;
+    d3d.last_depth_mask = -1;
+    d3d.last_zmode_decal = -1;
+    d3d.last_primitive_topology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
+
+    if (d3d.context.Get() != nullptr) {
+        d3d.context->ClearState();
+        d3d.context->Flush();
+    }
+
+    d3d.vertex_buffer.Reset();
+    d3d.depth_stencil_state.Reset();
+    d3d.rasterizer_state.Reset();
+    d3d.depth_stencil_view.Reset();
+    d3d.backbuffer_view.Reset();
+    d3d.swap_chain.Reset();
+    gfx_window_dxgi_release_swap_chain();
+    d3d.context.Reset();
+#if DEBUG_D3D
+    d3d.debug.Reset();
+#endif
+    d3d.device.Reset();
+
+    if (d3d.d3dcompiler_module != nullptr) {
+        FreeLibrary(d3d.d3dcompiler_module);
+        d3d.d3dcompiler_module = nullptr;
+        d3d.D3DCompile = nullptr;
+    }
+    if (d3d.d3d11_module != nullptr) {
+        FreeLibrary(d3d.d3d11_module);
+        d3d.d3d11_module = nullptr;
+        d3d.D3D11CreateDevice = nullptr;
+    }
+}
+
 } // namespace
 
 struct GfxRenderingAPI gfx_direct3d11_api = {
@@ -1227,6 +1281,7 @@ struct GfxRenderingAPI gfx_direct3d11_api = {
     gfx_d3d11_finish_render,
     gfx_d3d11_get_name,
     gfx_d3d11_is_legacy,
+    gfx_d3d11_shutdown,
 };
 
 extern "C" void d3d11_create_buffer_for_block(struct ShaderUniformBlock *block) {

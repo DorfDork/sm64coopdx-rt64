@@ -158,6 +158,12 @@ static int gfx_window_opengl_get_max_msaa(void) {
     return maxSamples;
 }
 
+static void gfx_window_opengl_shutdown(void) {
+    SDL_GLContext ctx = SDL_GL_GetCurrentContext();
+    if (ctx) { SDL_GL_DeleteContext(ctx); }
+    sSdlWindow = NULL;
+}
+
 struct GfxWindowBackendAPI gfx_window_opengl = {
     gfx_window_opengl_init,
     gfx_window_opengl_set_fullscreen,
@@ -167,4 +173,5 @@ struct GfxWindowBackendAPI gfx_window_opengl = {
     gfx_window_opengl_swap_buffers_end,
     gfx_window_opengl_get_time,
     gfx_window_opengl_get_max_msaa,
+    gfx_window_opengl_shutdown,
 };

@@ -816,6 +816,25 @@ static bool gfx_opengl_is_legacy(void) {
 }
 
 static void gfx_opengl_shutdown(void) {
+    gfx_opengl_remove_shaders();
+
+    gfx_opengl_delete_framebuffer(&gDefaultGeoFramePass);
+    for (int i = 0; i < MAX_CUSTOM_FRAME_PASSES; i++) {
+        gfx_opengl_delete_framebuffer(&gFramePasses[i]);
+    }
+
+    free(tex_cache);
+    tex_cache = NULL;
+    tex_cache_size = 0;
+    num_textures = 0;
+
+    opengl_tex[0] = NULL;
+    opengl_tex[1] = NULL;
+    opengl_curtex = 0;
+    opengl_prg = NULL;
+    opengl_max_texture_units = 0;
+    opengl_vbo = 0;
+    opengl_vao = 0;
 }
 
 struct GfxRenderingAPI gfx_opengl_api = {

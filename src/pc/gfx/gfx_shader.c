@@ -621,6 +621,9 @@ static void gfx_init_shader_bindings() {
 }
 
 void gfx_init_shaders() {
+    // The inputs and bindings are global and shared across all backends, so we only need to initialize them once.
+    if (gShaderInputs != NULL) { return; }
+
     gfx_init_shader_inputs();
     gfx_init_shader_bindings();
 }

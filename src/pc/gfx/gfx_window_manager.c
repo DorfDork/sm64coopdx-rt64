@@ -40,11 +40,12 @@ static struct GfxWindowBackendAPI *sBackends[GFX_WINDOW_BACKEND_COUNT] = {
     [GFX_WINDOW_BACKEND_DUMMY] = &gfx_window_dummy,
 };
 
-// TODO: figure out how to switch the backend without restarting
-// this is currently used to initialize which backend is used
-static enum GfxWindowBackend currBackend = GFX_WINDOW_BACKEND_DUMMY;
+static enum GfxWindowBackend sCurrBackend = GFX_WINDOW_BACKEND_DUMMY;
 
 static SDL_Window *sSdlWindow;
+
+// kept around so the window can be recreated with the same title when the backend is switched
+static char sWindowTitle[WAPI_WINDOW_TITLE_BUFSIZ] = { 0 };
 
 static kb_callback_t kb_key_down = NULL;
 static kb_callback_t kb_key_up = NULL;
@@ -80,7 +81,7 @@ static void gfx_wm_set_fullscreen(void) {
         SDL_ShowCursor(1);
         configWindow.exiting_fullscreen = true;
     }
-    sBackends[currBackend]->set_fullscreen();
+    sBackends[sCurrBackend]->set_fullscreen();
 }
 
 static void gfx_wm_reset_dimension_and_pos(void) {
@@ -116,6 +117,29 @@ static void SDLCALL gfx_wm_windows_message_hook(void *userdata, void *hWnd, unsi
 }
 #endif
 
+// brings up the window for sCurrBackend and puts it in the state the game expects
+static void gfx_wm_open_window(void) {
+    sBackends[sCurrBackend]->init(sWindowTitle);
+
+    gfx_wm_set_fullscreen();
+    if (configWindow.fullscreen) {
+        SDL_ShowCursor(SDL_DISABLE);
+    }
+
+    SDL_PumpEvents();
+}
+
+// tears the window back down, leaving SDL itself running
+static void gfx_wm_close_window(void) {
+    if (sBackends[sCurrBackend]->shutdown) {
+        sBackends[sCurrBackend]->shutdown();
+    }
+    if (sSdlWindow) {
+        SDL_DestroyWindow(sSdlWindow);
+        sSdlWindow = NULL;
+    }
+}
+
 void gfx_wm_init(const char *window_title) {
     if (gCLIOpts.headless) { return; }
 #if defined(_WIN32)
@@ -127,23 +151,44 @@ void gfx_wm_init(const char *window_title) {
 
     SDL_StopTextInput();
 
+    snprintf(sWindowTitle, sizeof(sWindowTitle), "%s", window_title);
+
 #if defined(_WIN32) || defined(__APPLE__)
-    currBackend = gCLIOpts.backend < GFX_WINDOW_BACKEND_COUNT ? gCLIOpts.backend : configGraphicsBackend;
+    sCurrBackend = gCLIOpts.backend < GFX_WINDOW_BACKEND_COUNT ? gCLIOpts.backend : configGraphicsBackend;
 #else
-    currBackend = configGraphicsBackend;
+    sCurrBackend = configGraphicsBackend;
 #endif
-    sBackends[currBackend]->init(window_title);
+    gfx_wm_open_window();
 
 #if defined(_WIN32)
     SDL_SetWindowsMessageHook(gfx_wm_windows_message_hook, NULL);
 #endif
 
-    gfx_wm_set_fullscreen();
-    if (configWindow.fullscreen) {
-        SDL_ShowCursor(SDL_DISABLE);
+    controller_bind_init();
+}
+
+enum GfxWindowBackend gfx_wm_get_backend(void) {
+    return sCurrBackend;
+}
+
+void gfx_wm_switch_backend(enum GfxWindowBackend backend) {
+    if (backend >= GFX_WINDOW_BACKEND_COUNT || backend == sCurrBackend) { return; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY || backend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+
+    if (!IS_FULLSCREEN()) {
+        int xpos = 0, ypos = 0, width = 0, height = 0;
+        SDL_GetWindowPosition(sSdlWindow, &xpos, &ypos);
+        SDL_GetWindowSize(sSdlWindow, &width, &height);
+        configWindow.x = xpos;
+        configWindow.y = ypos;
+        configWindow.w = width;
+        configWindow.h = height;
     }
 
-    controller_bind_init();
+    gfx_wm_close_window();
+
+    sCurrBackend = backend;
+    gfx_wm_open_window();
 }
 
 void gfx_wm_main_loop(void (*run_one_game_iter)(void)) {
@@ -151,7 +196,7 @@ void gfx_wm_main_loop(void (*run_one_game_iter)(void)) {
 }
 
 void gfx_wm_get_dimensions(uint32_t *width, uint32_t *height) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) {
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) {
         if (width) { *width = 320; }
         if (height) { *height = 240; }
         return;
@@ -231,7 +276,7 @@ static void gfx_wm_update_inspector_cursor(void) {
 }
 
 void gfx_wm_handle_events(void) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
     gfx_wm_update_inspector_cursor();
     SDL_Event event = { 0 };
     while (SDL_PollEvent(&event)) {
@@ -274,21 +319,21 @@ void gfx_wm_handle_events(void) {
                 game_exit();
                 break;
         }
-        sBackends[currBackend]->handle_events(event);
+        sBackends[sCurrBackend]->handle_events(event);
     }
 
     if (configWindow.settings_changed) {
         gfx_wm_set_fullscreen();
         gfx_wm_reset_dimension_and_pos();
         memset(&event, 0, sizeof(event));
-        sBackends[currBackend]->handle_events(event);
+        sBackends[sCurrBackend]->handle_events(event);
         configWindow.settings_changed = false;
     }
 }
 
 void gfx_wm_set_keyboard_callbacks(kb_callback_t on_key_down, kb_callback_t on_key_up,
     void (*on_all_keys_up)(void), void (*on_text_input)(char*), void (*on_text_editing)(char*, int)) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
     kb_key_down = on_key_down;
     kb_key_up = on_key_up;
     kb_all_keys_up = on_all_keys_up;
@@ -297,72 +342,71 @@ void gfx_wm_set_keyboard_callbacks(kb_callback_t on_key_down, kb_callback_t on_k
 }
 
 void gfx_wm_set_scroll_callback(void (*on_scroll)(float, float)) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
     m_scroll = on_scroll;
 }
 
 bool gfx_wm_start_frame(void) {
-    return sBackends[currBackend]->start_frame();
+    return sBackends[sCurrBackend]->start_frame();
 }
 
 void gfx_wm_swap_buffers_begin(void) {
-    sBackends[currBackend]->swap_buffers_begin();
+    sBackends[sCurrBackend]->swap_buffers_begin();
 }
 
 void gfx_wm_swap_buffers_end(void) {
-    sBackends[currBackend]->swap_buffers_end();
+    sBackends[sCurrBackend]->swap_buffers_end();
 }
 
 double gfx_wm_get_time(void) {
-    return sBackends[currBackend]->get_time();
+    return sBackends[sCurrBackend]->get_time();
 }
 
 void gfx_wm_delay(u32 ms) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
     SDL_Delay(ms);
 }
 
 int gfx_wm_get_max_msaa(void) {
-    return sBackends[currBackend]->get_max_msaa();
+    return sBackends[sCurrBackend]->get_max_msaa();
 }
 
 void gfx_wm_set_window_title(const char *title) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
-    SDL_SetWindowTitle(sSdlWindow, title);
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    snprintf(sWindowTitle, sizeof(sWindowTitle), "%s", title);
+    SDL_SetWindowTitle(sSdlWindow, sWindowTitle);
 }
 
 void gfx_wm_reset_window_title(void) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
-    SDL_SetWindowTitle(sSdlWindow, TITLE);
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    gfx_wm_set_window_title(TITLE);
 }
 
 void gfx_wm_shutdown(void) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
     if (SDL_WasInit(0)) {
-        SDL_GLContext ctx = SDL_GL_GetCurrentContext();
-        if (ctx) { SDL_GL_DeleteContext(ctx); }
-        if (sSdlWindow) { SDL_DestroyWindow(sSdlWindow); sSdlWindow = NULL; }
+        gfx_wm_close_window();
         SDL_Quit();
     }
 }
 
 bool gfx_wm_has_focus(void) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return true; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return true; }
     return (SDL_GetWindowFlags(sSdlWindow) & SDL_WINDOW_INPUT_FOCUS);
 }
 
 void gfx_wm_start_text_input(void) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
     SDL_StartTextInput();
 }
 
 void gfx_wm_stop_text_input(void) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
     SDL_StopTextInput();
 }
 
 char *gfx_wm_get_clipboard_text(void) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return ""; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return ""; }
     static char sClipboardBuf[WAPI_CLIPBOARD_BUFSIZ];
 
     char *text = SDL_GetClipboardText();
@@ -373,11 +417,11 @@ char *gfx_wm_get_clipboard_text(void) {
 }
 
 void gfx_wm_set_clipboard_text(const char *text) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
     SDL_SetClipboardText(text);
 }
 
 void gfx_wm_set_cursor_visible(bool visible) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
     SDL_ShowCursor(visible ? SDL_ENABLE : SDL_DISABLE);
 }

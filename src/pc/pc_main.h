@@ -44,6 +44,7 @@ extern u8 gLuaVolumeSfx;
 extern u8 gLuaVolumeEnv;
 
 void produce_one_dummy_frame(void (*callback)(), u8 clearColorR, u8 clearColorG, u8 clearColorB);
+void request_graphics_backend_change(void);
 void game_deinit(void);
 void game_exit(void);
 

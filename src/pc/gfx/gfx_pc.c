@@ -2561,8 +2561,9 @@ void gfx_get_adjusted_dimensions(u32 *width, u32 *height) {
     }
 }
 
-void gfx_init(struct GfxRenderingAPI *rapi, const char *window_title) {
-    gfx_wm_init(window_title);
+void gfx_init_rendering_api(struct GfxRenderingAPI *rapi) {
+    if (rapi == NULL) { return; }
+
     gfx_rapi = rapi;
     sBackendCaps = (rapi->get_capabilities != NULL) ? rapi->get_capabilities() : 0;
     sMaxBufferedTris = gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY) ? MAX_BUFFERED_MODEL_SPACE : MAX_BUFFERED;
@@ -2570,6 +2571,37 @@ void gfx_init(struct GfxRenderingAPI *rapi, const char *window_title) {
 
     gfx_init_shaders();
     gfx_cc_precomp();
+}
+
+void gfx_shutdown_rendering_api(void) {
+    if (gfx_rapi == NULL) { return; }
+
+    if (gfx_rapi->delete_framebuffer != NULL) {
+        gfx_rapi->delete_framebuffer(&gDefaultGeoFramePass);
+        for (int i = 0; i < MAX_CUSTOM_FRAME_PASSES; i++) {
+            gfx_rapi->delete_framebuffer(&gFramePasses[i]);
+        }
+    }
+
+    if (gfx_rapi->remove_shaders != NULL) { gfx_rapi->remove_shaders(); }
+
+    gfx_remove_all_color_combiners();
+    gfx_texture_cache_clear();
+
+    sRenderingState.shader_program = NULL;
+    sRenderingState.textures[0] = NULL;
+    sRenderingState.textures[1] = NULL;
+
+    if (gfx_rapi->shutdown != NULL) { gfx_rapi->shutdown(); }
+
+    gfx_rapi = NULL;
+    sBackendCaps = 0;
+    sMaxBufferedTris = MAX_BUFFERED;
+}
+
+void gfx_init(struct GfxRenderingAPI *rapi, const char *window_title) {
+    gfx_wm_init(window_title);
+    gfx_init_rendering_api(rapi);
 
     gGfxInited = true;
 }
@@ -2861,12 +2893,7 @@ void gfx_run_one_game_iter(void (*runOneGameIter)(void)) {
 }
 
 void gfx_shutdown(void) {
-    if (gfx_rapi) {
-        if (gfx_rapi->shutdown) gfx_rapi->shutdown();
-        gfx_rapi = NULL;
-        sBackendCaps = 0;
-        sMaxBufferedTris = MAX_BUFFERED;
-    }
+    gfx_shutdown_rendering_api();
     gfx_wm_shutdown();
     gGfxInited = false;
 }

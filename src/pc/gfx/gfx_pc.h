@@ -109,6 +109,8 @@ extern "C" {
 #endif
 
 void gfx_init(struct GfxRenderingAPI *rapi, const char *window_title);
+void gfx_init_rendering_api(struct GfxRenderingAPI *rapi);
+void gfx_shutdown_rendering_api(void);
 struct GfxRenderingAPI *gfx_get_current_rendering_api(void);
 bool gfx_shader_stage_is(enum ShaderStage stage);
 bool gfx_backend_has(u32 caps);

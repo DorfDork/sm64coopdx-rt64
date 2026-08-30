@@ -45,6 +45,9 @@ static double gfx_dummy_wm_get_time(void) {
     return 0.0;
 }
 
+static void gfx_dummy_wm_shutdown(void) {
+}
+
 static bool gfx_dummy_renderer_z_is_from_0_to_1(void) {
     return false;
 }
@@ -176,7 +179,8 @@ struct GfxWindowBackendAPI gfx_window_dummy = {
     gfx_dummy_wm_swap_buffers_begin,
     gfx_dummy_wm_swap_buffers_end,
     gfx_dummy_wm_get_time,
-    gfx_dummy_wm_get_max_msaa
+    gfx_dummy_wm_get_max_msaa,
+    gfx_dummy_wm_shutdown
 };
 
 struct GfxRenderingAPI gfx_dummy_renderer_api = {
