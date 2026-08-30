@@ -7,6 +7,7 @@
 
 #include <Windows.h>
 #include <stdio.h>
+#include <string.h>
 
 // Material constants.
 #define RT64_MATERIAL_FILTER_POINT				0
@@ -144,25 +145,11 @@ typedef struct RT64_TEXTURE RT64_TEXTURE;
 typedef struct RT64_SHADER RT64_SHADER;
 typedef struct RT64_INSPECTOR RT64_INSPECTOR;
 
-typedef struct {
-	float x, y;
-} RT64_VECTOR2;
-
-typedef struct {
-	float x, y, z;
-} RT64_VECTOR3;
-
-typedef struct {
-	float x, y, z, w;
-} RT64_VECTOR4;
-
-typedef struct {
-	float m[4][4];
-} RT64_MATRIX4;
-
-typedef struct {
-	int x, y, w, h;
-} RT64_RECT;
+typedef float Vec2f[2];
+typedef float Vec3f[3];
+typedef float Vec4f[4];
+typedef float Mat4[4][4];
+typedef int Recti[4]; // X, Y, W, H
 
 typedef struct {
 	int diffuseTexIndex;
@@ -177,16 +164,16 @@ typedef struct {
 	float reflectionFresnelFactor;
 	float reflectionShineFactor;
 	float refractionFactor;
-	RT64_VECTOR3 specularColor;
+	Vec3f specularColor;
 	float specularShinyness;
 	float solidAlphaMultiplier;
 	float shadowAlphaMultiplier;
 	float depthBias;
 	float shadowRayBias;
-	RT64_VECTOR3 selfLightColor;
+	Vec3f selfLightColor;
 	unsigned int lightGroupMaskBits;
-	RT64_VECTOR3 fogColor;
-	RT64_VECTOR4 diffuseColorMix;
+	Vec3f fogColor;
+	Vec4f diffuseColorMix;
 	float fogMul;
 	float fogOffset;
 	unsigned int fogEnabled;
@@ -208,9 +195,9 @@ typedef struct {
 	float specularFactor;
 	float specularEccentricity;
 	unsigned int textureGenEnabled;
-	RT64_VECTOR4 textureGenU;
-	RT64_VECTOR4 textureGenV;
-	RT64_VECTOR3 reflectionColor;
+	Vec4f textureGenU;
+	Vec4f textureGenV;
+	Vec3f reflectionColor;
 	float specularIntensity;
 	float selfLightIntensity;
 	unsigned int shadowEnabled;
@@ -219,11 +206,11 @@ typedef struct {
 
 // Light
 typedef struct {
-	RT64_VECTOR3 position;
-	RT64_VECTOR3 diffuseColor;
+	Vec3f position;
+	Vec3f diffuseColor;
 	float attenuationRadius;
 	float pointRadius;
-	RT64_VECTOR3 specularColor;
+	Vec3f specularColor;
 	float shadowOffset;
 	float attenuationExponent;
 	float flickerIntensity;
@@ -240,12 +227,12 @@ typedef struct {
 } RT64_LIGHT;
 
 typedef struct {
-	RT64_VECTOR3 ambientBaseColor;
-	RT64_VECTOR3 ambientNoGIColor;
-	RT64_VECTOR3 eyeLightDiffuseColor;
-	RT64_VECTOR3 eyeLightSpecularColor;
-	RT64_VECTOR3 skyDiffuseMultiplier;
-	RT64_VECTOR3 skyHSLModifier;
+	Vec3f ambientBaseColor;
+	Vec3f ambientNoGIColor;
+	Vec3f eyeLightDiffuseColor;
+	Vec3f eyeLightSpecularColor;
+	Vec3f skyDiffuseMultiplier;
+	Vec3f skyHSLModifier;
 	float skyYawOffset;
 	float giDiffuseStrength;
 	float giSkyStrength;
@@ -275,8 +262,8 @@ typedef struct {
 
 typedef struct {
 	RT64_MESH *mesh;
-	RT64_MATRIX4 transform;
-	RT64_MATRIX4 previousTransform;
+	Mat4 transform;
+	Mat4 previousTransform;
 	RT64_TEXTURE *diffuseTexture;
 	RT64_TEXTURE *normalTexture;
 	RT64_TEXTURE *specularTexture;
@@ -284,8 +271,8 @@ typedef struct {
 	RT64_TEXTURE *bumpTexture;
 	RT64_SHADER *shader;
 	RT64_MATERIAL material;
-	RT64_RECT scissorRect;
-	RT64_RECT viewportRect;
+	Recti scissorRect;
+	Recti viewportRect;
 	unsigned int flags;
 	const RT64_SHADER_UNIFORM_BLOCK *shaderUniformBlocks;
 	unsigned int shaderUniformBlockCount;
@@ -343,7 +330,7 @@ inline void RT64_ApplyMaterialAttributes(RT64_MATERIAL *dst, RT64_MATERIAL *src)
 	}
 
 	if (src->enabledAttributes & RT64_ATTRIBUTE_SPECULAR_COLOR) {
-		dst->specularColor = src->specularColor;
+		memcpy(dst->specularColor, src->specularColor, sizeof(Vec3f));
 	}
 
 	if (src->enabledAttributes & RT64_ATTRIBUTE_SPECULAR_SHINYNESS) {
@@ -367,7 +354,7 @@ inline void RT64_ApplyMaterialAttributes(RT64_MATERIAL *dst, RT64_MATERIAL *src)
 	}
 
 	if (src->enabledAttributes & RT64_ATTRIBUTE_SELF_LIGHT_COLOR) {
-		dst->selfLightColor = src->selfLightColor;
+		memcpy(dst->selfLightColor, src->selfLightColor, sizeof(Vec3f));
 	}
 
 	if (src->enabledAttributes & RT64_ATTRIBUTE_LIGHT_GROUP_MASK_BITS) {
@@ -375,7 +362,7 @@ inline void RT64_ApplyMaterialAttributes(RT64_MATERIAL *dst, RT64_MATERIAL *src)
 	}
 
 	if (src->enabledAttributes & RT64_ATTRIBUTE_DIFFUSE_COLOR_MIX) {
-		dst->diffuseColorMix = src->diffuseColorMix;
+		memcpy(dst->diffuseColorMix, src->diffuseColorMix, sizeof(Vec4f));
 	}
 
 	if (src->enabledAttributes & RT64_ATTRIBUTE_SPECULAR_TINT) {
@@ -407,7 +394,7 @@ inline void RT64_ApplyMaterialAttributes(RT64_MATERIAL *dst, RT64_MATERIAL *src)
 	}
 
 	if (src->enabledAttributes & RT64_ATTRIBUTE_REFLECTION_COLOR) {
-		dst->reflectionColor = src->reflectionColor;
+		memcpy(dst->reflectionColor, src->reflectionColor, sizeof(Vec3f));
 	}
 
 	if (src->enabledAttributes & RT64_ATTRIBUTE_SPECULAR_INTENSITY) {
@@ -433,7 +420,7 @@ typedef RT64_DEVICE* (*CreateDevicePtr)(void *hwnd);
 typedef void (*DestroyDevicePtr)(RT64_DEVICE* device);
 typedef void (*DrawDevicePtr)(RT64_DEVICE *device, int vsyncInterval, float deltaTimeMs);
 typedef RT64_VIEW* (*CreateViewPtr)(RT64_SCENE* scenePtr);
-typedef void (*SetViewPerspectivePtr)(RT64_VIEW *viewPtr, RT64_MATRIX4 viewMatrix, float fovRadians, float nearDist, float farDist, bool canReproject);
+typedef void (*SetViewPerspectivePtr)(RT64_VIEW *viewPtr, Mat4 viewMatrix, float fovRadians, float nearDist, float farDist, bool canReproject);
 typedef void (*SetViewDescriptionPtr)(RT64_VIEW *viewPtr, RT64_VIEW_DESC viewDesc);
 typedef void (*GetViewDescriptionPtr)(RT64_VIEW *viewPtr, RT64_VIEW_DESC *outViewDesc);
 typedef void (*SetViewSkyPlanePtr)(RT64_VIEW *viewPtr, RT64_TEXTURE *texturePtr);
@@ -465,7 +452,7 @@ typedef bool (*HandleMessageInspectorPtr)(RT64_INSPECTOR* inspectorPtr, UINT msg
 typedef void (*SetSceneInspectorPtr)(RT64_INSPECTOR* inspectorPtr, RT64_SCENE_DESC* sceneDesc);
 typedef void (*SetMaterialInspectorPtr)(RT64_INSPECTOR* inspectorPtr, RT64_MATERIAL* material, const char *materialName);
 typedef void (*SetLightsInspectorPtr)(RT64_INSPECTOR* inspectorPtr, RT64_LIGHT* lights, int *lightCount, int maxLightCount);
-typedef void (*SetGeoLayoutInspectorPtr)(RT64_INSPECTOR* inspectorPtr, RT64_MATERIAL* material, RT64_LIGHT* light, bool* lightEnabled, const RT64_VECTOR3* origins, int originCount, const char *geoLayoutName);
+typedef void (*SetGeoLayoutInspectorPtr)(RT64_INSPECTOR* inspectorPtr, RT64_MATERIAL* material, RT64_LIGHT* light, bool* lightEnabled, const Vec3f* origins, int originCount, const char *geoLayoutName);
 typedef void (*SetInspectorMaterialDefaultsPtr)(RT64_INSPECTOR *inspectorPtr, const RT64_MATERIAL *defaults);
 typedef void (*SetInspectorMapNamesPtr)(RT64_INSPECTOR *inspectorPtr, int panel, const char *bumpMapName, const char *normalMapName, const char *specularMapName);
 typedef bool (*GetInspectorMapNamesPtr)(RT64_INSPECTOR *inspectorPtr, int panel, char *outBumpMapName, char *outNormalMapName, char *outSpecularMapName, int bufferSize);

@@ -11,14 +11,21 @@ extern "C" {
 #include "gfx_rt64.h"
 #include "gfx_rt64_context.hpp"
 #include "gfx_rt64_default_config.hpp"
-#include "gfx_rt64_geo_map.hpp"
 #include "gfx_rt64_serialization.hpp"
+
+s32 DynOS_Builtin_Actor_GetCount(void);
+const GeoLayout *DynOS_Builtin_Actor_GetFromIndex(s32 aIndex);
+const char *DynOS_Builtin_Actor_GetNameFromIndex(s32 aIndex);
 
 #include <cmath>
 #include <cstring>
 #include <fstream>
 #include <set>
 #include <vector>
+
+extern "C" {
+#include "engine/math_util.h"
+}
 
 static inline std::string gfx_rt64_level_lights_path(void) { return fs_get_write_path("mods/level_lights.lua"); }
 static inline std::string gfx_rt64_geo_layout_mods_path(void) { return fs_get_write_path("mods/geo_layout_mods.lua"); }
@@ -137,28 +144,24 @@ static void gfx_rt64_default_area_lighting(AreaLighting &areaLighting) {
 
     // Configure the default area lighting scene description.
     auto &sceneDesc = areaLighting.sceneDesc;
-    sceneDesc.ambientBaseColor = { 51.0f, 51.0f, 64.0f };
-    sceneDesc.ambientNoGIColor = { 26.0f, 38.0f, 51.0f };
-    sceneDesc.eyeLightDiffuseColor = { 26.0f, 26.0f, 26.0f };
-    sceneDesc.eyeLightSpecularColor = { 26.0f, 26.0f, 26.0f };
-    sceneDesc.skyDiffuseMultiplier = { 1.0f, 1.0f, 1.0f };
-    sceneDesc.skyHSLModifier = { 0.0f, 0.0f, 0.0f };
+    vec3f_set(sceneDesc.ambientBaseColor, 51.0f, 51.0f, 64.0f);
+    vec3f_set(sceneDesc.ambientNoGIColor, 26.0f, 38.0f, 51.0f);
+    vec3f_set(sceneDesc.eyeLightDiffuseColor, 26.0f, 26.0f, 26.0f);
+    vec3f_set(sceneDesc.eyeLightSpecularColor, 26.0f, 26.0f, 26.0f);
+    vec3f_set(sceneDesc.skyDiffuseMultiplier, 1.0f, 1.0f, 1.0f);
+    vec3f_set(sceneDesc.skyHSLModifier, 0.0f, 0.0f, 0.0f);
     sceneDesc.skyYawOffset = 0.0f;
     sceneDesc.giDiffuseStrength = 0.7f;
     sceneDesc.giSkyStrength = 0.35f;
 
     // Configure a default directional sun.
     RT64_LIGHT &light = areaLighting.lights[0];
-    light.position.x = 100000.0f;
-    light.position.y = 200000.0f;
-    light.position.z = 100000.0f;
-    light.diffuseColor.x = 204.0f;
-    light.diffuseColor.y = 191.0f;
-    light.diffuseColor.z = 166.0f;
+    vec3f_set(light.position, 100000.0f, 200000.0f, 100000.0f);
+    vec3f_set(light.diffuseColor, 204.0f, 191.0f, 166.0f);
     light.intensity = 1.0f;
     light.attenuationRadius = 1e11f;
     light.pointRadius = 5000.0f;
-    light.specularColor = { 204.0f, 191.0f, 166.0f };
+    vec3f_set(light.specularColor, 204.0f, 191.0f, 166.0f);
     light.shadowOffset = 0.0f;
     light.attenuationExponent = 0.0f;
     light.groupBits = RT64_LIGHT_GROUP_DEFAULT;
@@ -173,17 +176,17 @@ static void gfx_rt64_default_level_lights(void) {
     }
 }
 
-static inline float rt64_default_value(const RT64DefaultFloat &v) { return v.value; }
-static inline float rt64_default_value(const RT64DefaultInt &v) { return (float)(v.value); }
-static inline RT64_VECTOR3 rt64_default_value(const RT64DefaultColor &v) { return v.value; }
-static inline RT64_VECTOR4 rt64_default_value(const RT64DefaultColorMix &v) { return v.value; }
-static inline u32 rt64_default_value(const RT64DefaultMask &v) { return v.value; }
+static inline void rt64_default_value(const RT64DefaultFloat &v, float *dest) { *dest = v.value; }
+static inline void rt64_default_value(const RT64DefaultInt &v, float *dest) { *dest = (float)(v.value); }
+static inline void rt64_default_value(const RT64DefaultColor &v, Vec3f *dest) { memcpy(*dest, v.value, sizeof(Vec3f)); }
+static inline void rt64_default_value(const RT64DefaultColorMix &v, Vec4f *dest) { memcpy(*dest, v.value, sizeof(Vec4f)); }
+static inline void rt64_default_value(const RT64DefaultMask &v, u32 *dest) { *dest = v.value; }
 
 static void gfx_rt64_read_default_light(const RT64DefaultLight &src, RT64_LIGHT *light) {
     memset(light, 0, sizeof(RT64_LIGHT));
-    light->position = src.position;
-    light->diffuseColor = src.diffuseColor.value;
-    light->specularColor = src.specularColor.value;
+    memcpy(light->position, src.position, sizeof(Vec3f));
+    memcpy(light->diffuseColor, src.diffuseColor.value, sizeof(Vec3f));
+    memcpy(light->specularColor, src.specularColor.value, sizeof(Vec3f));
     light->attenuationRadius = src.attenuationRadius;
     light->pointRadius = src.pointRadius;
     light->shadowOffset = src.shadowOffset;
@@ -206,12 +209,12 @@ static void gfx_rt64_read_default_light(const RT64DefaultLight &src, RT64_LIGHT 
 }
 
 static void gfx_rt64_read_default_scene(const RT64DefaultScene &src, RT64_SCENE_DESC *scene) {
-    scene->ambientBaseColor = src.ambientBaseColor.value;
-    scene->ambientNoGIColor = src.ambientNoGIColor.value;
-    scene->eyeLightDiffuseColor = src.eyeLightDiffuseColor.value;
-    scene->eyeLightSpecularColor = src.eyeLightSpecularColor.value;
-    scene->skyDiffuseMultiplier = src.skyDiffuseMultiplier;
-    scene->skyHSLModifier = src.skyHSLModifier;
+    memcpy(scene->ambientBaseColor, src.ambientBaseColor.value, sizeof(Vec3f));
+    memcpy(scene->ambientNoGIColor, src.ambientNoGIColor.value, sizeof(Vec3f));
+    memcpy(scene->eyeLightDiffuseColor, src.eyeLightDiffuseColor.value, sizeof(Vec3f));
+    memcpy(scene->eyeLightSpecularColor, src.eyeLightSpecularColor.value, sizeof(Vec3f));
+    memcpy(scene->skyDiffuseMultiplier, src.skyDiffuseMultiplier, sizeof(Vec3f));
+    memcpy(scene->skyHSLModifier, src.skyHSLModifier, sizeof(Vec3f));
     scene->skyYawOffset = src.skyYawOffset;
     scene->giDiffuseStrength = src.giDiffuseStrength;
     scene->giSkyStrength = src.giSkyStrength;
@@ -298,7 +301,7 @@ static void gfx_rt64_apply_default_mod(const RT64DefaultMod &defaultMod, Recorde
         material->enabledAttributes = enabledAttributes;
 
         #define RT64_MATERIAL_ATTR(flag, field, luaName, kind) \
-            if (src.field.set) { material->field = rt64_default_value(src.field); }
+            if (src.field.set) { rt64_default_value(src.field, &material->field); }
         #include "gfx_rt64_material_attributes.inl"
         #undef RT64_MATERIAL_ATTR
 
@@ -424,7 +427,12 @@ void gfx_rt64_load_geo_layout_mods(void) {
 
     sBaselineGeoLayoutMods.clear();
 
-    gfx_rt64_init_geo_layout_maps(RT64.geoLayoutNameMap, RT64.nameGeoLayoutMap);
+    for (s32 i = 0; i < DynOS_Builtin_Actor_GetCount(); i++) {
+        void *geoLayout = (void *)(DynOS_Builtin_Actor_GetFromIndex(i));
+        const char *name = DynOS_Builtin_Actor_GetNameFromIndex(i);
+        RT64.geoLayoutNameMap[geoLayout] = name;
+        RT64.nameGeoLayoutMap[name] = geoLayout;
+    }
 
     for (int i = 0; i < gRT64DefaultGeoLayoutModCount; i++) {
         const RT64DefaultMod &defaultMod = gRT64DefaultGeoLayoutMods[i];
@@ -608,14 +616,8 @@ static bool gfx_rt64_lua_get_vector_field(lua_State *L, int index, const char *k
     return true;
 }
 
-static bool gfx_rt64_lua_get_vector3_field(lua_State *L, int index, const char *key, RT64_VECTOR3 *outValue, const char *context) {
-    float values[3];
-    if (!gfx_rt64_lua_get_vector_field(L, index, key, values, 3, context)) { return false; }
-
-    outValue->x = values[0];
-    outValue->y = values[1];
-    outValue->z = values[2];
-    return true;
+static bool gfx_rt64_lua_get_vector3_field(lua_State *L, int index, const char *key, Vec3f *outValue, const char *context) {
+    return gfx_rt64_lua_get_vector_field(L, index, key, *outValue, 3, context);
 }
 
 static void gfx_rt64_lua_read_light(lua_State *L, int index, RT64_LIGHT *light, const char *context) {
@@ -633,7 +635,7 @@ static void gfx_rt64_lua_read_light(lua_State *L, int index, RT64_LIGHT *light, 
     gfx_rt64_lua_get_vector3_field(L, index, "position", &light->position, context);
     gfx_rt64_lua_get_vector3_field(L, index, "diffuseColor", &light->diffuseColor, context);
 
-    light->specularColor = light->diffuseColor;
+    vec3f_copy(light->specularColor, light->diffuseColor);
     gfx_rt64_lua_get_vector3_field(L, index, "specularColor", &light->specularColor, context);
 
     gfx_rt64_lua_get_number_field(L, index, "intensity", &light->intensity, context);
@@ -707,9 +709,7 @@ static void gfx_rt64_lua_read_material_mod(lua_State *L, int index, RT64_MATERIA
         }
     #define RT64_READ_COLOR_MIX(name, flag, field) \
         { \
-            float _rt64ReadMix[4]; \
-            if (gfx_rt64_lua_get_vector_field(L, index, name, _rt64ReadMix, 4, context)) { \
-                materialMod->field = { _rt64ReadMix[0], _rt64ReadMix[1], _rt64ReadMix[2], _rt64ReadMix[3] }; \
+            if (gfx_rt64_lua_get_vector_field(L, index, name, materialMod->field, 4, context)) { \
                 materialMod->enabledAttributes |= flag; \
             } \
         }
@@ -911,8 +911,8 @@ static std::string gfx_rt64_lua_float(float value) {
     return std::string(buffer);
 }
 
-static std::string gfx_rt64_lua_vector3(const RT64_VECTOR3 &v) {
-    return "{ " + gfx_rt64_lua_float(v.x) + ", " + gfx_rt64_lua_float(v.y) + ", " + gfx_rt64_lua_float(v.z) + " }";
+static std::string gfx_rt64_lua_vector3(const Vec3f &v) {
+    return "{ " + gfx_rt64_lua_float(v[0]) + ", " + gfx_rt64_lua_float(v[1]) + ", " + gfx_rt64_lua_float(v[2]) + " }";
 }
 
 static std::string gfx_rt64_lua_color_component(float value) {
@@ -920,14 +920,14 @@ static std::string gfx_rt64_lua_color_component(float value) {
     return std::to_string((clamped < 0) ? 0 : ((clamped > 255) ? 255 : clamped));
 }
 
-static std::string gfx_rt64_lua_color3(const RT64_VECTOR3 &v) {
-    return "{ " + gfx_rt64_lua_color_component(v.x) + ", " + gfx_rt64_lua_color_component(v.y) + ", " +
-        gfx_rt64_lua_color_component(v.z) + " }";
+static std::string gfx_rt64_lua_color3(const Vec3f &v) {
+    return "{ " + gfx_rt64_lua_color_component(v[0]) + ", " + gfx_rt64_lua_color_component(v[1]) + ", " +
+        gfx_rt64_lua_color_component(v[2]) + " }";
 }
 
-static std::string gfx_rt64_lua_color_mix(const RT64_VECTOR4 &v) {
-    return "{ " + gfx_rt64_lua_color_component(v.x) + ", " + gfx_rt64_lua_color_component(v.y) + ", " +
-        gfx_rt64_lua_color_component(v.z) + ", " + gfx_rt64_lua_float(v.w) + " }";
+static std::string gfx_rt64_lua_color_mix(const Vec4f &v) {
+    return "{ " + gfx_rt64_lua_color_component(v[0]) + ", " + gfx_rt64_lua_color_component(v[1]) + ", " +
+        gfx_rt64_lua_color_component(v[2]) + ", " + gfx_rt64_lua_float(v[3]) + " }";
 }
 
 static std::string gfx_rt64_lua_int(float value) {

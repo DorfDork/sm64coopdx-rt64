@@ -747,6 +747,23 @@ OPTIMIZE_O3 Vec3sp mtxf_mul_vec3s(Mat4 mtx, VEC_OUT Vec3s b) {
 }
 
 /**
+ * Checks whether the 4x4 floating-point matrices `a` and `b` still describe the same pose, by comparing where each one sends the three axes
+ */
+OPTIMIZE_O3 bool mtxf_axes_align(Mat4 a, Mat4 b, f32 minDot) {
+    for (s32 i = 0; i < 3; i++) {
+        Vec3f axisA, axisB;
+        vec3f_normalize(vec3f_copy(axisA, a[i]));
+        vec3f_normalize(vec3f_copy(axisB, b[i]));
+
+        if (vec3f_dot(axisA, axisB) < minDot) {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+/**
  * Set 'mtx' to a transformation matrix that rotates around the z axis.
  */
 OPTIMIZE_O3 void mtxf_rotate_xy(VEC_OUT Mat4 mtx, s16 angle) {

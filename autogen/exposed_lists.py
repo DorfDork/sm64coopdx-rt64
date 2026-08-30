@@ -351,7 +351,7 @@ structs_files = [
     "src/game/player_palette.h",
     "src/engine/graph_node.h",
     "include/PR/gbi.h",
-    "src/pc/gfx/gfx_rt64_lua.h",
+    "src/pc/gfx/gfx_rt64.h",
 ]
 
 # For each file, expose only these structs

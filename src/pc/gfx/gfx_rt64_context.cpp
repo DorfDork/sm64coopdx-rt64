@@ -3,21 +3,21 @@
 extern "C" {
 #include "pc/configfile.h"
 #include "pc/fs/fs.h"
+#include "pc/platform.h"
 #include "game/area.h"
 #include "game/game_init.h"
 #include "game/level_update.h"
 #include "game/rendering_graph_node.h"
 #include "goddard/gd_math.h"
-#include "gfx_cc.h"
 #include "pc/mods/mod.h"
 #include "pc/mods/mods.h"
-#include "pc/lua/smlua_hooks.h"
 #include "gfx_shader.h"
-#include "gfx_rt64_lua.h"
 }
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
+#include <cstddef>
 #include <set>
 #include <stdint.h>
 #include <windows.h>
@@ -31,119 +31,59 @@ extern "C" {
 #include "gfx_rt64.h"
 #include "gfx_rt64_context.hpp"
 #include "gfx_rt64_serialization.hpp"
-#include "gfx_rt64_geo_map.hpp"
 #include "gfx_pc.h"
 
-#include "gfx_rt64_common.hpp"
+extern "C" {
+#include "engine/math_util.h"
+#include "game/object_helpers.h"
+}
 
 RT64Context RT64;
 
-static RT64_COMBINER_DESC gfx_rt64_combiner_desc_from_cc(struct ColorCombiner *cc);
-static u64 gfx_rt64_combiner_desc_hash(const RT64_COMBINER_DESC &desc);
-
-bool gfx_rt64_rapi_z_is_from_0_to_1(void) {
-    return true;
+LARGE_INTEGER gfx_rt64_profile_marker(void) {
+    LARGE_INTEGER marker;
+    QueryPerformanceCounter(&marker);
+    return marker;
 }
 
-void gfx_rt64_rapi_unload_shader(struct ShaderProgram *old_prg) {
-
+LARGE_INTEGER gfx_rt64_profile_delta(LARGE_INTEGER start, LARGE_INTEGER end) {
+    LARGE_INTEGER delta;
+    delta.QuadPart = end.QuadPart - start.QuadPart;
+    delta.QuadPart *= 1000000;
+    delta.QuadPart /= RT64.frequency.QuadPart;
+    return delta;
 }
 
-void gfx_rt64_rapi_load_shader(struct ShaderProgram *new_prg) {
-    RT64.shaderProgram = (ShaderProgramRT64 *)(new_prg);
+static void gfx_rt64_point_light_basis(f32 pitchDegrees, f32 yawDegrees, f32 rollDegrees, VEC_OUT Vec3f outForward, VEC_OUT Vec3f outRight, VEC_OUT Vec3f outUp) {
+    const f32 pitch = degrees_to_radians(pitchDegrees);
+    const f32 yaw = degrees_to_radians(yawDegrees);
+    const f32 roll = degrees_to_radians(rollDegrees);
+
+    const f32 sinYaw = sinf(yaw), cosYaw = cosf(yaw);
+    Vec3f forwardYawed = { sinYaw, 0.0f, cosYaw };
+    Vec3f rightYawed = { cosYaw, 0.0f, -sinYaw };
+    Vec3f worldUp = { 0.0f, 1.0f, 0.0f };
+
+    const f32 sinPitch = sinf(pitch), cosPitch = cosf(pitch);
+    Vec3f upPitched;
+    vec3f_combine(outForward, forwardYawed, worldUp, cosPitch, sinPitch);
+    vec3f_combine(upPitched, forwardYawed, worldUp, -sinPitch, cosPitch);
+
+    const f32 sinRoll = sinf(roll), cosRoll = cosf(roll);
+    vec3f_combine(outRight, rightYawed, upPitched, cosRoll, sinRoll);
+    vec3f_combine(outUp, rightYawed, upPitched, -sinRoll, cosRoll);
 }
 
-struct ShaderProgram *gfx_rt64_rapi_create_and_load_new_shader(struct ColorCombiner *cc) {
-    RT64_COMBINER_DESC desc = gfx_rt64_combiner_desc_from_cc(cc);
-    u64 rt64Hash = gfx_rt64_combiner_desc_hash(desc);
+static void gfx_rt64_point_light_angles(Vec3f forward, Vec3f right, f32 *outPitch, f32 *outYaw, f32 *outRoll) {
+    *outPitch = radians_to_degrees(asinf(fmaxf(fminf(forward[1], 1.0f), -1.0f)));
+    *outYaw = radians_to_degrees(atan2f(forward[0], forward[2]));
 
-    {
-        const std::lock_guard<std::mutex> lock(RT64.shaderProgramsMutex);
-        auto it = RT64.shaderPrograms.find(rt64Hash);
-        if (it != RT64.shaderPrograms.end()) {
-            gfx_rt64_rapi_load_shader((struct ShaderProgram *)(it->second));
-            return (struct ShaderProgram *)(it->second);
-        }
-    }
+    Vec3f rightYawed, upPitched, unusedForward;
+    gfx_rt64_point_light_basis(*outPitch, *outYaw, 0.0f, unusedForward, rightYawed, upPitched);
 
-    ShaderProgramRT64 *shaderProgram = new ShaderProgramRT64();
-    shaderProgram->cc = desc;
-    shaderProgram->hash = rt64Hash;
-
-    struct CCFeatures ccf = { 0 };
-    gfx_cc_get_features(cc, &ccf);
-    shaderProgram->numInputs = (u8)(ccf.num_inputs);
-    shaderProgram->usedTextures[0] = ccf.used_textures[0];
-    shaderProgram->usedTextures[1] = ccf.used_textures[1];
-    shaderProgram->usedFog = cc->cm.use_fog;
-
-    const char *vsHookResult = nullptr;
-    smlua_call_event_hooks(HOOK_ON_VERTEX_SHADER_CREATE, cc, &vsHookResult);
-
-    const char *fsHookResult = nullptr;
-    smlua_call_event_hooks(HOOK_ON_FRAGMENT_SHADER_CREATE, cc, &fsHookResult);
-
-    if ((vsHookResult != nullptr) || (fsHookResult != nullptr)) {
-        struct Shader *vertexShader = (struct Shader *)calloc(1, sizeof(struct Shader));
-        struct Shader *fragmentShader = (struct Shader *)calloc(1, sizeof(struct Shader));
-
-        if ((vertexShader != nullptr) && (fragmentShader != nullptr)) {
-            gfx_generate_vertex_and_fragment_shader_from_cc(vertexShader, fragmentShader, cc, nullptr, nullptr);
-
-            char *hlslVs = nullptr;
-            char *hlslFs = nullptr;
-            gfx_convert_spirv_to_hlsl(&hlslVs, vertexShader);
-            gfx_convert_spirv_to_hlsl(&hlslFs, fragmentShader);
-
-            if ((hlslVs != nullptr) && (hlslFs != nullptr)) {
-                shaderProgram->hasCustomShader = true;
-                shaderProgram->customVertexHLSL = hlslVs;
-                shaderProgram->customFragmentHLSL = hlslFs;
-                shaderProgram->vertexShader = vertexShader;
-                shaderProgram->fragmentShader = fragmentShader;
-                shaderProgram->customVertexInputs.clear();
-
-                for (int i = 0; i < MAX_SHADER_INPUTS; i++) {
-                    if (gShaderInputs[i].size == 0) { continue; }
-                    RT64_SHADER_INPUT input;
-                    input.location = (unsigned int)(vertexShader->shaderInputs[i].location);
-                    input.size = (unsigned int)(vertexShader->shaderInputs[i].size);
-                    // Points into the shader this program keeps for as long as it lives, which is
-                    // what RT64 needs to name the attribute when it builds its hit shaders.
-                    input.name = vertexShader->shaderInputs[i].name;
-                    shaderProgram->customVertexInputs.push_back(input);
-                }
-            }
-            else {
-                gfx_destroy_shader(vertexShader);
-                gfx_destroy_shader(fragmentShader);
-            }
-
-            free(hlslVs);
-            free(hlslFs);
-        }
-        else {
-            gfx_destroy_shader(vertexShader);
-            gfx_destroy_shader(fragmentShader);
-        }
-    }
-
-    {
-        const std::lock_guard<std::mutex> lock(RT64.shaderProgramsMutex);
-        RT64.shaderPrograms[rt64Hash] = shaderProgram;
-    }
-
-    gfx_rt64_rapi_load_shader((struct ShaderProgram *)(shaderProgram));
-
-    return (struct ShaderProgram *)(shaderProgram);
-}
-
-struct ShaderProgram *gfx_rt64_rapi_lookup_shader(struct ColorCombiner *cc) {
-    RT64_COMBINER_DESC desc = gfx_rt64_combiner_desc_from_cc(cc);
-    u64 rt64Hash = gfx_rt64_combiner_desc_hash(desc);
-    const std::lock_guard<std::mutex> lock(RT64.shaderProgramsMutex);
-    auto it = RT64.shaderPrograms.find(rt64Hash);
-    return (it != RT64.shaderPrograms.end()) ? (struct ShaderProgram *)(it->second) : nullptr;
+    const f32 rollSin = vec3f_dot(right, upPitched);
+    const f32 rollCos = vec3f_dot(right, rightYawed);
+    *outRoll = radians_to_degrees(atan2f(rollSin, rollCos));
 }
 
 static void gfx_rt64_destroy_shader_program(ShaderProgramRT64 *prg) {
@@ -174,135 +114,6 @@ void gfx_rt64_destroy_all_shaders(void) {
 
     RT64.lastShaderProgram = nullptr;
     RT64.lastShaderVariant = nullptr;
-}
-
-static void gfx_rt64_update_post_process_shader(void);
-
-void gfx_rt64_rapi_remove_shaders(void) {
-    const std::lock_guard<std::mutex> lock(RT64.shaderProgramsMutex);
-
-    for (auto &pair : RT64.shaderPrograms) {
-        RT64.retiredShaderPrograms.push_back(pair.second);
-    }
-    RT64.shaderPrograms.clear();
-
-    RT64.shaderProgram = nullptr;
-
-    RT64.lastShaderProgram = nullptr;
-    RT64.lastShaderVariant = nullptr;
-
-    gfx_rt64_update_post_process_shader();
-}
-
-struct ShaderProgram *gfx_rt64_rapi_lookup_shader_using_index(u8 shaderIndex, u8 framePassIndex) {
-    return nullptr;
-}
-
-void gfx_rt64_rapi_shader_get_info(struct ShaderProgram *prg, u8 *num_inputs, bool used_textures[2]) {
-    ShaderProgramRT64 *p = (ShaderProgramRT64 *)(prg);
-    *num_inputs = p->numInputs;
-    used_textures[0] = p->usedTextures[0];
-    used_textures[1] = p->usedTextures[1];
-}
-
-bool gfx_rt64_rapi_shader_uses_full_vertex_layout(struct ShaderProgram *prg) {
-    if (prg == nullptr) { return false; }
-    const ShaderProgramRT64 *p = (const ShaderProgramRT64 *)(prg);
-    return p->hasCustomShader && !p->customShaderFailed.load(std::memory_order_relaxed);
-}
-
-static RT64_COMBINER_DESC gfx_rt64_combiner_desc_from_cc(struct ColorCombiner *cc) {
-    RT64_COMBINER_DESC desc = {};
-    memcpy(desc.rgb1, &cc->shader_commands[0], 4);
-    memcpy(desc.alpha1, &cc->shader_commands[4], 4);
-    desc.use2Cycle = cc->cm.use_2cycle ? 1 : 0;
-
-    if (desc.use2Cycle) {
-        memcpy(desc.rgb2, &cc->shader_commands[8], 4);
-        memcpy(desc.alpha2, &cc->shader_commands[12], 4);
-    } else {
-        memset(desc.rgb2, SHADER_0, 4);
-        memset(desc.alpha2, SHADER_0, 4);
-    }
-
-    desc.optAlpha = cc->cm.use_alpha ? 1 : 0;
-    desc.optTextureEdge = (cc->cm.texture_edge && cc->cm.use_alpha) ? 1 : 0;
-    desc.optNoise = (cc->cm.use_alpha && cc->cm.use_dither) ? 1 : 0;
-    return desc;
-}
-
-static u64 gfx_rt64_combiner_desc_hash(const RT64_COMBINER_DESC &desc) {
-    u64 h = 1469598103934665603ull;
-    const u8 *bytes = (const u8 *)(&desc);
-    for (size_t i = 0; i < sizeof(RT64_COMBINER_DESC); i++) {
-        h ^= bytes[i];
-        h *= 1099511628211ull;
-    }
-    return h;
-}
-
-static void gfx_rt64_update_post_process_shader(void) {
-    if ((gPostProcessShaderInputs == nullptr) || (gPostProcessShaderBindings == nullptr)) { return; }
-
-    struct Shader *vertexShader = (struct Shader *)calloc(1, sizeof(struct Shader));
-    struct Shader *fragmentShader = (struct Shader *)calloc(1, sizeof(struct Shader));
-    if ((vertexShader == nullptr) || (fragmentShader == nullptr)) {
-        gfx_destroy_shader(vertexShader);
-        gfx_destroy_shader(fragmentShader);
-        return;
-    }
-
-    char *hlslFs = nullptr;
-    if (gfx_generate_post_process_vertex_and_fragment_shader(vertexShader, fragmentShader, nullptr, nullptr)) {
-        gfx_convert_spirv_to_hlsl(&hlslFs, fragmentShader);
-    }
-
-    {
-        const std::lock_guard<std::mutex> lock(RT64.postProcessMutex);
-        RT64.postProcessHLSL = (hlslFs != nullptr) ? hlslFs : "";
-        RT64.postProcessOutputName.clear();
-        RT64.postProcessInputNames.clear();
-        RT64.postProcessInputs.clear();
-
-        if (hlslFs != nullptr) {
-            RT64.postProcessOutputName = fragmentShader->shaderOutputs[0].name;
-
-            std::vector<RT64_SHADER_INPUT> stagedInputs;
-            for (int i = 0; i < MAX_SHADER_INPUTS; i++) {
-                if (fragmentShader->shaderInputs[i].name[0] == '\0') { continue; }
-
-                unsigned int size = 0;
-                for (int j = 0; j < MAX_SHADER_INPUTS; j++) {
-                    if ((vertexShader->shaderInputs[j].size > 0) &&
-                        (vertexShader->shaderInputs[j].location == fragmentShader->shaderInputs[i].location)) {
-                        size = (unsigned int)(vertexShader->shaderInputs[j].size);
-                        break;
-                    }
-                }
-
-                if (size == 0) { continue; }
-
-                RT64_SHADER_INPUT input;
-                input.location = (unsigned int)(fragmentShader->shaderInputs[i].location);
-                input.size = size;
-                input.name = nullptr;
-                stagedInputs.push_back(input);
-                RT64.postProcessInputNames.push_back(fragmentShader->shaderInputs[i].name);
-            }
-
-            for (size_t i = 0; i < stagedInputs.size(); i++) {
-                stagedInputs[i].name = RT64.postProcessInputNames[i].c_str();
-                RT64.postProcessInputs.push_back(stagedInputs[i]);
-            }
-        }
-
-        RT64.postProcessDirty.store(true, std::memory_order_release);
-    }
-
-    free(hlslFs);
-    gfx_destroy_shader(vertexShader);
-    gfx_destroy_shader(RT64.postProcessShader);
-    RT64.postProcessShader = fragmentShader;
 }
 
 void gfx_rt64_capture_post_process_uniforms(void) {
@@ -341,148 +152,6 @@ void gfx_rt64_capture_post_process_uniforms(void) {
         entry.data = RT64.postProcessUniformData.data() + dataOffset;
         dataOffset += entry.size;
     }
-}
-
-struct ShaderProgram *gfx_rt64_rapi_create_or_load_post_process_shader(void) {
-    gfx_rt64_update_post_process_shader();
-    return nullptr;
-}
-
-void gfx_rt64_rapi_create_framebuffer(struct FramePass *framePass) {
-    if (framePass == nullptr) { return; }
-
-    u32 passWidth = 0, passHeight = 0;
-    gfx_get_frame_pass_viewport_dimensions(framePass, &passWidth, &passHeight);
-
-    const s32 width = passWidth;
-    const s32 height = passHeight;
-    if ((RT64.postProcessWidth == width) && (RT64.postProcessHeight == height)) { return; }
-
-    RT64.postProcessWidth = width;
-    RT64.postProcessHeight = height;
-    gfx_rt64_update_post_process_shader();
-}
-
-void gfx_rt64_rapi_delete_framebuffer(struct FramePass *framePass) {
-    if (framePass == nullptr) { return; }
-    if ((RT64.postProcessWidth == 0) && (RT64.postProcessHeight == 0)) { return; }
-
-    RT64.postProcessWidth = 0;
-    RT64.postProcessHeight = 0;
-    gfx_rt64_update_post_process_shader();
-}
-
-void gfx_rt64_rapi_set_framebuffer(struct FramePass *framePass) {
-}
-
-void gfx_rt64_rapi_reset_framebuffer(void) {
-}
-
-static struct Shader *gfx_rt64_shader_for_stage(ShaderProgramRT64 *prg, enum ShaderStage stage) {
-    if (prg == nullptr) { return nullptr; }
-
-    if (stage == SHADER_STAGE_VERTEX) {
-        return prg->vertexShader;
-    } else if (stage == SHADER_STAGE_FRAGMENT) {
-        return prg->fragmentShader;
-    }
-
-    return nullptr;
-}
-
-size_t gfx_rt64_rapi_get_uniform_buffer_size(enum ShaderStage stage, int bufferIndex) {
-    if (bufferIndex < 0 || bufferIndex >= MAX_UNIFORM_BLOCKS) { return 0; }
-
-    struct Shader *shader = gfx_rt64_shader_for_stage(RT64.shaderProgram, stage);
-    if (shader == nullptr) { return 0; }
-
-    return shader->uniformBlocks[bufferIndex].size;
-}
-
-void gfx_rt64_rapi_set_uniform_buffer(enum ShaderStage stage, const char *name) {
-    struct Shader *shader = gfx_rt64_shader_for_stage(RT64.shaderProgram, stage);
-    if (shader == nullptr) { return; }
-
-    int *destination = (stage == SHADER_STAGE_VERTEX) ? &gSelectedVertexUniformBuffer : &gSelectedFragmentUniformBuffer;
-    for (int i = 0; i < MAX_UNIFORM_BLOCKS; i++) {
-        struct ShaderUniformBlock *uniformBlock = &shader->uniformBlocks[i];
-        if (strcmp(uniformBlock->name, name) == 0) {
-            *destination = i;
-        }
-    }
-}
-
-static void gfx_rt64_set_uniform_for_specific_shader(struct ShaderUniformBlock *uniformBlock, const char *name, const void *data, u32 numElements) {
-    for (int i = 0; i < MAX_SHADER_UNIFORMS; i++) {
-        struct ShaderUniform *uniform = &uniformBlock->uniforms[i];
-        if (uniform->size == 0) { break; }
-
-        if (strcmp(uniform->name, name) == 0) {
-            u8 *dst = uniformBlock->buffer + uniform->location;
-
-            if (uniform->arrayLength > 1) {
-                const u8 *src = (const u8 *)(data);
-                u32 count = MIN(numElements, (u32)(uniform->arrayLength));
-                for (u32 j = 0; j < count; j++) {
-                    u8 *elementDst = dst + j * uniform->arrayStride;
-                    const u8 *elementSrc = src + j * uniform->elementSize;
-                    if (memcmp(elementDst, elementSrc, uniform->elementSize) == 0) { continue; }
-                    memcpy(elementDst, elementSrc, uniform->elementSize);
-                    uniformBlock->dirty = true;
-                }
-            } else if (memcmp(dst, data, uniform->size) != 0) {
-                memcpy(dst, data, uniform->size);
-                uniformBlock->dirty = true;
-            }
-
-            return;
-        }
-    }
-}
-
-void gfx_rt64_rapi_set_uniform(struct ShaderProgram *prg_, const char *name, UNUSED ShaderUniformType type, const void *data, u32 numElements) {
-    ShaderProgramRT64 *prg = (ShaderProgramRT64 *)(prg_);
-    if (prg == nullptr) {
-        prg = RT64.shaderProgram;
-        if (prg == nullptr) { return; }
-    }
-
-    if (gfx_shader_stage_is(SHADER_STAGE_VERTEX) && (prg->vertexShader != nullptr)) {
-        gfx_rt64_set_uniform_for_specific_shader(&prg->vertexShader->uniformBlocks[gSelectedVertexUniformBuffer], name, data, numElements);
-    }
-    if (gfx_shader_stage_is(SHADER_STAGE_FRAGMENT) && (prg->fragmentShader != nullptr)) {
-        gfx_rt64_set_uniform_for_specific_shader(&prg->fragmentShader->uniformBlocks[gSelectedFragmentUniformBuffer], name, data, numElements);
-    }
-
-    if ((RT64.postProcessShader != nullptr) && gfx_shader_stage_is(SHADER_STAGE_FRAGMENT)) {
-        for (int i = 0; i < RT64.postProcessShader->uniformBlockCount; i++) {
-            gfx_rt64_set_uniform_for_specific_shader(&RT64.postProcessShader->uniformBlocks[i], name, data, numElements);
-        }
-    }
-}
-
-void gfx_rt64_sync_post_process_size(void) {
-    if (RT64.postProcessShader == nullptr) {
-        gfx_rt64_update_post_process_shader();
-    }
-
-    for (s32 i = 0; i < MAX_CUSTOM_FRAME_PASSES; i++) {
-        if (gFramePasses[i].active) { return; }
-    }
-
-    s32 width = 0, height = 0;
-    if (gPostProcessShaderCustomWindowSize) {
-        u32 dimWidth = 0, dimHeight = 0;
-        gfx_get_dimensions(&dimWidth, &dimHeight);
-        width = dimWidth;
-        height = dimHeight;
-    }
-
-    if ((RT64.postProcessWidth == width) && (RT64.postProcessHeight == height)) { return; }
-
-    RT64.postProcessWidth = width;
-    RT64.postProcessHeight = height;
-    RT64.postProcessDirty.store(true, std::memory_order_release);
 }
 
 static u16 gfx_rt64_shader_variant_key(bool raytrace, int filter, int hAddr, int vAddr, bool normalMap, bool specularMap, bool bumpMap) {
@@ -586,35 +255,46 @@ static RT64_TEXTURE *gfx_rt64_render_thread_find_texture(u32 textureKey) {
     return ((texIt != RT64.gpuTextures.end()) && (texIt->second.texture != nullptr)) ? texIt->second.texture : RT64.blankTexture;
 }
 
-static inline void gfx_rt64_render_thread_add_light(const RT64_LIGHT &srcLight, const RT64_MATRIX4 &transform) {
+static inline void gfx_rt64_render_thread_add_light(RT64_LIGHT srcLight, const Mat4 &transformSrc) {
     if (RT64.renderLightCount >= RT64_MAX_LIGHTS) {
         return;
     }
 
+    Mat4 transform;
+    memcpy(transform, transformSrc, sizeof(Mat4));
+
     auto &dstLight = RT64.renderLights[RT64.renderLightCount++];
     dstLight = srcLight;
-    dstLight.position = transform_position_affine(transform, srcLight.position);
 
-    RT64_VECTOR3 scaleVector = transform_direction_affine(transform, { 1.0f, 1.0f, 1.0f });
-    float scale = vector_length(scaleVector) / sqrtf(3.0f);
+    linear_mtxf_mul_vec3f(transform, dstLight.position, srcLight.position);
+    vec3f_add(dstLight.position, transform[3]);
+
+    Vec3f scaleVector;
+    linear_mtxf_mul_vec3f(transform, scaleVector, gVec3fOne);
+    f32 scale = vec3f_length(scaleVector) / sqrtf(3.0f);
     dstLight.attenuationRadius *= scale;
     dstLight.pointRadius *= scale;
     dstLight.shadowOffset *= scale;
 
     if (srcLight.lightType == RT64_LIGHT_TYPE_POINT) {
-        RT64_VECTOR3 localForward, localRight, localUp;
-        gfx_rt64_point_light_basis(srcLight.pitch, srcLight.yaw, srcLight.roll, &localForward, &localRight, &localUp);
+        Vec3f localForward, localRight, localUp;
+        gfx_rt64_point_light_basis(srcLight.pitch, srcLight.yaw, srcLight.roll, localForward, localRight, localUp);
 
-        RT64_VECTOR3 worldForward = normalize_vector(transform_direction_affine(transform, localForward));
-        RT64_VECTOR3 worldRight = normalize_vector(transform_direction_affine(transform, localRight));
+        Vec3f worldForward, worldRight;
+        linear_mtxf_mul_vec3f(transform, worldForward, localForward);
+        linear_mtxf_mul_vec3f(transform, worldRight, localRight);
+        vec3f_normalize(worldForward);
+        vec3f_normalize(worldRight);
         gfx_rt64_point_light_angles(worldForward, worldRight, &dstLight.pitch, &dstLight.yaw, &dstLight.roll);
 
         if (srcLight.apertureEnabled) {
-            RT64_VECTOR3 localApertureNormal, unusedApertureRight, unusedApertureUp;
-            gfx_rt64_point_light_basis(srcLight.aperturePitch, srcLight.apertureYaw, 0.0f, &localApertureNormal, &unusedApertureRight, &unusedApertureUp);
+            Vec3f localApertureNormal, unusedApertureRight, unusedApertureUp;
+            gfx_rt64_point_light_basis(srcLight.aperturePitch, srcLight.apertureYaw, 0.0f, localApertureNormal, unusedApertureRight, unusedApertureUp);
 
-            RT64_VECTOR3 worldApertureNormal = normalize_vector(transform_direction_affine(transform, localApertureNormal));
-            float unusedApertureRoll;
+            Vec3f worldApertureNormal;
+            linear_mtxf_mul_vec3f(transform, worldApertureNormal, localApertureNormal);
+            vec3f_normalize(worldApertureNormal);
+            f32 unusedApertureRoll;
             gfx_rt64_point_light_angles(worldApertureNormal, worldRight, &dstLight.aperturePitch, &dstLight.apertureYaw, &unusedApertureRoll);
         }
 
@@ -738,7 +418,7 @@ static inline void gfx_rt64_render_thread_draw_display_list(u32 uid, GameFrame *
         // Create the instance if it doesn't exist yet.
         if (dstInstance.instance == nullptr) {
             dstInstance.instance = RT64.lib.CreateInstance(RT64.scene);
-            dstInstance.transform = curInstance.desc.transform;
+            memcpy(dstInstance.transform, curInstance.desc.transform, sizeof(Mat4));
         }
 
         // Update the instance.
@@ -759,18 +439,18 @@ static inline void gfx_rt64_render_thread_draw_display_list(u32 uid, GameFrame *
         instDesc.shaderUniformBlocks = curInstance.uniformBlocks.empty() ? nullptr : curInstance.uniformBlocks.data();
         instDesc.shaderUniformBlockCount = (unsigned int)(curInstance.uniformBlocks.size());
 
-        const float minDot = sqrt(2.0f) / -2.0f;
-        instDesc.transform = curInstance.desc.transform;
-        if (gfx_rt64_skip_matrix_lerp(dstInstance.transform, curInstance.desc.transform, minDot)) {
-            instDesc.previousTransform = curInstance.desc.transform;
+        const f32 minDot = sqrtf(2.0f) / -2.0f;
+        memcpy(instDesc.transform, curInstance.desc.transform, sizeof(Mat4));
+        if (mtxf_axes_align(dstInstance.transform, instDesc.transform, minDot)) {
+            mtxf_copy(instDesc.previousTransform, dstInstance.transform);
         }
         else {
-            instDesc.previousTransform = dstInstance.transform;
+            mtxf_copy(instDesc.previousTransform, instDesc.transform);
         }
 
         // Update the instance.
         RT64.lib.SetInstanceDescription(dstInstance.instance, &instDesc);
-        dstInstance.transform = instDesc.transform;
+        mtxf_copy(dstInstance.transform, instDesc.transform);
 
         // Apply the display list instance light (if applicable).
         if (curInstance.light.groupBits > 0) {
@@ -786,7 +466,7 @@ static inline void gfx_rt64_render_thread_draw_display_list(u32 uid, GameFrame *
     }
 }
 
-static void gfx_rt64_render_thread_draw_frame(GameFrame *curFrame, GameFrame *prevFrame, float curFrameWeight, float deltaTimeMs) {
+static void gfx_rt64_render_thread_draw_frame(GameFrame *curFrame, GameFrame *prevFrame, f32 deltaTimeMs) {
     LARGE_INTEGER elapsedMicro;
 
     RT64.staticMeshesDrawn = 0;
@@ -839,27 +519,10 @@ static void gfx_rt64_render_thread_draw_frame(GameFrame *curFrame, GameFrame *pr
     elapsedMicro = gfx_rt64_profile_delta(dlStart, dlEnd);
     double dlMs = elapsedMicro.QuadPart / 1000.0;
 
-    // Interpolate and update the view.
-    RT64_MATRIX4 viewMatrix;
-    float fovRadians;
-    bool interpolateView = curFrame->interpolateView;
+    const bool canReprojectView = curFrame->canReprojectView &&
+        mtxf_axes_align(prevFrame->viewMatrix, curFrame->viewMatrix, 0.0f);
 
-    // Detect if camera interpolation should be skipped.
-    // Attempts to fix sudden camera changes like the ones in BBH.
-    if (interpolateView && gfx_rt64_skip_matrix_lerp(prevFrame->viewMatrix, curFrame->viewMatrix, 0.0f)) {
-        interpolateView = false;
-    }
-
-    if (interpolateView) {
-        viewMatrix = gfx_rt64_lerp_matrix(prevFrame->viewMatrix, curFrame->viewMatrix, curFrameWeight);
-        fovRadians = gfx_rt64_lerp_float(prevFrame->fovRadians, curFrame->fovRadians, curFrameWeight);
-    }
-    else {
-        viewMatrix = curFrame->viewMatrix;
-        fovRadians = curFrame->fovRadians;
-    }
-
-    RT64.lib.SetViewPerspective(RT64.view, viewMatrix, fovRadians, curFrame->nearDist, curFrame->farDist, curFrame->interpolateView);
+    RT64.lib.SetViewPerspective(RT64.view, curFrame->viewMatrix, curFrame->fovRadians, curFrame->nearDist, curFrame->farDist, canReprojectView);
 
     for (unsigned int i = 0; i < RT64.renderLightCount; i++) {
         const float minAttenuationExponent = 0.001f;
@@ -1060,8 +723,7 @@ void gfx_rt64_render_thread(void) {
     int blankBytesCount = blankTextureSize * blankTextureSize * 4;
     unsigned char *blankBytes = (unsigned char *)(malloc(blankBytesCount));
     if (blankBytes == nullptr) {
-        gfx_rt64_error_message("RT64", "Failed to allocate the RT64 blank texture, ran out of memory.");
-        abort();
+        sys_fatal("RT64: failed to allocate the blank texture, ran out of memory.");
     }
     memset(blankBytes, 0xFF, blankBytesCount);
 
@@ -1209,7 +871,7 @@ void gfx_rt64_render_thread(void) {
 
             gfx_rt64_render_thread_apply_post_process_shader();
 
-            gfx_rt64_render_thread_draw_frame(&RT64.frames[curFrameIndex], &RT64.frames[prevFrameIndex], 1.0f, (float)(interFrameDeltaTimeMs));
+            gfx_rt64_render_thread_draw_frame(&RT64.frames[curFrameIndex], &RT64.frames[prevFrameIndex], (f32)(interFrameDeltaTimeMs));
             frameEnd = gfx_rt64_profile_marker();
             elapsedMicro = gfx_rt64_profile_delta(frameStart, frameEnd);
             frameDeltaTimeMs = elapsedMicro.QuadPart / 1000.0;
@@ -1253,92 +915,6 @@ void gfx_rt64_sync_inspector_map_names(int panel, RecordedMod *mod) {
     const std::string normName = gfx_rt64_texture_mod_name(mod->normalMapHash);
     const std::string specName = gfx_rt64_texture_mod_name(mod->specularMapHash);
     RT64.lib.SetInspectorMapNames(RT64.renderInspector, panel, bumpName.c_str(), normName.c_str(), specName.c_str());
-}
-
-void gfx_rt64_rapi_toggle_inspector(void) {
-#if !RT64_INSPECTOR_ENABLED
-    return;
-#else
-    if (!gfx_gfx_rt64_is_active()) {
-        return;
-    }
-    RT64.renderInspectorActive = !RT64.renderInspectorActive;
-#endif
-}
-
-bool gfx_rt64_rapi_inspector_active(void) {
-    return gfx_gfx_rt64_is_active() && RT64.renderInspectorActive;
-}
-
-static void gfx_rt64_request_pick(bool *pick) {
-    POINT cursorPos = {};
-    GetCursorPos(&cursorPos);
-    ScreenToClient(RT64.hwnd, &cursorPos);
-    RT64.pickCursorX = cursorPos.x;
-    RT64.pickCursorY = cursorPos.y;
-    *pick = true;
-}
-
-bool gfx_rt64_rapi_handle_window_message(void *hWnd, unsigned int message, uintptr_t wParam, intptr_t lParam) {
-    (void)(hWnd);
-    if (!gfx_gfx_rt64_is_active() || !RT64.renderInspectorActive) {
-        return false;
-    }
-
-    switch (message) {
-        case WM_LBUTTONDOWN: {
-            if ((RT64.lib.InspectorWantsMouse == nullptr) || RT64.lib.InspectorWantsMouse(RT64.renderInspector)) {
-                break;
-            }
-
-            {
-                const std::lock_guard<std::mutex> pickLock(RT64.pickTextureMutex);
-                gfx_rt64_request_pick(&RT64.pickGeoLayout);
-            }
-
-            RT64.pickGeoLayoutHighlight = true;
-
-            break;
-        }
-        case WM_LBUTTONUP: {
-            RT64.pickGeoLayoutHighlight = false;
-            break;
-        }
-        case WM_RBUTTONDOWN: {
-            {
-                const std::lock_guard<std::mutex> pickLock(RT64.pickTextureMutex);
-                RT64.pickTextureHash = 0;
-                gfx_rt64_request_pick(&RT64.pickTexture);
-            }
-
-            RT64.pickTextureHighlight = true;
-
-            return true;
-        }
-        case WM_RBUTTONUP: {
-            const std::lock_guard<std::mutex> pickLock(RT64.pickTextureMutex);
-            RT64.pickTextureHighlight = false;
-            return true;
-        }
-        default:
-            break;
-    }
-
-    const bool isInputMessage =
-        (message >= WM_KEYFIRST && message <= WM_KEYLAST) ||
-        (message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) ||
-        (message == WM_SETFOCUS) || (message == WM_KILLFOCUS) || (message == WM_SETCURSOR);
-    if (!isInputMessage) {
-        return false;
-    }
-
-    const size_t maxQueuedMessages = 256;
-    const std::lock_guard<std::mutex> lock(RT64.inspectorMessageQueueMutex);
-    if (RT64.inspectorMessageQueue.size() < maxQueuedMessages) {
-        RT64.inspectorMessageQueue.push({ message, wParam, lParam });
-    }
-
-    return false;
 }
 
 unsigned int gfx_rt64_clamp_percent(long long percent, unsigned int minPercent, unsigned int maxPercent) {
@@ -1425,8 +1001,8 @@ void gfx_rt64_publish_picked_geo_layout(void) {
                 }
                 else {
                     memset(&RT64.pickedGeoLayoutLight, 0, sizeof(RT64_LIGHT));
-                    RT64.pickedGeoLayoutLight.diffuseColor = { 255.0f, 255.0f, 255.0f };
-                    RT64.pickedGeoLayoutLight.specularColor = { 255.0f, 255.0f, 255.0f };
+                    vec3f_set(RT64.pickedGeoLayoutLight.diffuseColor, 255.0f, 255.0f, 255.0f);
+                    vec3f_set(RT64.pickedGeoLayoutLight.specularColor, 255.0f, 255.0f, 255.0f);
                     RT64.pickedGeoLayoutLight.intensity = 1.0f;
                     RT64.pickedGeoLayoutLight.attenuationRadius = 1000.0f;
                     RT64.pickedGeoLayoutLight.pointRadius = 25.0f;
@@ -1457,6 +1033,517 @@ void gfx_rt64_publish_picked_geo_layout(void) {
     RT64.pickedGeoLayoutMaterial = material;
     RT64.pickedGeoLayoutMod = pickedMod;
     RT64.pickedGeoLayoutName = geoName;
+}
+
+  //////////////
+ // Textures //
+//////////////
+
+extern "C" const char *dynos_gfx_get_name(Gfx *gfx);
+extern "C" const char *dynos_gfx_get_custom_name(Gfx *gfx);
+
+extern "C" bool dynos_texture_get(const char *textureName, struct TextureInfo *outTextureInfo);
+extern "C" bool dynos_texture_get_from_data(const Texture *tex, struct TextureInfo *outTextureInfo);
+extern "C" u32 dynos_texture_get_generation(void);
+extern "C" u8 *dynos_texture_convert_to_rgba32(const Texture *tex, u32 width, u32 height, u8 fmt, u8 siz);
+
+u32 gfx_rt64_new_texture(const char *name) {
+    // We reserve 0 for unassigned textures.
+    u32 textureKey = 1 + (u32)(RT64.textures.size());
+    auto &recordedTexture = RT64.textures[textureKey];
+    recordedTexture.linearFilter = false;
+    recordedTexture.cms = 0;
+    recordedTexture.cmt = 0;
+    recordedTexture.hash = 0;
+    recordedTexture.pendingName = (name != nullptr) ? name : "";
+
+    return textureKey;
+}
+
+static void gfx_rt64_name_content_hashed_texture(u64 hash) {
+    if (RT64.texNameMap.find(hash) != RT64.texNameMap.end()) {
+        return;
+    }
+
+    char nameBuf[32];
+    snprintf(nameBuf, sizeof(nameBuf), "texture_%016llx", (unsigned long long)(hash));
+    std::string name(nameBuf);
+    RT64.texNameMap[hash] = name;
+    RT64.nameTexMap[name] = hash;
+}
+
+static void gfx_rt64_register_texture_id(u64 hashID, u32 textureKey, const std::string &name) {
+    const std::lock_guard<std::mutex> lock(RT64.texModsMutex);
+
+    if (RT64.texNameMap.find(hashID) == RT64.texNameMap.end()) {
+        RT64.texNameMap[hashID] = name;
+    }
+    RT64.nameTexMap[name] = hashID;
+
+    if (textureKey != 0) {
+        RT64.textureHashIdMap[hashID] = textureKey;
+    }
+}
+
+u64 gfx_rt64_material_vanilla_name_hash(void) {
+    if (RT64.materialDisplayList == RT64.materialNameHashDl) {
+        return RT64.materialNameHashCached;
+    }
+
+    auto hashIt = RT64.materialNameHashes.find(RT64.materialDisplayList);
+    if (hashIt != RT64.materialNameHashes.end()) {
+        RT64.materialNameHashDl = RT64.materialDisplayList;
+        RT64.materialNameHashCached = hashIt->second;
+        return RT64.materialNameHashCached;
+    }
+
+    u64 nameHash = 0;
+    const char *name = dynos_gfx_get_name((Gfx *)(RT64.materialDisplayList));
+    if ((name != nullptr) && (name[0] != '\0')) {
+        nameHash = gfx_rt64_texture_name_string_hash(name);
+
+        gfx_rt64_register_texture_id(nameHash, 0, name);
+    }
+
+    RT64.materialNameHashes[RT64.materialDisplayList] = nameHash;
+    RT64.materialNameHashDl = RT64.materialDisplayList;
+    RT64.materialNameHashCached = nameHash;
+    return nameHash;
+}
+
+u64 gfx_rt64_material_mod_name_hash(void) {
+    auto hashIt = RT64.materialModNameHashes.find(RT64.materialDisplayList);
+    if (hashIt != RT64.materialModNameHashes.end()) {
+        return hashIt->second;
+    }
+
+    u64 nameHash = 0;
+    const char *name = dynos_gfx_get_custom_name((Gfx *)(RT64.materialDisplayList));
+    if ((name != nullptr) && (name[0] != '\0')) {
+        nameHash = gfx_rt64_texture_name_string_hash(name);
+        gfx_rt64_register_texture_id(nameHash, 0, name);
+    }
+
+    RT64.materialModNameHashes[RT64.materialDisplayList] = nameHash;
+    return nameHash;
+}
+
+static void gfx_rt64_filter_texture_id(RecordedTexture &recorded, u32 textureKey, const std::string &name, u64 contentHash) {
+    if (recorded.hash != 0) {
+        return;
+    }
+
+    if (!name.empty()) {
+        recorded.hash = gfx_rt64_texture_name_string_hash(name);
+        gfx_rt64_register_texture_id(recorded.hash, textureKey, name);
+    }
+    else {
+        recorded.hash = contentHash;
+        RT64.textureHashIdMap[recorded.hash] = textureKey;
+        gfx_rt64_name_content_hashed_texture(recorded.hash);
+    }
+}
+
+static void gfx_rt64_queue_texture_upload(u32 textureKey, u64 hash, u64 contentHash, const RT64_TEXTURE_DESC &desc) {
+    UploadTexture uploadTexture;
+    uploadTexture.desc = desc;
+    uploadTexture.hash = hash;
+    uploadTexture.contentHash = contentHash;
+    uploadTexture.key = textureKey;
+
+    const std::lock_guard<std::mutex> lock(RT64.textureUploadQueueMutex);
+    RT64.textureUploadQueue.push(uploadTexture);
+}
+
+static bool gfx_rt64_texture_desc_from_file(RT64_TEXTURE_DESC &texDesc, const char *path, const u8 *fileBuf, size_t fileBufSize) {
+    // Use special case for loading DDS directly.
+    if (strstr(path, ".dds") || strstr(path, ".DDS")) {
+        texDesc.byteCount = (int)(fileBufSize);
+        texDesc.bytes = malloc(texDesc.byteCount);
+        if (texDesc.bytes == nullptr) {
+            return false;
+        }
+        memcpy(texDesc.bytes, fileBuf, texDesc.byteCount);
+        texDesc.width = texDesc.height = texDesc.rowPitch = -1;
+        texDesc.format = RT64_TEXTURE_FORMAT_DDS;
+        return true;
+    }
+
+    // Use stb image to load the file from memory instead if possible.
+    int width, height;
+    stbi_uc *data = stbi_load_from_memory(fileBuf, (int)(fileBufSize), &width, &height, nullptr, 4);
+    if (data == nullptr) {
+        return false;
+    }
+
+    texDesc.bytes = data;
+    texDesc.width = width;
+    texDesc.height = height;
+    texDesc.rowPitch = texDesc.width * 4;
+    texDesc.byteCount = texDesc.height * texDesc.rowPitch;
+    texDesc.format = RT64_TEXTURE_FORMAT_RGBA8;
+    return true;
+}
+
+void gfx_rt64_upload_texture(u32 textureKey, const u8 *rgba32Buf, s32 width, s32 height) {
+    XXHash64 hashStream(0);
+    hashStream.add(rgba32Buf, (size_t)(width) * (size_t)(height) * 4);
+    const u64 contentHash = hashStream.hash();
+
+    RecordedTexture &recorded = RT64.textures[textureKey];
+    gfx_rt64_filter_texture_id(recorded, textureKey, recorded.pendingName, contentHash);
+
+    RT64_TEXTURE_DESC texDesc = {};
+    texDesc.width = width;
+    texDesc.height = height;
+    texDesc.rowPitch = texDesc.width * 4;
+    texDesc.format = RT64_TEXTURE_FORMAT_RGBA8;
+    texDesc.byteCount = texDesc.height * texDesc.rowPitch;
+    texDesc.bytes = malloc(texDesc.byteCount);
+    if (texDesc.bytes == nullptr) {
+        return;
+    }
+    memcpy(texDesc.bytes, rgba32Buf, texDesc.byteCount);
+
+    gfx_rt64_queue_texture_upload(textureKey, recorded.hash, contentHash, texDesc);
+}
+
+static const char *sMapTextureExtensions[] = { "", ".png", ".dds", ".jpg", ".bmp" };
+
+static std::string gfx_rt64_mod_texture_root(struct Mod *mod) {
+    if ((mod == nullptr) || !mod->isDirectory || (mod->basePath[0] == '\0')) {
+        return std::string();
+    }
+
+    std::string root = mod->basePath;
+    if ((root.back() != '/') && (root.back() != '\\')) {
+        root += "/";
+    }
+
+    return root + "textures/";
+}
+
+static bool gfx_rt64_try_map_texture_root(u64 nameHash, const char *name, const std::string &root) {
+    if (root.empty()) {
+        return false;
+    }
+
+    for (const char *extension : sMapTextureExtensions) {
+        const std::string path = root + name + extension;
+        if (fs_sys_file_exists(path.c_str())) {
+            RT64.mapTexturePaths[nameHash] = path;
+            RT64.mapTexturesLoaded.erase(nameHash);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool gfx_rt64_register_map_texture(const char *name, const char *preferredRoot) {
+    if ((name == nullptr) || (name[0] == '\0')) {
+        return false;
+    }
+
+    const u64 nameHash = gfx_rt64_get_texture_name_hash(name);
+
+    RT64.mapTextureNames[nameHash] = name;
+
+    if ((preferredRoot != nullptr) && gfx_rt64_try_map_texture_root(nameHash, name, preferredRoot)) {
+        return true;
+    }
+
+    for (int i = 0; i < gActiveMods.entryCount; i++) {
+        if (gfx_rt64_try_map_texture_root(nameHash, name, gfx_rt64_mod_texture_root(gActiveMods.entries[i]))) {
+            return true;
+        }
+    }
+
+    return gfx_rt64_try_map_texture_root(nameHash, name, fs_get_write_path("textures/segment2/"));
+}
+
+static u32 gfx_rt64_load_map_texture(u64 nameHash, const std::string &path) {
+    FILE *f = fopen(path.c_str(), "rb");
+    if (f == nullptr) {
+        fprintf(stderr, "RT64: unable to open the map texture '%s'.\n", path.c_str());
+        return 0;
+    }
+
+    fseek(f, 0, SEEK_END);
+    const long fileSize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (fileSize <= 0) {
+        fclose(f);
+        fprintf(stderr, "RT64: the map texture '%s' is empty.\n", path.c_str());
+        return 0;
+    }
+
+    std::vector<u8> fileBuf((size_t)(fileSize));
+    const size_t readBytes = fread(fileBuf.data(), 1, fileBuf.size(), f);
+    fclose(f);
+    if (readBytes != fileBuf.size()) {
+        fprintf(stderr, "RT64: unable to read the map texture '%s'.\n", path.c_str());
+        return 0;
+    }
+
+    RT64_TEXTURE_DESC texDesc = {};
+    if (!gfx_rt64_texture_desc_from_file(texDesc, path.c_str(), fileBuf.data(), fileBuf.size())) {
+        fprintf(stderr, "RT64: stb_image was unable to decode the map texture '%s'.\n", path.c_str());
+        return 0;
+    }
+
+    const u32 textureKey = 1 + (u32)(RT64.textures.size());
+    RecordedTexture &recorded = RT64.textures[textureKey];
+    recorded.linearFilter = true;
+    recorded.cms = 0;
+    recorded.cmt = 0;
+    recorded.hash = nameHash;
+
+    XXHash64 hashStream(0);
+    hashStream.add(fileBuf.data(), fileBuf.size());
+    gfx_rt64_queue_texture_upload(textureKey, nameHash, hashStream.hash(), texDesc);
+
+    RT64.textureHashIdMap[nameHash] = textureKey;
+    return textureKey;
+}
+
+static u32 gfx_rt64_load_dynos_map_texture(u64 nameHash, const std::string &name) {
+    struct TextureInfo texInfo = {};
+    if (!dynos_texture_get(name.c_str(), &texInfo)) {
+        return 0;
+    }
+
+    if ((texInfo.texture == nullptr) || (texInfo.width == 0) || (texInfo.height == 0)) {
+        return 0;
+    }
+
+    u8 *rgba32 = dynos_texture_convert_to_rgba32(texInfo.texture, texInfo.width, texInfo.height, texInfo.format, texInfo.size);
+    if (rgba32 == nullptr) {
+        fprintf(stderr, "RT64: unable to convert the map texture '%s' to RGBA8.\n", name.c_str());
+        return 0;
+    }
+
+    RT64_TEXTURE_DESC texDesc = {};
+    texDesc.width = (int)(texInfo.width);
+    texDesc.height = (int)(texInfo.height);
+    texDesc.rowPitch = texDesc.width * 4;
+    texDesc.byteCount = texDesc.height * texDesc.rowPitch;
+    texDesc.format = RT64_TEXTURE_FORMAT_RGBA8;
+    texDesc.bytes = rgba32;
+
+    const u32 textureKey = 1 + (u32)(RT64.textures.size());
+    RecordedTexture &recorded = RT64.textures[textureKey];
+    recorded.linearFilter = true;
+    recorded.cms = 0;
+    recorded.cmt = 0;
+    recorded.hash = nameHash;
+
+    XXHash64 hashStream(0);
+    hashStream.add(rgba32, (size_t)(texDesc.byteCount));
+    gfx_rt64_queue_texture_upload(textureKey, nameHash, hashStream.hash(), texDesc);
+
+    RT64.textureHashIdMap[nameHash] = textureKey;
+    return textureKey;
+}
+
+u32 gfx_rt64_map_texture_key(u64 nameHash) {
+    auto hashIt = RT64.textureHashIdMap.find(nameHash);
+    if (hashIt != RT64.textureHashIdMap.end()) {
+        return (RT64.textures.find(hashIt->second) != RT64.textures.end()) ? hashIt->second : 0;
+    }
+
+    auto pathIt = RT64.mapTexturePaths.find(nameHash);
+    auto nameIt = RT64.mapTextureNames.find(nameHash);
+    if ((pathIt == RT64.mapTexturePaths.end()) && (nameIt == RT64.mapTextureNames.end())) {
+        return 0;
+    }
+
+    if (!RT64.mapTexturesLoaded.insert(nameHash).second) {
+        return 0;
+    }
+
+    if (pathIt != RT64.mapTexturePaths.end()) {
+        return gfx_rt64_load_map_texture(nameHash, pathIt->second);
+    }
+
+    return gfx_rt64_load_dynos_map_texture(nameHash, nameIt->second);
+}
+
+// Panoramic skybox tiles :)
+
+static const int sSkyboxTileCols = 8;
+static const int sSkyboxTileRows = 8;
+static const int sSkyboxTileStride = 10;
+static const int sSkyboxTileListCount = sSkyboxTileStride * sSkyboxTileRows;
+
+static const int sSkyboxTileUsedTexels = 31;
+static const int sSkyboxTileTexels = 32;
+static const double sSkyboxTileFilterInset = 0.5;
+
+static const u32 sSkyboxPanoramaMaxSize = 4096;
+
+static u8 *gfx_rt64_read_skybox_tile_rgba32(const Texture *tile, u32 *outWidth, u32 *outHeight) {
+    struct TextureInfo texInfo = {};
+    const Texture *texData = tile;
+    u32 width = 32;
+    u32 height = 32;
+    u8 format = G_IM_FMT_RGBA;
+    u8 size = G_IM_SIZ_16b;
+
+    if (dynos_texture_get_from_data(tile, &texInfo) && (texInfo.texture != nullptr) && (texInfo.width != 0) && (texInfo.height != 0)) {
+        texData = texInfo.texture;
+        width = texInfo.width;
+        height = texInfo.height;
+        format = texInfo.format;
+        size = texInfo.size;
+    }
+
+    u8 *rgba32 = dynos_texture_convert_to_rgba32(texData, width, height, format, size);
+    if (rgba32 == nullptr) {
+        return nullptr;
+    }
+
+    *outWidth = width;
+    *outHeight = height;
+    return rgba32;
+}
+
+static void gfx_rt64_blit_skybox_tile(u8 *dst, u32 dstRowPixels, u32 dstWidth, u32 dstHeight, const u8 *src, u32 srcWidth, u32 srcHeight, double srcOriginX, double srcOriginY, double srcSpanX, double srcSpanY) {
+    const double scaleX = srcSpanX / dstWidth;
+    const double scaleY = srcSpanY / dstHeight;
+
+    for (u32 y = 0; y < dstHeight; y++) {
+        const double sy = fmax((srcOriginY + ((y + 0.5) * scaleY)) - 0.5, 0.0);
+        const u32 y0 = ((u32)(sy) < srcHeight) ? (u32)(sy) : (srcHeight - 1);
+        const u32 y1 = ((y0 + 1) < srcHeight) ? (y0 + 1) : y0;
+        const double fy = sy - y0;
+
+        for (u32 x = 0; x < dstWidth; x++) {
+            const double sx = fmax((srcOriginX + ((x + 0.5) * scaleX)) - 0.5, 0.0);
+            const u32 x0 = ((u32)(sx) < srcWidth) ? (u32)(sx) : (srcWidth - 1);
+            const u32 x1 = ((x0 + 1) < srcWidth) ? (x0 + 1) : x0;
+            const double fx = sx - x0;
+
+            const u8 *row0 = src + (size_t)(y0) * srcWidth * 4;
+            const u8 *row1 = src + (size_t)(y1) * srcWidth * 4;
+            const u8 *p00 = row0 + (size_t)(x0) * 4;
+            const u8 *p10 = row0 + (size_t)(x1) * 4;
+            const u8 *p01 = row1 + (size_t)(x0) * 4;
+            const u8 *p11 = row1 + (size_t)(x1) * 4;
+            u8 *out = dst + ((size_t)(y) * dstRowPixels + x) * 4;
+
+            for (int c = 0; c < 4; c++) {
+                const double top = p00[c] + (p10[c] - p00[c]) * fx;
+                const double bottom = p01[c] + (p11[c] - p01[c]) * fx;
+                out[c] = (u8)((top + (bottom - top) * fy) + 0.5);
+            }
+        }
+    }
+}
+
+u32 gfx_rt64_stitch_skybox_texture(const Texture *const *tiles) {
+    if (tiles == nullptr) {
+        return 0;
+    }
+
+    const u32 texGeneration = dynos_texture_get_generation();
+    XXHash64 keyHash(0);
+    keyHash.add(&texGeneration, sizeof(texGeneration));
+    keyHash.add(tiles, sSkyboxTileListCount * sizeof(const Texture *));
+    const u64 cacheKey = keyHash.hash();
+
+    auto cacheIt = RT64.stitchedSkyTextureKeys.find(cacheKey);
+    if ((cacheIt != RT64.stitchedSkyTextureKeys.end()) && (RT64.textures.find(cacheIt->second) != RT64.textures.end())) {
+        return cacheIt->second;
+    }
+
+    u32 tileWidth = 0;
+    u32 tileHeight = 0;
+    std::vector<u8 *> tileRgba32(sSkyboxTileCols * sSkyboxTileRows, nullptr);
+    bool ok = true;
+
+    for (int row = 0; ok && (row < sSkyboxTileRows); row++) {
+        for (int col = 0; ok && (col < sSkyboxTileCols); col++) {
+            u32 width, height;
+            u8 *rgba32 = gfx_rt64_read_skybox_tile_rgba32(tiles[row * sSkyboxTileStride + col], &width, &height);
+            if (rgba32 == nullptr) {
+                fprintf(stderr, "RT64: unable to convert a skybox tile to RGBA8 for panorama stitching.\n");
+                ok = false;
+                break;
+            }
+
+            if (tileWidth == 0) {
+                tileWidth = width;
+                tileHeight = height;
+            }
+            else if ((width != tileWidth) || (height != tileHeight)) {
+                fprintf(stderr, "RT64: skybox tiles don't agree on a size, can't stitch a panorama.\n");
+                free(rgba32);
+                ok = false;
+                break;
+            }
+
+            tileRgba32[row * sSkyboxTileCols + col] = rgba32;
+        }
+    }
+
+    if (!ok) {
+        for (u8 *rgba32 : tileRgba32) { free(rgba32); }
+        return 0;
+    }
+
+    const double srcOriginX = (tileWidth * sSkyboxTileFilterInset) / sSkyboxTileTexels;
+    const double srcOriginY = (tileHeight * sSkyboxTileFilterInset) / sSkyboxTileTexels;
+    const double srcSpanX = (tileWidth * (double)(sSkyboxTileUsedTexels)) / sSkyboxTileTexels;
+    const double srcSpanY = (tileHeight * (double)(sSkyboxTileUsedTexels)) / sSkyboxTileTexels;
+    const u32 maxCropWidth = sSkyboxPanoramaMaxSize / sSkyboxTileCols;
+    const u32 maxCropHeight = sSkyboxPanoramaMaxSize / sSkyboxTileRows;
+
+    u32 cropWidth = (u32)(srcSpanX + 0.5);
+    u32 cropHeight = (u32)(srcSpanY + 0.5);
+    if (cropWidth > maxCropWidth) { cropWidth = maxCropWidth; }
+    if (cropHeight > maxCropHeight) { cropHeight = maxCropHeight; }
+
+    const u32 panoramaWidth = cropWidth * sSkyboxTileCols;
+    const u32 panoramaHeight = cropHeight * sSkyboxTileRows;
+
+    u8 *panorama = (u8 *)malloc((size_t)(panoramaWidth) * panoramaHeight * 4);
+    if (panorama == nullptr) {
+        for (u8 *rgba32 : tileRgba32) { free(rgba32); }
+        return 0;
+    }
+
+    for (int row = 0; row < sSkyboxTileRows; row++) {
+        for (int col = 0; col < sSkyboxTileCols; col++) {
+            const u8 *src = tileRgba32[row * sSkyboxTileCols + col];
+            u8 *dst = panorama + ((size_t)(row) * cropHeight * panoramaWidth + (size_t)(col) * cropWidth) * 4;
+            gfx_rt64_blit_skybox_tile(dst, panoramaWidth, cropWidth, cropHeight, src, tileWidth, tileHeight, srcOriginX, srcOriginY, srcSpanX, srcSpanY);
+        }
+    }
+
+    for (u8 *rgba32 : tileRgba32) { free(rgba32); }
+
+    RT64_TEXTURE_DESC texDesc = {};
+    texDesc.width = (int)(panoramaWidth);
+    texDesc.height = (int)(panoramaHeight);
+    texDesc.rowPitch = texDesc.width * 4;
+    texDesc.byteCount = texDesc.height * texDesc.rowPitch;
+    texDesc.format = RT64_TEXTURE_FORMAT_RGBA8;
+    texDesc.bytes = panorama;
+
+    const u32 textureKey = 1 + (u32)(RT64.textures.size());
+    RecordedTexture &recorded = RT64.textures[textureKey];
+    recorded.linearFilter = true;
+    recorded.cms = 0;
+    recorded.cmt = 0;
+    recorded.hash = cacheKey;
+
+    XXHash64 contentHash(0);
+    contentHash.add(panorama, (size_t)(texDesc.byteCount));
+    gfx_rt64_queue_texture_upload(textureKey, cacheKey, contentHash.hash(), texDesc);
+
+    RT64.stitchedSkyTextureKeys[cacheKey] = textureKey;
+    return textureKey;
 }
 
 #endif // _WIN32

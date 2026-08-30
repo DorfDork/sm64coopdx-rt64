@@ -666,13 +666,6 @@ void vtx_delete_all() {
  // Lua config //
 ////////////////
 
-void smlua_gfx_util_reset(void) {
-    struct GfxRenderingAPI *api = gfx_get_current_rendering_api();
-    if (api && api->lua_config_reset) {
-        api->lua_config_reset();
-    }
-}
-
 bool smlua_gfx_util_save_configs(void) {
     struct GfxRenderingAPI *api = gfx_get_current_rendering_api();
     if (api && api->lua_config_save) {

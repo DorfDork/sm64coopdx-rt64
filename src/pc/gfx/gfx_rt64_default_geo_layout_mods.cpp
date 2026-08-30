@@ -1175,7 +1175,7 @@ const RT64DefaultMod gRT64DefaultGeoLayoutMods[] = {
         },
     },
     {
-        .name = "toads_winged_cap_geo",
+        .name = "toads_winged_metal_cap_geo",
         .materialMod = {
             .shadowCenterSet = true,
             .shadowCenter = 1,

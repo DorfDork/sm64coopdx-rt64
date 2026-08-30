@@ -3,6 +3,7 @@
 extern "C" {
 #include "pc/configfile.h"
 #include "pc/fs/fs.h"
+#include "pc/platform.h"
 #include "game/area.h"
 #include "game/game_init.h"
 #include "game/level_update.h"
@@ -13,7 +14,6 @@ extern "C" {
 #include "pc/mods/mods.h"
 #include "pc/lua/smlua_hooks.h"
 #include "gfx_shader.h"
-#include "gfx_rt64_lua.h"
 }
 
 #include <algorithm>
@@ -31,7 +31,6 @@ extern "C" {
 #include "gfx_rt64.h"
 #include "gfx_rt64_context.hpp"
 #include "gfx_rt64_serialization.hpp"
-#include "gfx_rt64_geo_map.hpp"
 #include "gfx_pc.h"
 
 #define RT64_LUA_ASSERT_FIELD(luaType, realType, luaField, realField) \
@@ -85,8 +84,10 @@ extern "C" HWND gfx_window_dxgi_get_h_wnd(void);
 
 extern "C" const char *dynos_actor_get_custom_name(const void *geoLayout);
 
-#include "gfx_rt64_common.hpp"
-#include "gfx_rt64_texture.hpp"
+extern "C" {
+#include "engine/math_util.h"
+}
+
 
 int gfx_rt64_get_level_index(void) {
     int levelIndex = (gPlayerSpawnInfos[0].areaIndex >= 0) ? gCurrLevelNum : 0;
@@ -97,6 +98,486 @@ int gfx_rt64_get_level_index(void) {
 int gfx_rt64_get_area_index(void) {
     int areaIndex = (gPlayerSpawnInfos[0].areaIndex >= 0) ? gCurrAreaIndex : 0;
     return (areaIndex >= 0 && areaIndex < MAX_AREAS) ? areaIndex : 0;
+}
+
+static RT64_COMBINER_DESC gfx_rt64_combiner_desc_from_cc(struct ColorCombiner *cc) {
+    RT64_COMBINER_DESC desc = {};
+    memcpy(desc.rgb1, &cc->shader_commands[0], 4);
+    memcpy(desc.alpha1, &cc->shader_commands[4], 4);
+    desc.use2Cycle = cc->cm.use_2cycle ? 1 : 0;
+
+    if (desc.use2Cycle) {
+        memcpy(desc.rgb2, &cc->shader_commands[8], 4);
+        memcpy(desc.alpha2, &cc->shader_commands[12], 4);
+    } else {
+        memset(desc.rgb2, SHADER_0, 4);
+        memset(desc.alpha2, SHADER_0, 4);
+    }
+
+    desc.optAlpha = cc->cm.use_alpha ? 1 : 0;
+    desc.optTextureEdge = (cc->cm.texture_edge && cc->cm.use_alpha) ? 1 : 0;
+    desc.optNoise = (cc->cm.use_alpha && cc->cm.use_dither) ? 1 : 0;
+    return desc;
+}
+
+static u64 gfx_rt64_combiner_desc_hash(const RT64_COMBINER_DESC &desc) {
+    u64 h = 1469598103934665603ull;
+    const u8 *bytes = (const u8 *)(&desc);
+    for (size_t i = 0; i < sizeof(RT64_COMBINER_DESC); i++) {
+        h ^= bytes[i];
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
+static void gfx_rt64_update_post_process_shader(void) {
+    if ((gPostProcessShaderInputs == nullptr) || (gPostProcessShaderBindings == nullptr)) { return; }
+
+    struct Shader *vertexShader = (struct Shader *)calloc(1, sizeof(struct Shader));
+    struct Shader *fragmentShader = (struct Shader *)calloc(1, sizeof(struct Shader));
+    if ((vertexShader == nullptr) || (fragmentShader == nullptr)) {
+        gfx_destroy_shader(vertexShader);
+        gfx_destroy_shader(fragmentShader);
+        return;
+    }
+
+    char *hlslFs = nullptr;
+    if (gfx_generate_post_process_vertex_and_fragment_shader(vertexShader, fragmentShader, nullptr, nullptr)) {
+        gfx_convert_spirv_to_hlsl(&hlslFs, fragmentShader);
+    }
+
+    {
+        const std::lock_guard<std::mutex> lock(RT64.postProcessMutex);
+        RT64.postProcessHLSL = (hlslFs != nullptr) ? hlslFs : "";
+        RT64.postProcessOutputName.clear();
+        RT64.postProcessInputNames.clear();
+        RT64.postProcessInputs.clear();
+
+        if (hlslFs != nullptr) {
+            RT64.postProcessOutputName = fragmentShader->shaderOutputs[0].name;
+
+            std::vector<RT64_SHADER_INPUT> stagedInputs;
+            for (int i = 0; i < MAX_SHADER_INPUTS; i++) {
+                if (fragmentShader->shaderInputs[i].name[0] == '\0') { continue; }
+
+                unsigned int size = 0;
+                for (int j = 0; j < MAX_SHADER_INPUTS; j++) {
+                    if ((vertexShader->shaderInputs[j].size > 0) &&
+                        (vertexShader->shaderInputs[j].location == fragmentShader->shaderInputs[i].location)) {
+                        size = (unsigned int)(vertexShader->shaderInputs[j].size);
+                        break;
+                    }
+                }
+
+                if (size == 0) { continue; }
+
+                RT64_SHADER_INPUT input;
+                input.location = (unsigned int)(fragmentShader->shaderInputs[i].location);
+                input.size = size;
+                input.name = nullptr;
+                stagedInputs.push_back(input);
+                RT64.postProcessInputNames.push_back(fragmentShader->shaderInputs[i].name);
+            }
+
+            for (size_t i = 0; i < stagedInputs.size(); i++) {
+                stagedInputs[i].name = RT64.postProcessInputNames[i].c_str();
+                RT64.postProcessInputs.push_back(stagedInputs[i]);
+            }
+        }
+
+        RT64.postProcessDirty.store(true, std::memory_order_release);
+    }
+
+    free(hlslFs);
+    gfx_destroy_shader(vertexShader);
+    gfx_destroy_shader(RT64.postProcessShader);
+    RT64.postProcessShader = fragmentShader;
+}
+
+static void gfx_rt64_sync_post_process_size(void) {
+    if (RT64.postProcessShader == nullptr) {
+        gfx_rt64_update_post_process_shader();
+    }
+
+    for (s32 i = 0; i < MAX_CUSTOM_FRAME_PASSES; i++) {
+        if (gFramePasses[i].active) { return; }
+    }
+
+    s32 width = 0, height = 0;
+    if (gPostProcessShaderCustomWindowSize) {
+        u32 dimWidth = 0, dimHeight = 0;
+        gfx_get_dimensions(&dimWidth, &dimHeight);
+        width = dimWidth;
+        height = dimHeight;
+    }
+
+    if ((RT64.postProcessWidth == width) && (RT64.postProcessHeight == height)) { return; }
+
+    RT64.postProcessWidth = width;
+    RT64.postProcessHeight = height;
+    RT64.postProcessDirty.store(true, std::memory_order_release);
+}
+
+static struct Shader *gfx_rt64_shader_for_stage(ShaderProgramRT64 *prg, enum ShaderStage stage) {
+    if (prg == nullptr) { return nullptr; }
+
+    if (stage == SHADER_STAGE_VERTEX) {
+        return prg->vertexShader;
+    } else if (stage == SHADER_STAGE_FRAGMENT) {
+        return prg->fragmentShader;
+    }
+
+    return nullptr;
+}
+
+static void gfx_rt64_set_uniform_for_specific_shader(struct ShaderUniformBlock *uniformBlock, const char *name, const void *data, u32 numElements) {
+    for (int i = 0; i < MAX_SHADER_UNIFORMS; i++) {
+        struct ShaderUniform *uniform = &uniformBlock->uniforms[i];
+        if (uniform->size == 0) { break; }
+
+        if (strcmp(uniform->name, name) == 0) {
+            u8 *dst = uniformBlock->buffer + uniform->location;
+
+            if (uniform->arrayLength > 1) {
+                const u8 *src = (const u8 *)(data);
+                u32 count = MIN(numElements, (u32)(uniform->arrayLength));
+                for (u32 j = 0; j < count; j++) {
+                    u8 *elementDst = dst + j * uniform->arrayStride;
+                    const u8 *elementSrc = src + j * uniform->elementSize;
+                    if (memcmp(elementDst, elementSrc, uniform->elementSize) == 0) { continue; }
+                    memcpy(elementDst, elementSrc, uniform->elementSize);
+                    uniformBlock->dirty = true;
+                }
+            } else if (memcmp(dst, data, uniform->size) != 0) {
+                memcpy(dst, data, uniform->size);
+                uniformBlock->dirty = true;
+            }
+
+            return;
+        }
+    }
+}
+
+static void gfx_rt64_request_pick(bool *pick) {
+    POINT cursorPos = {};
+    GetCursorPos(&cursorPos);
+    ScreenToClient(RT64.hwnd, &cursorPos);
+    RT64.pickCursorX = cursorPos.x;
+    RT64.pickCursorY = cursorPos.y;
+    *pick = true;
+}
+
+static bool gfx_rt64_rapi_z_is_from_0_to_1(void) {
+    return true;
+}
+
+static void gfx_rt64_rapi_unload_shader(struct ShaderProgram *oldPrg) {
+}
+
+static void gfx_rt64_rapi_load_shader(struct ShaderProgram *newPrg) {
+    RT64.shaderProgram = (ShaderProgramRT64 *)(newPrg);
+}
+
+static void gfx_rt64_rapi_remove_shaders(void) {
+    const std::lock_guard<std::mutex> lock(RT64.shaderProgramsMutex);
+
+    for (auto &pair : RT64.shaderPrograms) {
+        RT64.retiredShaderPrograms.push_back(pair.second);
+    }
+    RT64.shaderPrograms.clear();
+
+    RT64.shaderProgram = nullptr;
+
+    RT64.lastShaderProgram = nullptr;
+    RT64.lastShaderVariant = nullptr;
+
+    gfx_rt64_update_post_process_shader();
+}
+
+static struct ShaderProgram *gfx_rt64_rapi_create_and_load_new_shader(struct ColorCombiner *cc) {
+    RT64_COMBINER_DESC desc = gfx_rt64_combiner_desc_from_cc(cc);
+    u64 rt64Hash = gfx_rt64_combiner_desc_hash(desc);
+
+    {
+        const std::lock_guard<std::mutex> lock(RT64.shaderProgramsMutex);
+        auto it = RT64.shaderPrograms.find(rt64Hash);
+        if (it != RT64.shaderPrograms.end()) {
+            gfx_rt64_rapi_load_shader((struct ShaderProgram *)(it->second));
+            return (struct ShaderProgram *)(it->second);
+        }
+    }
+
+    ShaderProgramRT64 *shaderProgram = new ShaderProgramRT64();
+    shaderProgram->cc = desc;
+    shaderProgram->hash = rt64Hash;
+
+    struct CCFeatures ccf = { 0 };
+    gfx_cc_get_features(cc, &ccf);
+    shaderProgram->numInputs = (u8)(ccf.num_inputs);
+    shaderProgram->usedTextures[0] = ccf.used_textures[0];
+    shaderProgram->usedTextures[1] = ccf.used_textures[1];
+    shaderProgram->usedFog = cc->cm.use_fog;
+
+    const char *vsHookResult = nullptr;
+    smlua_call_event_hooks(HOOK_ON_VERTEX_SHADER_CREATE, cc, &vsHookResult);
+
+    const char *fsHookResult = nullptr;
+    smlua_call_event_hooks(HOOK_ON_FRAGMENT_SHADER_CREATE, cc, &fsHookResult);
+
+    if ((vsHookResult != nullptr) || (fsHookResult != nullptr)) {
+        struct Shader *vertexShader = (struct Shader *)calloc(1, sizeof(struct Shader));
+        struct Shader *fragmentShader = (struct Shader *)calloc(1, sizeof(struct Shader));
+
+        if ((vertexShader != nullptr) && (fragmentShader != nullptr)) {
+            gfx_generate_vertex_and_fragment_shader_from_cc(vertexShader, fragmentShader, cc, nullptr, nullptr);
+
+            char *hlslVs = nullptr;
+            char *hlslFs = nullptr;
+            gfx_convert_spirv_to_hlsl(&hlslVs, vertexShader);
+            gfx_convert_spirv_to_hlsl(&hlslFs, fragmentShader);
+
+            if ((hlslVs != nullptr) && (hlslFs != nullptr)) {
+                shaderProgram->hasCustomShader = true;
+                shaderProgram->customVertexHLSL = hlslVs;
+                shaderProgram->customFragmentHLSL = hlslFs;
+                shaderProgram->vertexShader = vertexShader;
+                shaderProgram->fragmentShader = fragmentShader;
+                shaderProgram->customVertexInputs.clear();
+
+                for (int i = 0; i < MAX_SHADER_INPUTS; i++) {
+                    if (gShaderInputs[i].size == 0) { continue; }
+                    RT64_SHADER_INPUT input;
+                    input.location = (unsigned int)(vertexShader->shaderInputs[i].location);
+                    input.size = (unsigned int)(vertexShader->shaderInputs[i].size);
+                    // Points into the shader this program keeps for as long as it lives, which is
+                    // what RT64 needs to name the attribute when it builds its hit shaders.
+                    input.name = vertexShader->shaderInputs[i].name;
+                    shaderProgram->customVertexInputs.push_back(input);
+                }
+            }
+            else {
+                gfx_destroy_shader(vertexShader);
+                gfx_destroy_shader(fragmentShader);
+            }
+
+            free(hlslVs);
+            free(hlslFs);
+        }
+        else {
+            gfx_destroy_shader(vertexShader);
+            gfx_destroy_shader(fragmentShader);
+        }
+    }
+
+    {
+        const std::lock_guard<std::mutex> lock(RT64.shaderProgramsMutex);
+        RT64.shaderPrograms[rt64Hash] = shaderProgram;
+    }
+
+    gfx_rt64_rapi_load_shader((struct ShaderProgram *)(shaderProgram));
+
+    return (struct ShaderProgram *)(shaderProgram);
+}
+
+static struct ShaderProgram *gfx_rt64_rapi_create_or_load_post_process_shader(void) {
+    gfx_rt64_update_post_process_shader();
+    return nullptr;
+}
+
+static struct ShaderProgram *gfx_rt64_rapi_lookup_shader(struct ColorCombiner *cc) {
+    RT64_COMBINER_DESC desc = gfx_rt64_combiner_desc_from_cc(cc);
+    u64 rt64Hash = gfx_rt64_combiner_desc_hash(desc);
+    const std::lock_guard<std::mutex> lock(RT64.shaderProgramsMutex);
+    auto it = RT64.shaderPrograms.find(rt64Hash);
+    return (it != RT64.shaderPrograms.end()) ? (struct ShaderProgram *)(it->second) : nullptr;
+}
+
+static struct ShaderProgram *gfx_rt64_rapi_lookup_shader_using_index(u8 shaderIndex, u8 framePassIndex) {
+    return nullptr;
+}
+
+static void gfx_rt64_rapi_shader_get_info(struct ShaderProgram *prg, u8 *numInputs, bool usedTextures[2]) {
+    ShaderProgramRT64 *p = (ShaderProgramRT64 *)(prg);
+    *numInputs = p->numInputs;
+    usedTextures[0] = p->usedTextures[0];
+    usedTextures[1] = p->usedTextures[1];
+}
+
+static void gfx_rt64_rapi_create_framebuffer(struct FramePass *framePass) {
+    if (framePass == nullptr) { return; }
+
+    u32 passWidth = 0, passHeight = 0;
+    gfx_get_frame_pass_viewport_dimensions(framePass, &passWidth, &passHeight);
+
+    const s32 width = passWidth;
+    const s32 height = passHeight;
+    if ((RT64.postProcessWidth == width) && (RT64.postProcessHeight == height)) { return; }
+
+    RT64.postProcessWidth = width;
+    RT64.postProcessHeight = height;
+    gfx_rt64_update_post_process_shader();
+}
+
+static void gfx_rt64_rapi_delete_framebuffer(struct FramePass *framePass) {
+    if (framePass == nullptr) { return; }
+    if ((RT64.postProcessWidth == 0) && (RT64.postProcessHeight == 0)) { return; }
+
+    RT64.postProcessWidth = 0;
+    RT64.postProcessHeight = 0;
+    gfx_rt64_update_post_process_shader();
+}
+
+static void gfx_rt64_rapi_set_framebuffer(struct FramePass *framePass) {
+}
+
+static void gfx_rt64_rapi_reset_framebuffer(void) {
+}
+
+static size_t gfx_rt64_rapi_get_uniform_buffer_size(enum ShaderStage stage, int bufferIndex) {
+    if (bufferIndex < 0 || bufferIndex >= MAX_UNIFORM_BLOCKS) { return 0; }
+
+    struct Shader *shader = gfx_rt64_shader_for_stage(RT64.shaderProgram, stage);
+    if (shader == nullptr) { return 0; }
+
+    return shader->uniformBlocks[bufferIndex].size;
+}
+
+static void gfx_rt64_rapi_set_uniform_buffer(enum ShaderStage stage, const char *name) {
+    struct Shader *shader = gfx_rt64_shader_for_stage(RT64.shaderProgram, stage);
+    if (shader == nullptr) { return; }
+
+    int *destination = (stage == SHADER_STAGE_VERTEX) ? &gSelectedVertexUniformBuffer : &gSelectedFragmentUniformBuffer;
+    for (int i = 0; i < MAX_UNIFORM_BLOCKS; i++) {
+        struct ShaderUniformBlock *uniformBlock = &shader->uniformBlocks[i];
+        if (strcmp(uniformBlock->name, name) == 0) {
+            *destination = i;
+        }
+    }
+}
+
+static void gfx_rt64_rapi_set_uniform(struct ShaderProgram *shaderProgram, const char *name, UNUSED ShaderUniformType type, const void *data, u32 numElements) {
+    ShaderProgramRT64 *prg = (ShaderProgramRT64 *)(shaderProgram);
+    if (prg == nullptr) {
+        prg = RT64.shaderProgram;
+        if (prg == nullptr) { return; }
+    }
+
+    if (gfx_shader_stage_is(SHADER_STAGE_VERTEX) && (prg->vertexShader != nullptr)) {
+        gfx_rt64_set_uniform_for_specific_shader(&prg->vertexShader->uniformBlocks[gSelectedVertexUniformBuffer], name, data, numElements);
+    }
+    if (gfx_shader_stage_is(SHADER_STAGE_FRAGMENT) && (prg->fragmentShader != nullptr)) {
+        gfx_rt64_set_uniform_for_specific_shader(&prg->fragmentShader->uniformBlocks[gSelectedFragmentUniformBuffer], name, data, numElements);
+    }
+
+    if ((RT64.postProcessShader != nullptr) && gfx_shader_stage_is(SHADER_STAGE_FRAGMENT)) {
+        for (int i = 0; i < RT64.postProcessShader->uniformBlockCount; i++) {
+            gfx_rt64_set_uniform_for_specific_shader(&RT64.postProcessShader->uniformBlocks[i], name, data, numElements);
+        }
+    }
+}
+
+static u32 gfx_rt64_rapi_new_texture(const char *name) {
+    return gfx_rt64_new_texture(name);
+}
+
+static void gfx_rt64_rapi_select_texture(int tile, u32 textureId) {
+    assert(tile < 2);
+    RT64.currentTile = tile;
+    RT64.currentTextureIds[tile] = textureId;
+}
+
+static void gfx_rt64_rapi_bind_texture_raw(int tile, u64 textureId) {
+}
+
+static void gfx_rt64_rapi_upload_texture(const u8 *rgba32Buf, int width, int height) {
+    gfx_rt64_upload_texture(RT64.currentTextureIds[RT64.currentTile], rgba32Buf, width, height);
+}
+
+static void gfx_rt64_rapi_set_material_display_list(const void *displayList) {
+    RT64.materialDisplayList = displayList;
+}
+
+static bool gfx_rt64_rapi_shader_uses_full_vertex_layout(struct ShaderProgram *prg) {
+    if (prg == nullptr) { return false; }
+    const ShaderProgramRT64 *p = (const ShaderProgramRT64 *)(prg);
+    return p->hasCustomShader && !p->customShaderFailed.load(std::memory_order_relaxed);
+}
+
+static void gfx_rt64_rapi_toggle_inspector(void) {
+#if !RT64_INSPECTOR_ENABLED
+    return;
+#else
+    if (!gfx_gfx_rt64_is_active()) {
+        return;
+    }
+    RT64.renderInspectorActive = !RT64.renderInspectorActive;
+#endif
+}
+
+static bool gfx_rt64_rapi_inspector_active(void) {
+    return gfx_gfx_rt64_is_active() && RT64.renderInspectorActive;
+}
+
+static bool gfx_rt64_rapi_handle_window_message(void *hWnd, unsigned int message, uintptr_t wParam, intptr_t lParam) {
+    (void)(hWnd);
+    if (!gfx_gfx_rt64_is_active() || !RT64.renderInspectorActive) {
+        return false;
+    }
+
+    switch (message) {
+        case WM_LBUTTONDOWN: {
+            if ((RT64.lib.InspectorWantsMouse == nullptr) || RT64.lib.InspectorWantsMouse(RT64.renderInspector)) {
+                break;
+            }
+
+            {
+                const std::lock_guard<std::mutex> pickLock(RT64.pickTextureMutex);
+                gfx_rt64_request_pick(&RT64.pickGeoLayout);
+            }
+
+            RT64.pickGeoLayoutHighlight = true;
+
+            break;
+        }
+        case WM_LBUTTONUP: {
+            RT64.pickGeoLayoutHighlight = false;
+            break;
+        }
+        case WM_RBUTTONDOWN: {
+            {
+                const std::lock_guard<std::mutex> pickLock(RT64.pickTextureMutex);
+                RT64.pickTextureHash = 0;
+                gfx_rt64_request_pick(&RT64.pickTexture);
+            }
+
+            RT64.pickTextureHighlight = true;
+
+            return true;
+        }
+        case WM_RBUTTONUP: {
+            const std::lock_guard<std::mutex> pickLock(RT64.pickTextureMutex);
+            RT64.pickTextureHighlight = false;
+            return true;
+        }
+        default:
+            break;
+    }
+
+    const bool isInputMessage =
+        (message >= WM_KEYFIRST && message <= WM_KEYLAST) ||
+        (message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) ||
+        (message == WM_SETFOCUS) || (message == WM_KILLFOCUS) || (message == WM_SETCURSOR);
+    if (!isInputMessage) {
+        return false;
+    }
+
+    const size_t maxQueuedMessages = 256;
+    const std::lock_guard<std::mutex> lock(RT64.inspectorMessageQueueMutex);
+    if (RT64.inspectorMessageQueue.size() < maxQueuedMessages) {
+        RT64.inspectorMessageQueue.push({ message, wParam, lParam });
+    }
+
+    return false;
 }
 
 static void gfx_rt64_rapi_set_sampler_parameters(int tile, bool linear_filter, u32 cms, u32 cmt) {
@@ -117,11 +598,11 @@ static void gfx_rt64_rapi_set_zmode_decal(bool zmode_decal) {
 }
 
 static void gfx_rt64_rapi_set_viewport(int x, int y, int width, int height) {
-    RT64.viewportRect = { x, y, width, height };
+    vec4i_set(RT64.viewportRect, x, y, width, height);
 }
 
 static void gfx_rt64_rapi_set_scissor(int x, int y, int width, int height) {
-    RT64.scissorRect = { x, y, width, height };
+    vec4i_set(RT64.scissorRect, x, y, width, height);
 }
 
 static void gfx_rt64_rapi_set_use_alpha(bool use_alpha) {
@@ -241,7 +722,7 @@ u32 gfx_rt64_casted_shadow_group(const void *geoLayout) {
     return (u32)((address >> 4) * 2654435761u) | 1u;
 }
 
-static void gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool raytrace, GameDisplayList &displayList) {
+static void gfx_rt64_process_mesh(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool raytrace, GameDisplayList &displayList) {
     const bool useTexture = RT64.shaderProgram->usedTextures[0] || RT64.shaderProgram->usedTextures[1];
     const int numInputs = RT64.shaderProgram->numInputs;
     const bool useAlpha = RT64.shaderProgram->cc.optAlpha != 0;
@@ -295,8 +776,7 @@ static void gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len, size
     if (dynMesh.vertexBuffer == nullptr) {
         dynMesh.vertexBuffer = (float *)(malloc(vertexBufferSize));
         if (dynMesh.vertexBuffer == nullptr) {
-            gfx_rt64_error_message("RT64", "Failed to allocate a vertex buffer, ran out of memory.");
-            abort();
+            sys_fatal("RT64: failed to allocate a vertex buffer, ran out of memory.");
         }
     }
 
@@ -318,7 +798,7 @@ static void gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len, size
     dynMesh.positionHash = posHash;
 }
 
-static void gfx_rt64_rapi_apply_mod(RT64_MATERIAL *material, u32 *bump, u32 *normal, u32 *specular, RecordedMod *mod) {
+static void gfx_rt64_apply_mod(RT64_MATERIAL *material, u32 *bump, u32 *normal, u32 *specular, RecordedMod *mod) {
     if (mod->materialMod != nullptr) {
         RT64_ApplyMaterialAttributes(material, mod->materialMod);
 
@@ -349,7 +829,7 @@ static void gfx_rt64_rapi_apply_mod(RT64_MATERIAL *material, u32 *bump, u32 *nor
     }
 }
 
-static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided, bool raytrace, u32 uid) {
+static void gfx_rt64_draw_triangles_common(const Mat4 &transform, float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided, bool raytrace, u32 uid) {
     assert(RT64.shaderProgram != nullptr);
 
     // Retrieve the previous transform for the display list with this UID and store the current one.
@@ -413,13 +893,13 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
     }
 
     RT64_INSTANCE_DESC &instDesc = displayListInstance.desc;
-    instDesc.scissorRect = RT64.scissorRect;
-    instDesc.viewportRect = RT64.viewportRect;
-    instDesc.transform = transform;
+    vec4i_copy(instDesc.scissorRect, RT64.scissorRect);
+    vec4i_copy(instDesc.viewportRect, RT64.viewportRect);
+    memcpy(instDesc.transform, transform, sizeof(Mat4));
     instDesc.material = RT64.defaultMaterial;
     instDesc.material.textureGenEnabled = RT64.textureGenEnabled ? 1 : 0;
-    instDesc.material.textureGenU = RT64.textureGenU;
-    instDesc.material.textureGenV = RT64.textureGenV;
+    memcpy(instDesc.material.textureGenU, RT64.textureGenU, sizeof(Vec4f));
+    memcpy(instDesc.material.textureGenV, RT64.textureGenV, sizeof(Vec4f));
 
     // Find all parameters associated to the texture if it's used.
     bool highlightMaterial = false;
@@ -491,7 +971,7 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 
     // Build material with applied mods.
     if (RT64.graphNodeMod != nullptr) {
-        gfx_rt64_rapi_apply_mod(
+        gfx_rt64_apply_mod(
             &instDesc.material,
             &displayListInstance.textures.bump,
             &displayListInstance.textures.normal,
@@ -500,7 +980,7 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
     }
 
     if (textureMod != nullptr) {
-        gfx_rt64_rapi_apply_mod(
+        gfx_rt64_apply_mod(
             &instDesc.material,
             &displayListInstance.textures.bump,
             &displayListInstance.textures.normal,
@@ -514,13 +994,13 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 
     // Apply a higlight color if the material is selected.
     if (highlightMaterial) {
-        instDesc.material.diffuseColorMix = { 255.0f, 0.0f, 255.0f, 0.5f };
-        instDesc.material.selfLightColor = { 255.0f, 255.0f, 255.0f };
+        vec4f_set(instDesc.material.diffuseColorMix, 255.0f, 0.0f, 255.0f, 0.5f);
+        vec3f_set(instDesc.material.selfLightColor, 255.0f, 255.0f, 255.0f);
         instDesc.material.lightGroupMaskBits = 0;
     }
     else if (highlightGeoLayout) {
-        instDesc.material.diffuseColorMix = { 255.0f, 255.0f, 89.0f, 0.5f };
-        instDesc.material.selfLightColor = { 255.0f, 255.0f, 255.0f };
+        vec4f_set(instDesc.material.diffuseColorMix, 255.0f, 255.0f, 89.0f, 0.5f);
+        vec3f_set(instDesc.material.selfLightColor, 255.0f, 255.0f, 255.0f);
         instDesc.material.lightGroupMaskBits = 0;
     }
 
@@ -529,7 +1009,7 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
     }
 
     // Copy the fog to the material.
-    instDesc.material.fogColor = RT64.fogColor;
+    vec3f_copy(instDesc.material.fogColor, RT64.fogColor);
     instDesc.material.fogMul = RT64.fogMul;
     instDesc.material.fogOffset = RT64.fogOffset;
     instDesc.material.fogEnabled = RT64.shaderProgram->usedFog;
@@ -558,7 +1038,7 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
         instDesc.flags |= RT64_INSTANCE_DISABLE_BACKFACE_CULLING;
     }
 
-    gfx_rt64_rapi_process_mesh(buf_vbo, buf_vbo_len, buf_vbo_num_tris, raytrace, displayList);
+    gfx_rt64_process_mesh(buf_vbo, buf_vbo_len, buf_vbo_num_tris, raytrace, displayList);
 
     // Increase the counters.
     displayList.drawCount++;
@@ -566,15 +1046,13 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 }
 
 static void gfx_rt64_rapi_set_fog(u8 fog_r, u8 fog_g, u8 fog_b, s16 fog_mul, s16 fog_offset) {
-    RT64.fogColor.x = (float)(fog_r);
-    RT64.fogColor.y = (float)(fog_g);
-    RT64.fogColor.z = (float)(fog_b);
+    vec3f_set(RT64.fogColor, (f32)(fog_r), (f32)(fog_g), (f32)(fog_b));
     RT64.fogMul = fog_mul;
     RT64.fogOffset = fog_offset;
 }
 
 static void gfx_rt64_rapi_draw_triangles_ortho(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided, u32 uid) {
-    gfx_rt64_rapi_draw_triangles_common(RT64.identityTransform, buf_vbo, buf_vbo_len, buf_vbo_num_tris, double_sided, false, uid);
+    gfx_rt64_draw_triangles_common(RT64.identityTransform, buf_vbo, buf_vbo_len, buf_vbo_num_tris, double_sided, false, uid);
 }
 
 static void gfx_rt64_rapi_draw_triangles_persp(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, float transform_affine[4][4], bool double_sided, u32 uid) {
@@ -583,13 +1061,9 @@ static void gfx_rt64_rapi_draw_triangles_persp(float buf_vbo[], size_t buf_vbo_l
         RT64.background = false;
     }
 
-    RT64_MATRIX4 transform;
-    memcpy(transform.m, transform_affine, sizeof(float) * 16);
-    gfx_rt64_rapi_draw_triangles_common(transform, buf_vbo, buf_vbo_len, buf_vbo_num_tris, double_sided, true, uid);
-}
-
-void gfx_rt64_error_message(const char *window_title, const char *error_message) {
-    MessageBox(nullptr, error_message, window_title, MB_OK | MB_ICONEXCLAMATION);
+    Mat4 transform;
+    mtxf_copy(transform, transform_affine);
+    gfx_rt64_draw_triangles_common(transform, buf_vbo, buf_vbo_len, buf_vbo_num_tris, double_sided, true, uid);
 }
 
 extern "C" struct GfxRenderingAPI *gRenderApi;
@@ -636,7 +1110,7 @@ static void gfx_rt64_rapi_lua_config_save(void) {
     gfx_rt64_save_level_lights();
 }
 
-static void gfx_rt64_rapi_lua_config_reset(void) {
+void gfx_rt64_reset_lua_config(void) {
     const std::lock_guard<std::mutex> lightingLock(RT64.levelAreaLightingMutex);
     const std::lock_guard<std::mutex> texModsLock(RT64.texModsMutex);
     gfx_rt64_load_level_lights();
@@ -685,8 +1159,8 @@ static void gfx_rt64_rapi_init(void) {
     RT64.hwnd = gfx_window_dxgi_get_h_wnd();
     RT64.lib = RT64_LoadLibrary();
     if (RT64.lib.handle == 0) {
-        gfx_rt64_error_message("RT64", "Failed to load library. Please make sure rt64lib.dll and dxil.dll are placed next to the game's executable and are up to date.");
-        abort();
+        sys_fatal("RT64: failed to load the library.\n\n"
+            "Please make sure rt64lib.dll and dxil.dll are placed next to the game's executable and are up to date.");
     }
 
     // Start timers.
@@ -703,9 +1177,9 @@ static void gfx_rt64_rapi_init(void) {
     gfx_rt64_load_texture_mods();
 
     // Initialize other attributes.
-    RT64.scissorRect = { 0, 0, 0, 0 };
-    RT64.viewportRect = { 0, 0, 0, 0 };
-    RT64.fogColor = { 0.0f, 0.0f, 0.0f };
+    vec4i_zero(RT64.scissorRect);
+    vec4i_zero(RT64.viewportRect);
+    vec3f_zero(RT64.fogColor);
     RT64.fogMul = RT64.fogOffset = 0;
 
     // Initialize the triangle list index array used by all meshes.
@@ -715,12 +1189,7 @@ static void gfx_rt64_rapi_init(void) {
         index++;
     }
 
-    // Build identity matrix.
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
-            RT64.identityTransform.m[i][j] = (i == j) ? 1.0f : 0.0f;
-        }
-    }
+    mtxf_identity(RT64.identityTransform);
 
     // Build a default material.
     RT64.defaultMaterial.ignoreNormalFactor = 0.0f;
@@ -729,23 +1198,23 @@ static void gfx_rt64_rapi_init(void) {
     RT64.defaultMaterial.reflectionFresnelFactor = 1.0f;
     RT64.defaultMaterial.reflectionShineFactor = 0.0f;
     RT64.defaultMaterial.refractionFactor = 0.0f;
-    RT64.defaultMaterial.specularColor = { 255.0f, 255.0f, 255.0f };
+    vec3f_set(RT64.defaultMaterial.specularColor, 255.0f, 255.0f, 255.0f);
     RT64.defaultMaterial.specularIntensity = 1.0f;
     RT64.defaultMaterial.specularShinyness = 5.0f;
     RT64.defaultMaterial.solidAlphaMultiplier = 1.0f;
     RT64.defaultMaterial.shadowAlphaMultiplier = 1.0f;
-    RT64.defaultMaterial.diffuseColorMix = { 0.0f, 0.0f, 0.0f, 0.0f };
+    memset(RT64.defaultMaterial.diffuseColorMix, 0, sizeof(Vec4f));
     RT64.defaultMaterial.depthBias = 0.0f;
     RT64.defaultMaterial.shadowRayBias = 1.0f;
-    RT64.defaultMaterial.selfLightColor = { 0.0f, 0.0f, 0.0f };
+    vec3f_zero(RT64.defaultMaterial.selfLightColor);
     RT64.defaultMaterial.selfLightIntensity = 1.0f;
     RT64.defaultMaterial.lightGroupMaskBits = RT64_LIGHT_GROUP_MASK_ALL;
-    RT64.defaultMaterial.fogColor = { 255.0f, 255.0f, 255.0f };
+    vec3f_set(RT64.defaultMaterial.fogColor, 255.0f, 255.0f, 255.0f);
     RT64.defaultMaterial.fogMul = 0.0f;
     RT64.defaultMaterial.fogOffset = 0.0f;
     RT64.defaultMaterial.fogEnabled = false;
     RT64.defaultMaterial.lockMask = 0.0f;
-    RT64.defaultMaterial.reflectionColor = { 255.0f, 255.0f, 255.0f };
+    vec3f_set(RT64.defaultMaterial.reflectionColor, 255.0f, 255.0f, 255.0f);
     RT64.defaultMaterial.shadowEnabled = 1;
     RT64.defaultMaterial.shadowCenter = 0;
     RT64.defaultMaterial.specularTint = 1;
@@ -756,12 +1225,12 @@ static void gfx_rt64_rapi_init(void) {
     RT64.defaultMaterial.bumpStrength = 1.0f;
     RT64.defaultMaterial.normalStrength = 1.0f;
     RT64.defaultMaterial.textureGenEnabled = 0;
-    RT64.defaultMaterial.textureGenU = { 0.0f, 0.0f, 0.0f, 0.0f };
-    RT64.defaultMaterial.textureGenV = { 0.0f, 0.0f, 0.0f, 0.0f };
+    memset(RT64.defaultMaterial.textureGenU, 0, sizeof(Vec4f));
+    memset(RT64.defaultMaterial.textureGenV, 0, sizeof(Vec4f));
 
     // Initialize camera.
     GameFrame *cpuFrame = &RT64.frames[RT64.cpuFrameIndex];
-    cpuFrame->viewMatrix = RT64.identityTransform;
+    mtxf_copy(cpuFrame->viewMatrix, RT64.identityTransform);
     cpuFrame->nearDist = 1.0f;
     cpuFrame->farDist = 1000.0f;
     cpuFrame->fovRadians = 0.75f;
@@ -773,14 +1242,12 @@ static void gfx_rt64_rapi_init(void) {
     RT64.device = RT64.lib.CreateDevice(RT64.hwnd);
     if (RT64.device == nullptr) {
         const char *rt64Error = (RT64.lib.GetLastError != nullptr) ? RT64.lib.GetLastError() : nullptr;
-        gfx_rt64_error_message("RT64", (rt64Error != nullptr) ? rt64Error : "No error message was reported.");
-        gfx_rt64_error_message("RT64",
-            "Failed to initialize RT64.\n\n"
+        sys_fatal("RT64: failed to initialize.\n\n"
+            "%s\n\n"
             "Please make sure your GPU drivers are up to date and the Direct3D 12.1 feature level is supported.\n\n"
             "Windows 10 version 2004 or newer is also required for this feature level to work properly.\n\n"
-            "If you're a mobile user, make sure that the high performance device is selected for this application on your system's settings.");
-
-        abort();
+            "If you're a mobile user, make sure that the high performance device is selected for this application on your system's settings.",
+            (rt64Error != nullptr) ? rt64Error : "No error message was reported.");
     }
 
     // Create the render thread.
@@ -789,7 +1256,7 @@ static void gfx_rt64_rapi_init(void) {
     RT64.renderThread = new std::thread(gfx_rt64_render_thread);
 }
 
-static void gfx_rt64_rapi_get_dimensions(u32 *width, u32 *height) {
+static void gfx_rt64_get_dimensions(u32 *width, u32 *height) {
     RECT rect;
     GetClientRect(RT64.hwnd, &rect);
     *width = rect.right - rect.left;
@@ -798,7 +1265,7 @@ static void gfx_rt64_rapi_get_dimensions(u32 *width, u32 *height) {
 
 static void gfx_rt64_rapi_on_resize(void) {
     u32 w = 0, h = 0;
-    gfx_rt64_rapi_get_dimensions(&w, &h);
+    gfx_rt64_get_dimensions(&w, &h);
     configWindow.w = w;
     configWindow.h = h;
 }
@@ -891,8 +1358,8 @@ static void gfx_rt64_rapi_start_frame(void) {
 
     GameFrame *cpuFrame = &RT64.frames[RT64.cpuFrameIndex];
 
-    // Reset frame view interpolation.
-    cpuFrame->interpolateView = true;
+    // Assume the camera carries over from the last frame until a perspective node says otherwise.
+    cpuFrame->canReprojectView = true;
 
     RT64.instancesDrawn = 0;
     RT64.background = true;
@@ -904,30 +1371,30 @@ static void gfx_rt64_rapi_start_frame(void) {
     RT64.materialModNameHashes.clear();
 }
 
-static void gfx_rt64_rapi_set_special_stage_lights(int levelIndex, int areaIndex) {
+static void gfx_rt64_set_special_stage_lights(int levelIndex, int areaIndex) {
     GameFrame *cpuFrame = &RT64.frames[RT64.cpuFrameIndex];
 
     // Dynamic Lakitu camera light for Shifting Sand Land Pyramid.
     if ((levelIndex == LEVEL_SSL) && (areaIndex == 2)) {
         auto &dl = cpuFrame->displayLists[0];
-        RT64_VECTOR3 viewPos = { cpuFrame->invViewMatrix.m[3][0], cpuFrame->invViewMatrix.m[3][1], cpuFrame->invViewMatrix.m[3][2] };
-        RT64_VECTOR3 marioPos = { gMarioState->pos[0], gMarioState->pos[1], gMarioState->pos[2] };
+        Vec3f viewPos;
+        vec3f_copy(viewPos, cpuFrame->invViewMatrix[3]);
 
         // Set the transform towards the back of the camera facing away from Mario.
-        dl.transform = RT64.identityTransform;
-        dl.transform.m[3][0] = viewPos.x + (viewPos.x - marioPos.x);
-        dl.transform.m[3][1] = viewPos.y + 150.0f;
-        dl.transform.m[3][2] = viewPos.z + (viewPos.z - marioPos.z);
+        mtxf_copy(dl.transform, RT64.identityTransform);
+        dl.transform[3][0] = viewPos[0] + (viewPos[0] - gMarioState->pos[0]);
+        dl.transform[3][1] = viewPos[1] + 150.0f;
+        dl.transform[3][2] = viewPos[2] + (viewPos[2] - gMarioState->pos[2]);
 
         // Configure the rest of the light.
         auto &light = dl.light;
-        light.position = { 0.0f, 0.0f, 0.0f };
-        light.diffuseColor = { 255.0f, 230.0f, 128.0f };
+        vec3f_zero(light.position);
+        vec3f_set(light.diffuseColor, 255.0f, 230.0f, 128.0f);
         light.intensity = 1.0f;
         light.attenuationRadius = 4000.0f;
         light.attenuationExponent = 1.0f;
         light.pointRadius = 25.0f;
-        light.specularColor = { 166.0f, 149.0f, 83.0f };
+        vec3f_set(light.specularColor, 166.0f, 149.0f, 83.0f);
         light.shadowOffset = 1000.0f;
         light.groupBits = RT64_LIGHT_GROUP_DEFAULT;
     }
@@ -946,7 +1413,7 @@ static void gfx_rt64_rapi_end_frame(void) {
     // Add the special stage lights.
     int levelIndex = gfx_rt64_get_level_index();
     int areaIndex = gfx_rt64_get_area_index();
-    gfx_rt64_rapi_set_special_stage_lights(levelIndex, areaIndex);
+    gfx_rt64_set_special_stage_lights(levelIndex, areaIndex);
 
     {
         const std::lock_guard<std::mutex> lightingLock(RT64.levelAreaLightingMutex);
@@ -954,9 +1421,7 @@ static void gfx_rt64_rapi_end_frame(void) {
         // Update the scene's description.
         const AreaLighting &areaLighting = gfx_gfx_rt64_get_area_lighting(levelIndex, areaIndex);
         cpuFrame->sceneDesc = areaLighting.sceneDesc;
-        cpuFrame->sceneDesc.skyDiffuseMultiplier.x *= RT64.skyDiffuseMultiplier.x;
-        cpuFrame->sceneDesc.skyDiffuseMultiplier.y *= RT64.skyDiffuseMultiplier.y;
-        cpuFrame->sceneDesc.skyDiffuseMultiplier.z *= RT64.skyDiffuseMultiplier.z;
+        vec3f_mult(cpuFrame->sceneDesc.skyDiffuseMultiplier, RT64.skyDiffuseMultiplier);
         cpuFrame->skyTextureKey = RT64.skyTextureKey;
         cpuFrame->areaLightCount = (unsigned int)(areaLighting.lightCount);
         memcpy(cpuFrame->areaLights, areaLighting.lights, sizeof(RT64_LIGHT) * cpuFrame->areaLightCount);
@@ -965,7 +1430,7 @@ static void gfx_rt64_rapi_end_frame(void) {
     for (const auto &tickLightPair : RT64.tickLights) {
         auto &displayList = cpuFrame->displayLists[tickLightPair.first];
         displayList.light = tickLightPair.second.light;
-        displayList.transform = tickLightPair.second.transform;
+        memcpy(displayList.transform, tickLightPair.second.transform, sizeof(Mat4));
     }
 
     // Clean up any unused instances or meshes from the display lists.
@@ -1040,19 +1505,20 @@ static u32 gfx_rt64_rapi_get_capabilities(void) {
            GFX_BACKEND_SEPARATE_SKYBOX;
 }
 
-static void gfx_rt64_rapi_set_camera_perspective(float fov_degrees, float near_dist, float far_dist, bool can_interpolate) {
+static void gfx_rt64_rapi_set_camera_perspective(float fovDegrees, float nearDist, float farDist, bool canInterpolate) {
     GameFrame *cpuFrame = &RT64.frames[RT64.cpuFrameIndex];
-    cpuFrame->fovRadians = (fov_degrees / 180.0f) * (float)(M_PI);
+    cpuFrame->fovRadians = degrees_to_radians(fovDegrees);
 
-    cpuFrame->nearDist = (gProjectionVanillaNearValue > 0) ? (float)(gProjectionVanillaNearValue) : near_dist;
-    cpuFrame->farDist = far_dist;
-    cpuFrame->interpolateView = cpuFrame->interpolateView && can_interpolate;
+    cpuFrame->nearDist = (gProjectionVanillaNearValue > 0) ? (float)(gProjectionVanillaNearValue) : nearDist;
+    cpuFrame->farDist = farDist;
+
+    cpuFrame->canReprojectView = cpuFrame->canReprojectView && canInterpolate;
 }
 
 static void gfx_rt64_rapi_set_camera_matrix(float matrix[4][4]) {
     GameFrame *cpuFrame = &RT64.frames[RT64.cpuFrameIndex];
-    memcpy(&cpuFrame->viewMatrix.m, matrix, sizeof(float) * 16);
-    gd_inverse_mat4f(&cpuFrame->viewMatrix.m, &cpuFrame->invViewMatrix.m);
+    memcpy(&cpuFrame->viewMatrix, matrix, sizeof(float) * 16);
+    gd_inverse_mat4f(&cpuFrame->viewMatrix, &cpuFrame->invViewMatrix);
 }
 
 static void gfx_rt64_apply_geo_layout_mod_to_graph_node(void *graphNode, RecordedMod *geoMod, bool replace) {
@@ -1105,7 +1571,7 @@ static void gfx_rt64_apply_geo_layout_mod_to_graph_node(void *graphNode, Recorde
 
 static void gfx_rt64_bind_named_geo_layout(const std::string &geoName, void *geoLayout);
 
-static void gfx_rt64_rapi_register_layout_graph_node(void *geoLayout, void *graphNode) {
+static void gfx_rt64_register_layout_graph_node(void *geoLayout, void *graphNode) {
     if (graphNode != nullptr) {
         RT64.graphNodeMods.erase(graphNode);
         RT64.graphNodeGeoLayouts.erase(graphNode);
@@ -1158,7 +1624,7 @@ static void gfx_rt64_refresh_graph_node_mod(void *graphNode) {
     gfx_rt64_apply_geo_layout_mod_to_graph_node(graphNode, modIt->second, true);
 }
 
-static void *gfx_rt64_rapi_build_graph_node_mod(void *graphNode, float modelview_matrix[4][4], u32 uid) {
+static void *gfx_rt64_rapi_build_graph_node_mod(void *graphNode, f32 modelviewMatrix[4][4], u32 uid) {
     if (RT64.tickLightsTimestamp != gGlobalTimer) {
         RT64.tickLightsTimestamp = gGlobalTimer;
         RT64.tickLights.clear();
@@ -1170,14 +1636,13 @@ static void *gfx_rt64_rapi_build_graph_node_mod(void *graphNode, float modelview
     }
 
     if (RT64.renderInspectorActive) {
-        if ((RT64.publishedGeoLayout != nullptr) && (RT64.buildingGeoLayoutOriginCount < RT64Context::maxPickedGeoLayoutOrigins)) {
+        if ((RT64.publishedGeoLayout != nullptr) && (RT64.buildingGeoLayoutOriginCount < RT64Context::sMaxPickedGeoLayoutOrigins)) {
             auto geoIt = RT64.graphNodeGeoLayouts.find(graphNode);
             if ((geoIt != RT64.graphNodeGeoLayouts.end()) && (geoIt->second == RT64.publishedGeoLayout)) {
                 GameFrame *cpuFrame = &RT64.frames[RT64.cpuFrameIndex];
-                RT64_MATRIX4 worldTransform;
-                gfx_matrix_mul(worldTransform.m, modelview_matrix, cpuFrame->invViewMatrix.m);
-                RT64.buildingGeoLayoutOrigins[RT64.buildingGeoLayoutOriginCount++] =
-                    { worldTransform.m[3][0], worldTransform.m[3][1], worldTransform.m[3][2] };
+                Mat4 worldTransform;
+                mtxf_mul(worldTransform, modelviewMatrix, cpuFrame->invViewMatrix);
+                vec3f_copy(RT64.buildingGeoLayoutOrigins[RT64.buildingGeoLayoutOriginCount++], worldTransform[3]);
             }
         }
     }
@@ -1190,7 +1655,7 @@ static void *gfx_rt64_rapi_build_graph_node_mod(void *graphNode, float modelview
                 GameFrame *cpuFrame = &RT64.frames[RT64.cpuFrameIndex];
 
                 RT64Context::TickLight &tickLight = RT64.tickLights[uid];
-                gfx_matrix_mul(tickLight.transform.m, modelview_matrix, cpuFrame->invViewMatrix.m);
+                mtxf_mul(tickLight.transform, modelviewMatrix, cpuFrame->invViewMatrix);
                 tickLight.light = *graphNodeMod->lightMod;
             }
 
@@ -1207,13 +1672,13 @@ static void gfx_rt64_rapi_set_graph_node_mod(void *graph_node_mod) {
 
 static void gfx_rt64_rapi_set_texture_gen(bool enabled, const float coeffU[4], const float coeffV[4]) {
     RT64.textureGenEnabled = enabled;
-    RT64.textureGenU = { coeffU[0], coeffU[1], coeffU[2], coeffU[3] };
-    RT64.textureGenV = { coeffV[0], coeffV[1], coeffV[2], coeffV[3] };
+    memcpy(RT64.textureGenU, coeffU, sizeof(Vec4f));
+    memcpy(RT64.textureGenV, coeffV, sizeof(Vec4f));
 }
 
-static void gfx_rt64_rapi_register_layout_graph_node_entry(void *geoLayout, void *graphNode) {
+static void gfx_rt64_rapi_register_layout_graph_node(void *geoLayout, void *graphNode) {
     gfx_rt64_ensure_geo_layout_mods_loaded();
-    gfx_rt64_rapi_register_layout_graph_node(geoLayout, graphNode);
+    gfx_rt64_register_layout_graph_node(geoLayout, graphNode);
 }
 
 static void gfx_rt64_rapi_inherit_graph_node_mod(void *originalGraphNode, void *replacementGraphNode) {
@@ -1301,7 +1766,7 @@ static void gfx_rt64_rapi_set_graph_node_root(void *graphNodeRoot) {
 }
 
 static bool gfx_rt64_rapi_set_skybox(const Texture *const *tiles, float diffuseColor[3]) {
-    RT64.skyDiffuseMultiplier = { diffuseColor[0], diffuseColor[1], diffuseColor[2] };
+    vec3f_copy(RT64.skyDiffuseMultiplier, diffuseColor);
 
     RT64.skyTextureKey = gfx_rt64_stitch_skybox_texture(tiles);
 
@@ -1312,7 +1777,7 @@ static void gfx_rt64_rapi_main_loop_iter(void (*run_one_game_iter)(void)) {
     if (RT64.pauseMode) { return; }
 
     RT64.skyTextureKey = 0;
-    RT64.skyDiffuseMultiplier = { 1.0f, 1.0f, 1.0f };
+    vec3f_set(RT64.skyDiffuseMultiplier, 1.0f, 1.0f, 1.0f);
 
     LARGE_INTEGER gameStart = gfx_rt64_profile_marker();
     run_one_game_iter();
@@ -1388,12 +1853,11 @@ struct GfxRenderingAPI gfx_rt64_api = {
     gfx_rt64_rapi_draw_triangles_persp,
     gfx_rt64_rapi_set_graph_node_mod,
     gfx_rt64_rapi_set_texture_gen,
-    gfx_rt64_rapi_register_layout_graph_node_entry,
+    gfx_rt64_rapi_register_layout_graph_node,
     gfx_rt64_rapi_inherit_graph_node_mod,
     gfx_rt64_rapi_build_graph_node_mod,
     gfx_rt64_rapi_set_material_display_list,
     gfx_rt64_rapi_set_graph_node_root,
-    gfx_rt64_rapi_lua_config_reset,
     gfx_rt64_rapi_lua_config_save,
     gfx_rt64_rapi_toggle_inspector,
     gfx_rt64_rapi_inspector_active,

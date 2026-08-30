@@ -33,7 +33,7 @@
 #include "src/game/player_palette.h"
 #include "src/engine/graph_node.h"
 #include "include/PR/gbi.h"
-#include "src/pc/gfx/gfx_rt64_lua.h"
+#include "src/pc/gfx/gfx_rt64.h"
 
 #include "include/object_fields.h"
 

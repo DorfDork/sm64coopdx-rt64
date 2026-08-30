@@ -40,6 +40,7 @@ typedef s32 Vec3i[3];
 typedef f32 Vec4f[4]; // X, Y, Z, W
 typedef s16 Vec4s[4];
 typedef s32 Vec4i[4];
+typedef s32 Recti[4]; // X, Y, W, H
 
 // Pointer types for return values
 typedef f32 *Vec2fp;

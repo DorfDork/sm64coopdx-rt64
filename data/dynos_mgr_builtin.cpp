@@ -66,6 +66,7 @@ extern "C" {
 #include "levels/cotmc/header.h"
 #include "levels/ddd/header.h"
 #include "levels/ending/header.h"
+#include "levels/intro/header.h"
 #include "levels/hmc/header.h"
 #include "levels/jrb/header.h"
 #include "levels/lll/header.h"
@@ -226,6 +227,10 @@ static const void *sDynosBuiltinActors[] = {
     define_builtin(bowser_impact_smoke_geo),
     define_builtin(bowser_1_yellow_sphere_geo),
     define_builtin(invisible_bowser_accessory_geo),
+    define_builtin(intro_geo_0002D0),
+    define_builtin(intro_geo_000414),
+    define_builtin(intro_geo_mario_head_regular),
+    define_builtin(intro_geo_mario_head_dizzy),
     define_builtin(bowser_key_geo),
     define_builtin(bowser_key_cutscene_geo),
     define_builtin(breakable_box_geo),
@@ -266,6 +271,7 @@ static const void *sDynosBuiltinActors[] = {
     define_builtin(metal_door_geo),
     define_builtin(key_door_geo),
     define_builtin(wooden_door_geo),
+    define_builtin(wooden_door2_geo),
     define_builtin(enemy_lakitu_geo),
     define_builtin(exclamation_box_geo),
     define_builtin(exclamation_box_outline_geo),
@@ -273,6 +279,7 @@ static const void *sDynosBuiltinActors[] = {
     define_builtin(eyerok_left_hand_geo),
     define_builtin(eyerok_right_hand_geo),
     define_builtin(fish_geo),
+    define_builtin(fish_shadow_geo),
     define_builtin(cyan_fish_geo),
     define_builtin(flyguy_geo),
     define_builtin(red_flame_geo),
@@ -295,6 +302,7 @@ static const void *sDynosBuiltinActors[] = {
     define_builtin(mad_piano_geo),
     define_builtin(manta_seg5_geo_05008D14),
     define_builtin(mario_geo),
+    define_builtin(mario_TODO_geo_0000E0),
     define_builtin(marios_cap_geo),
     define_builtin(marios_metal_cap_geo),
     define_builtin(marios_wing_cap_geo),
@@ -331,6 +339,9 @@ static const void *sDynosBuiltinActors[] = {
     define_builtin(spiny_geo),
     define_builtin(spiny_ball_geo),
     define_builtin(star_geo),
+    define_builtin(springboard_top_geo),
+    define_builtin(springboard_spring_geo),
+    define_builtin(springboard_bottom_geo),
     define_builtin(transparent_star_geo),
     define_builtin(sushi_geo),
     define_builtin(swoop_geo),
@@ -340,6 +351,7 @@ static const void *sDynosBuiltinActors[] = {
     define_builtin(treasure_chest_lid_geo),
     define_builtin(bubbly_tree_geo),
     define_builtin(spiky_tree_geo),
+    define_builtin(spiky_tree1_geo),
     define_builtin(snow_tree_geo),
     define_builtin(palm_tree_geo),
     define_builtin(leaves_geo),
@@ -350,6 +362,7 @@ static const void *sDynosBuiltinActors[] = {
     define_builtin(water_bomb_geo),
     define_builtin(water_bomb_shadow_geo),
     define_builtin(water_ring_geo),
+    define_builtin(water_mine_geo),
     define_builtin(water_splash_geo),
     define_builtin(idle_water_wave_geo),
     define_builtin(wave_trail_geo),
@@ -374,6 +387,7 @@ static const void *sDynosBuiltinActors[] = {
     define_builtin(toads_cap_geo),
     define_builtin(toads_metal_cap_geo),
     define_builtin(toads_wing_cap_geo),
+    define_builtin(toads_winged_metal_cap_geo),
     define_builtin(waluigi_geo),
     define_builtin(waluigis_cap_geo),
     define_builtin(waluigis_metal_cap_geo),

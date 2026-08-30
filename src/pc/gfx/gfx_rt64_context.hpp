@@ -132,18 +132,18 @@ struct GameMesh {
 struct GameDisplayList {
     std::vector<GameInstance> instances;
     std::vector<GameMesh> meshes;
-    RT64_MATRIX4 transform;
+    Mat4 transform;
     RT64_LIGHT light;
     int drawCount = 0;
 };
 
 struct GameFrame {
-    RT64_MATRIX4 viewMatrix;
-    RT64_MATRIX4 invViewMatrix;
+    Mat4 viewMatrix;
+    Mat4 invViewMatrix;
     float fovRadians;
     float nearDist;
     float farDist;
-    bool interpolateView = true;
+    bool canReprojectView = true;
     std::unordered_map<u32, GameDisplayList> displayLists;
     RT64_SCENE_DESC sceneDesc;
     RT64_LIGHT areaLights[MAX_LEVEL_LIGHTS];
@@ -153,7 +153,7 @@ struct GameFrame {
 
 struct GPUInstance {
     RT64_INSTANCE *instance = nullptr;
-    RT64_MATRIX4 transform;
+    Mat4 transform;
 };
 
 struct GPUMesh {
@@ -259,7 +259,7 @@ struct RT64Context {
 
     struct TickLight {
         RT64_LIGHT light;
-        RT64_MATRIX4 transform;
+        Mat4 transform;
     };
     std::unordered_map<u32, TickLight> tickLights;
     u32 tickLightsTimestamp = 0;
@@ -300,8 +300,8 @@ struct RT64Context {
     bool inspectorViewDescValid = false;
     std::mutex renderViewDescMutex;
     bool textureGenEnabled = false;
-    RT64_VECTOR4 textureGenU = { 0.0f, 0.0f, 0.0f, 0.0f };
-    RT64_VECTOR4 textureGenV = { 0.0f, 0.0f, 0.0f, 0.0f };
+    Vec4f textureGenU = { 0.0f, 0.0f, 0.0f, 0.0f };
+    Vec4f textureGenV = { 0.0f, 0.0f, 0.0f, 0.0f };
     RT64_LIGHT renderLights[RT64_MAX_LIGHTS];
     unsigned int renderLightCount = 0;
     unsigned int staticMeshesDrawn = 0;
@@ -326,17 +326,17 @@ struct RT64Context {
     std::string pickedGeoLayoutName;
     RT64_LIGHT pickedGeoLayoutLight = {};
     bool pickedGeoLayoutLightEnabled = false;
-    static const int maxPickedGeoLayoutOrigins = 32;
-    RT64_VECTOR3 pickedGeoLayoutOrigins[maxPickedGeoLayoutOrigins] = {};
+    static const int sMaxPickedGeoLayoutOrigins = 32;
+    Vec3f pickedGeoLayoutOrigins[sMaxPickedGeoLayoutOrigins] = {};
     int pickedGeoLayoutOriginCount = 0;
-    RT64_VECTOR3 buildingGeoLayoutOrigins[maxPickedGeoLayoutOrigins] = {};
+    Vec3f buildingGeoLayoutOrigins[sMaxPickedGeoLayoutOrigins] = {};
     int buildingGeoLayoutOriginCount = 0;
     u32 geoLayoutOriginsTimestamp = 0;
     void *publishedGeoLayout = nullptr;
     std::mutex pickTextureMutex;
 
     // Matrices.
-    RT64_MATRIX4 identityTransform;
+    Mat4 identityTransform;
 
     // Rendering state.
     int instancesDrawn = 0;
@@ -345,9 +345,9 @@ struct RT64Context {
     ShaderProgramRT64 *shaderProgram = nullptr;
     bool background = false;
     bool frameEnded = false;
-    RT64_VECTOR3 fogColor;
-    RT64_RECT scissorRect;
-    RT64_RECT viewportRect;
+    Vec3f fogColor;
+    Recti scissorRect;
+    Recti viewportRect;
     s16 fogMul;
     s16 fogOffset;
     RecordedMod *graphNodeMod;
@@ -356,7 +356,7 @@ struct RT64Context {
     GameDisplayList *cachedDisplayList = nullptr;
     u32 cachedDisplayListUid = 0;
     u32 skyTextureKey = 0;
-    RT64_VECTOR3 skyDiffuseMultiplier = { 1.0f, 1.0f, 1.0f };
+    Vec3f skyDiffuseMultiplier = { 1.0f, 1.0f, 1.0f };
     std::unordered_map<u64, u32> stitchedSkyTextureKeys;
 
     // Timing.
@@ -399,30 +399,18 @@ struct ColorCombiner;
 struct FramePass;
 struct ShaderProgram;
 
-bool gfx_rt64_rapi_z_is_from_0_to_1(void);
-void gfx_rt64_rapi_unload_shader(struct ShaderProgram *old_prg);
-void gfx_rt64_rapi_load_shader(struct ShaderProgram *new_prg);
-struct ShaderProgram *gfx_rt64_rapi_create_and_load_new_shader(struct ColorCombiner *cc);
-struct ShaderProgram *gfx_rt64_rapi_create_or_load_post_process_shader(void);
-struct ShaderProgram *gfx_rt64_rapi_lookup_shader(struct ColorCombiner *cc);
-struct ShaderProgram *gfx_rt64_rapi_lookup_shader_using_index(u8 shaderIndex, u8 framePassIndex);
-void gfx_rt64_rapi_shader_get_info(struct ShaderProgram *prg, u8 *num_inputs, bool used_textures[2]);
-bool gfx_rt64_rapi_shader_uses_full_vertex_layout(struct ShaderProgram *prg);
-void gfx_rt64_rapi_remove_shaders(void);
-void gfx_rt64_rapi_create_framebuffer(struct FramePass *framePass);
-void gfx_rt64_rapi_delete_framebuffer(struct FramePass *framePass);
-void gfx_rt64_rapi_set_framebuffer(struct FramePass *framePass);
-void gfx_rt64_rapi_reset_framebuffer(void);
-size_t gfx_rt64_rapi_get_uniform_buffer_size(enum ShaderStage stage, int bufferIndex);
-void gfx_rt64_rapi_set_uniform_buffer(enum ShaderStage stage, const char *name);
-void gfx_rt64_rapi_set_uniform(struct ShaderProgram *prg_, const char *name, ShaderUniformType type, const void *data, u32 numElements);
-void gfx_rt64_rapi_toggle_inspector(void);
-bool gfx_rt64_rapi_inspector_active(void);
-bool gfx_rt64_rapi_handle_window_message(void *hWnd, unsigned int message, uintptr_t wParam, intptr_t lParam);
+LARGE_INTEGER gfx_rt64_profile_marker(void);
+LARGE_INTEGER gfx_rt64_profile_delta(LARGE_INTEGER start, LARGE_INTEGER end);
+
+u32 gfx_rt64_new_texture(const char *name);
+void gfx_rt64_upload_texture(u32 textureKey, const u8 *rgba32Buf, s32 width, s32 height);
+u64 gfx_rt64_material_vanilla_name_hash(void);
+u64 gfx_rt64_material_mod_name_hash(void);
+u32 gfx_rt64_map_texture_key(u64 nameHash);
+u32 gfx_rt64_stitch_skybox_texture(const Texture *const *tiles);
 
 void gfx_rt64_destroy_all_shaders(void);
 void gfx_rt64_capture_post_process_uniforms(void);
-void gfx_rt64_sync_post_process_size(void);
 void gfx_rt64_render_thread(void);
 void gfx_rt64_destroy_gpu_mesh(GPUMesh &mesh);
 void gfx_rt64_publish_picked_geo_layout(void);
@@ -432,5 +420,4 @@ void gfx_rt64_sync_inspector_map_names(int panel, RecordedMod *mod);
 int gfx_rt64_get_level_index(void);
 int gfx_rt64_get_area_index(void);
 bool gfx_rt64_use_vsync(void);
-void gfx_rt64_error_message(const char *window_title, const char *error_message);
 bool gfx_gfx_rt64_is_active(void);

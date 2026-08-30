@@ -5538,6 +5538,31 @@ Multiplies the 3D signed-integer vector `b` with the 4x4 floating-point matrix `
 
 <br />
 
+## [mtxf_axes_align](#mtxf_axes_align)
+
+### Description
+Checks whether the 4x4 floating-point matrices `a` and `b` still describe the same pose, by comparing where each one sends the three axes
+
+### Lua Example
+`local booleanValue = mtxf_axes_align(a, b, minDot)`
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| a | [Mat4](structs.md#Mat4) |
+| b | [Mat4](structs.md#Mat4) |
+| minDot | `number` |
+
+### Returns
+- `boolean`
+
+### C Prototype
+`bool mtxf_axes_align(Mat4 a, Mat4 b, f32 minDot);`
+
+[:arrow_up_small:](#)
+
+<br />
+
 ## [mtxf_rotate_xy](#mtxf_rotate_xy)
 
 ### Description
@@ -5806,6 +5831,200 @@ Converts an angle from degrees to SM64 format
 
 ### C Prototype
 `s16 degrees_to_sm64(f32 degreesAngle);`
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [degrees_to_radians](#degrees_to_radians)
+
+### Description
+Converts an angle from degrees to radians
+
+### Lua Example
+`local numberValue = degrees_to_radians(degreesAngle)`
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| degreesAngle | `number` |
+
+### Returns
+- `number`
+
+### C Prototype
+`f32 degrees_to_radians(f32 degreesAngle);`
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [radians_to_degrees](#radians_to_degrees)
+
+### Description
+Converts an angle from radians to degrees
+
+### Lua Example
+`local numberValue = radians_to_degrees(radiansAngle)`
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| radiansAngle | `number` |
+
+### Returns
+- `number`
+
+### C Prototype
+`f32 radians_to_degrees(f32 radiansAngle);`
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [vec4f_zero](#vec4f_zero)
+
+### Description
+Sets the components of the 4D floating-point vector `v` to 0
+
+### Lua Example
+`local vec4fValue = vec4f_zero(v)`
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| v | [Vec4f](structs.md#Vec4f) |
+
+### Returns
+- [Vec4f](structs.md#Vec4f)
+
+### C Prototype
+`Vec4fp vec4f_zero(VEC_OUT Vec4f v);`
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [vec4f_copy](#vec4f_copy)
+
+### Description
+Copies the contents of a 4D floating-point vector (`src`) into another 4D floating-point vector (`dest`)
+
+### Lua Example
+`local vec4fValue = vec4f_copy(dest, src)`
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| dest | [Vec4f](structs.md#Vec4f) |
+| src | [Vec4f](structs.md#Vec4f) |
+
+### Returns
+- [Vec4f](structs.md#Vec4f)
+
+### C Prototype
+`Vec4fp vec4f_copy(VEC_OUT Vec4f dest, Vec4f src);`
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [vec4f_set](#vec4f_set)
+
+### Description
+Sets the values of the 4D floating-point vector `dest` to the given x, y, z, and w values
+
+### Lua Example
+`local vec4fValue = vec4f_set(dest, x, y, z, w)`
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| dest | [Vec4f](structs.md#Vec4f) |
+| x | `number` |
+| y | `number` |
+| z | `number` |
+| w | `number` |
+
+### Returns
+- [Vec4f](structs.md#Vec4f)
+
+### C Prototype
+`Vec4fp vec4f_set(VEC_OUT Vec4f dest, f32 x, f32 y, f32 z, f32 w);`
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [vec4i_zero](#vec4i_zero)
+
+### Description
+Sets the components of the 4D integer vector `v` to 0
+
+### Lua Example
+`local vec4iValue = vec4i_zero(v)`
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| v | [Vec4i](structs.md#Vec4i) |
+
+### Returns
+- [Vec4i](structs.md#Vec4i)
+
+### C Prototype
+`Vec4ip vec4i_zero(VEC_OUT Vec4i v);`
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [vec4i_copy](#vec4i_copy)
+
+### Description
+Copies the contents of a 4D integer vector (`src`) into another 4D integer vector (`dest`)
+
+### Lua Example
+`local vec4iValue = vec4i_copy(dest, src)`
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| dest | [Vec4i](structs.md#Vec4i) |
+| src | [Vec4i](structs.md#Vec4i) |
+
+### Returns
+- [Vec4i](structs.md#Vec4i)
+
+### C Prototype
+`Vec4ip vec4i_copy(VEC_OUT Vec4i dest, Vec4i src);`
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [vec4i_set](#vec4i_set)
+
+### Description
+Sets the values of the 4D integer vector `dest` to the given x, y, z, and w values
+
+### Lua Example
+`local vec4iValue = vec4i_set(dest, x, y, z, w)`
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| dest | [Vec4i](structs.md#Vec4i) |
+| x | `integer` |
+| y | `integer` |
+| z | `integer` |
+| w | `integer` |
+
+### Returns
+- [Vec4i](structs.md#Vec4i)
+
+### C Prototype
+`Vec4ip vec4i_set(VEC_OUT Vec4i dest, s32 x, s32 y, s32 z, s32 w);`
 
 [:arrow_up_small:](#)
 

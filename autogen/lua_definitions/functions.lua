@@ -7134,6 +7134,15 @@ function mtxf_mul_vec3s(mtx, b)
     -- ...
 end
 
+--- @param a Mat4
+--- @param b Mat4
+--- @param minDot number
+--- @return boolean
+--- Checks whether the 4x4 floating-point matrices `a` and `b` still describe the same pose, by comparing where each one sends the three axes
+function mtxf_axes_align(a, b, minDot)
+    -- ...
+end
+
 --- @param mtx Mat4
 --- @param angle integer
 --- Rotates the matrix `mtx` in the XY plane by the given `angle`. Rotating in the XY plane typically means pivoting around the Z axis
@@ -7218,6 +7227,72 @@ end
 --- @return integer
 --- Converts an angle from degrees to SM64 format
 function degrees_to_sm64(degreesAngle)
+    -- ...
+end
+
+--- @param degreesAngle number
+--- @return number
+--- Converts an angle from degrees to radians
+function degrees_to_radians(degreesAngle)
+    -- ...
+end
+
+--- @param radiansAngle number
+--- @return number
+--- Converts an angle from radians to degrees
+function radians_to_degrees(radiansAngle)
+    -- ...
+end
+
+--- @param v Vec4f
+--- @return Vec4f
+--- Sets the components of the 4D floating-point vector `v` to 0
+function vec4f_zero(v)
+    -- ...
+end
+
+--- @param dest Vec4f
+--- @param src Vec4f
+--- @return Vec4f
+--- Copies the contents of a 4D floating-point vector (`src`) into another 4D floating-point vector (`dest`)
+function vec4f_copy(dest, src)
+    -- ...
+end
+
+--- @param dest Vec4f
+--- @param x number
+--- @param y number
+--- @param z number
+--- @param w number
+--- @return Vec4f
+--- Sets the values of the 4D floating-point vector `dest` to the given x, y, z, and w values
+function vec4f_set(dest, x, y, z, w)
+    -- ...
+end
+
+--- @param v Vec4i
+--- @return Vec4i
+--- Sets the components of the 4D integer vector `v` to 0
+function vec4i_zero(v)
+    -- ...
+end
+
+--- @param dest Vec4i
+--- @param src Vec4i
+--- @return Vec4i
+--- Copies the contents of a 4D integer vector (`src`) into another 4D integer vector (`dest`)
+function vec4i_copy(dest, src)
+    -- ...
+end
+
+--- @param dest Vec4i
+--- @param x integer
+--- @param y integer
+--- @param z integer
+--- @param w integer
+--- @return Vec4i
+--- Sets the values of the 4D integer vector `dest` to the given x, y, z, and w values
+function vec4i_set(dest, x, y, z, w)
     -- ...
 end
 

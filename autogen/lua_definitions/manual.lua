@@ -555,6 +555,9 @@ end
 ---     },
 --- })
 --- ```
+function gfx_rt64_set_level_lights(levelNum, areaIndex, lighting)
+    -- ...
+end
 
 --- @param name string Texture name.
 --- @param mod Rt64ModTable Material, light, and texture settings.
@@ -571,6 +574,9 @@ end
 ---     normalMap = "texture_water_nrm",
 --- })
 --- ```
+function gfx_rt64_set_texture_mod(name, mod)
+    -- ...
+end
 
 --- @param name string Geo layout name.
 --- @param mod Rt64ModTable Material, light, and texture settings.
@@ -585,9 +591,15 @@ end
 ---     },
 --- })
 --- ```
+function gfx_rt64_set_geo_layout_mod(name, mod)
+    -- ...
+end
 
 --- Checks whether RT64 is the active renderer.
 --- @return boolean
+function gfx_rt64_is_active()
+    -- ...
+end
 
 --- @param levelNum LevelNum | integer Level to access.
 --- @param areaIndex integer Area to access.

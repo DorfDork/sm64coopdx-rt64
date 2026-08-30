@@ -19485,6 +19485,27 @@ int smlua_func_mtxf_mul_vec3s(lua_State* L) {
     return 1;
 }
 
+int smlua_func_mtxf_axes_align(lua_State* L) {
+    if (L == NULL) { return 0; }
+
+    int top = lua_gettop(L);
+    if (top != 3) {
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "mtxf_axes_align", 3, top);
+        return 0;
+    }
+
+    Mat4 a; smlua_get_mat4(a, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "mtxf_axes_align"); return 0; }
+    Mat4 b; smlua_get_mat4(b, 2);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 2, "mtxf_axes_align"); return 0; }
+    f32 minDot = smlua_to_number(L, 3);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 3, "mtxf_axes_align"); return 0; }
+
+    lua_pushboolean(L, mtxf_axes_align(a, b, minDot));
+
+    return 1;
+}
+
 int smlua_func_mtxf_rotate_xy(lua_State* L) {
     if (L == NULL) { return 0; }
 
@@ -19708,6 +19729,174 @@ int smlua_func_degrees_to_sm64(lua_State* L) {
 
     lua_pushinteger(L, degrees_to_sm64(degreesAngle));
 
+    return 1;
+}
+
+int smlua_func_degrees_to_radians(lua_State* L) {
+    if (L == NULL) { return 0; }
+
+    int top = lua_gettop(L);
+    if (top != 1) {
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "degrees_to_radians", 1, top);
+        return 0;
+    }
+
+    f32 degreesAngle = smlua_to_number(L, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "degrees_to_radians"); return 0; }
+
+    lua_pushnumber(L, degrees_to_radians(degreesAngle));
+
+    return 1;
+}
+
+int smlua_func_radians_to_degrees(lua_State* L) {
+    if (L == NULL) { return 0; }
+
+    int top = lua_gettop(L);
+    if (top != 1) {
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "radians_to_degrees", 1, top);
+        return 0;
+    }
+
+    f32 radiansAngle = smlua_to_number(L, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "radians_to_degrees"); return 0; }
+
+    lua_pushnumber(L, radians_to_degrees(radiansAngle));
+
+    return 1;
+}
+
+int smlua_func_vec4f_zero(lua_State* L) {
+    if (L == NULL) { return 0; }
+
+    int top = lua_gettop(L);
+    if (top != 1) {
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "vec4f_zero", 1, top);
+        return 0;
+    }
+
+    Vec4f v; smlua_get_vec4f(v, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "vec4f_zero"); return 0; }
+
+    vec4f_zero(v);
+    smlua_push_vec4f(v, 1);
+
+    lua_settop(L, 1);
+    return 1;
+}
+
+int smlua_func_vec4f_copy(lua_State* L) {
+    if (L == NULL) { return 0; }
+
+    int top = lua_gettop(L);
+    if (top != 2) {
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "vec4f_copy", 2, top);
+        return 0;
+    }
+
+    Vec4f dest; smlua_get_vec4f(dest, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "vec4f_copy"); return 0; }
+    Vec4f src; smlua_get_vec4f(src, 2);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 2, "vec4f_copy"); return 0; }
+
+    vec4f_copy(dest, src);
+    smlua_push_vec4f(dest, 1);
+
+    lua_settop(L, 1);
+    return 1;
+}
+
+int smlua_func_vec4f_set(lua_State* L) {
+    if (L == NULL) { return 0; }
+
+    int top = lua_gettop(L);
+    if (top != 5) {
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "vec4f_set", 5, top);
+        return 0;
+    }
+
+    Vec4f dest; smlua_get_vec4f(dest, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "vec4f_set"); return 0; }
+    f32 x = smlua_to_number(L, 2);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 2, "vec4f_set"); return 0; }
+    f32 y = smlua_to_number(L, 3);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 3, "vec4f_set"); return 0; }
+    f32 z = smlua_to_number(L, 4);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 4, "vec4f_set"); return 0; }
+    f32 w = smlua_to_number(L, 5);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 5, "vec4f_set"); return 0; }
+
+    vec4f_set(dest, x, y, z, w);
+    smlua_push_vec4f(dest, 1);
+
+    lua_settop(L, 1);
+    return 1;
+}
+
+int smlua_func_vec4i_zero(lua_State* L) {
+    if (L == NULL) { return 0; }
+
+    int top = lua_gettop(L);
+    if (top != 1) {
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "vec4i_zero", 1, top);
+        return 0;
+    }
+
+    Vec4i v; smlua_get_vec4i(v, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "vec4i_zero"); return 0; }
+
+    vec4i_zero(v);
+    smlua_push_vec4i(v, 1);
+
+    lua_settop(L, 1);
+    return 1;
+}
+
+int smlua_func_vec4i_copy(lua_State* L) {
+    if (L == NULL) { return 0; }
+
+    int top = lua_gettop(L);
+    if (top != 2) {
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "vec4i_copy", 2, top);
+        return 0;
+    }
+
+    Vec4i dest; smlua_get_vec4i(dest, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "vec4i_copy"); return 0; }
+    Vec4i src; smlua_get_vec4i(src, 2);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 2, "vec4i_copy"); return 0; }
+
+    vec4i_copy(dest, src);
+    smlua_push_vec4i(dest, 1);
+
+    lua_settop(L, 1);
+    return 1;
+}
+
+int smlua_func_vec4i_set(lua_State* L) {
+    if (L == NULL) { return 0; }
+
+    int top = lua_gettop(L);
+    if (top != 5) {
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "vec4i_set", 5, top);
+        return 0;
+    }
+
+    Vec4i dest; smlua_get_vec4i(dest, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "vec4i_set"); return 0; }
+    s32 x = smlua_to_integer(L, 2);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 2, "vec4i_set"); return 0; }
+    s32 y = smlua_to_integer(L, 3);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 3, "vec4i_set"); return 0; }
+    s32 z = smlua_to_integer(L, 4);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 4, "vec4i_set"); return 0; }
+    s32 w = smlua_to_integer(L, 5);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 5, "vec4i_set"); return 0; }
+
+    vec4i_set(dest, x, y, z, w);
+    smlua_push_vec4i(dest, 1);
+
+    lua_settop(L, 1);
     return 1;
 }
 
@@ -37819,6 +38008,7 @@ void smlua_bind_functions_autogen(void) {
     smlua_bind_function(L, "mtxf_align_terrain_triangle", smlua_func_mtxf_align_terrain_triangle);
     smlua_bind_function(L, "mtxf_mul", smlua_func_mtxf_mul);
     smlua_bind_function(L, "mtxf_mul_vec3s", smlua_func_mtxf_mul_vec3s);
+    smlua_bind_function(L, "mtxf_axes_align", smlua_func_mtxf_axes_align);
     smlua_bind_function(L, "mtxf_rotate_xy", smlua_func_mtxf_rotate_xy);
     smlua_bind_function(L, "mtxf_inverse", smlua_func_mtxf_inverse);
     smlua_bind_function(L, "mtxf_inverse_non_affine", smlua_func_mtxf_inverse_non_affine);
@@ -37832,6 +38022,14 @@ void smlua_bind_functions_autogen(void) {
     smlua_bind_function(L, "radians_to_sm64", smlua_func_radians_to_sm64);
     smlua_bind_function(L, "sm64_to_degrees", smlua_func_sm64_to_degrees);
     smlua_bind_function(L, "degrees_to_sm64", smlua_func_degrees_to_sm64);
+    smlua_bind_function(L, "degrees_to_radians", smlua_func_degrees_to_radians);
+    smlua_bind_function(L, "radians_to_degrees", smlua_func_radians_to_degrees);
+    smlua_bind_function(L, "vec4f_zero", smlua_func_vec4f_zero);
+    smlua_bind_function(L, "vec4f_copy", smlua_func_vec4f_copy);
+    smlua_bind_function(L, "vec4f_set", smlua_func_vec4f_set);
+    smlua_bind_function(L, "vec4i_zero", smlua_func_vec4i_zero);
+    smlua_bind_function(L, "vec4i_copy", smlua_func_vec4i_copy);
+    smlua_bind_function(L, "vec4i_set", smlua_func_vec4i_set);
 
     // math_util_mat4.inl
     smlua_bind_function(L, "mtxf_zero", smlua_func_mtxf_zero);

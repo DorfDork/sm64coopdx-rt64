@@ -272,6 +272,11 @@ Multiplies the 3D signed-integer vector `b` with the 4x4 floating-point matrix `
 OPTIMIZE_O3 Vec3sp mtxf_mul_vec3s(Mat4 mtx, VEC_OUT Vec3s b);
 
 /* |description|
+Checks whether the 4x4 floating-point matrices `a` and `b` still describe the same pose, by comparing where each one sends the three axes
+|descriptionEnd| */
+OPTIMIZE_O3 bool mtxf_axes_align(Mat4 a, Mat4 b, f32 minDot);
+
+/* |description|
 Rotates the matrix `mtx` in the XY plane by the given `angle`. Rotating in the XY plane typically means pivoting around the Z axis
 |descriptionEnd| */
 OPTIMIZE_O3 void mtxf_rotate_xy(VEC_OUT Mat4 mtx, s16 angle);

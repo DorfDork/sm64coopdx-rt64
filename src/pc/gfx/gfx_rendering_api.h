@@ -79,7 +79,6 @@ struct GfxRenderingAPI {
     void *(*build_graph_node_mod)(void *graphNode, float modelviewMatrix[4][4], u32 uid);
     void (*set_material_display_list)(const void *displayList);
     void (*set_graph_node_root)(void *graphNodeRoot);
-    void (*lua_config_reset)(void);
     void (*lua_config_save)(void);
     void (*toggle_inspector)(void);
     bool (*inspector_active)(void);

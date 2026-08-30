@@ -1280,6 +1280,7 @@
    - [mtxf_align_terrain_triangle](functions-4.md#mtxf_align_terrain_triangle)
    - [mtxf_mul](functions-4.md#mtxf_mul)
    - [mtxf_mul_vec3s](functions-4.md#mtxf_mul_vec3s)
+   - [mtxf_axes_align](functions-4.md#mtxf_axes_align)
    - [mtxf_rotate_xy](functions-4.md#mtxf_rotate_xy)
    - [mtxf_inverse](functions-4.md#mtxf_inverse)
    - [mtxf_inverse_non_affine](functions-4.md#mtxf_inverse_non_affine)
@@ -1295,6 +1296,14 @@
    - [radians_to_sm64](functions-4.md#radians_to_sm64)
    - [sm64_to_degrees](functions-4.md#sm64_to_degrees)
    - [degrees_to_sm64](functions-4.md#degrees_to_sm64)
+   - [degrees_to_radians](functions-4.md#degrees_to_radians)
+   - [radians_to_degrees](functions-4.md#radians_to_degrees)
+   - [vec4f_zero](functions-4.md#vec4f_zero)
+   - [vec4f_copy](functions-4.md#vec4f_copy)
+   - [vec4f_set](functions-4.md#vec4f_set)
+   - [vec4i_zero](functions-4.md#vec4i_zero)
+   - [vec4i_copy](functions-4.md#vec4i_copy)
+   - [vec4i_set](functions-4.md#vec4i_set)
 
 <br />
 
@@ -3188,7 +3197,6 @@ hook_event(HOOK_UPDATE, function()
     local np = gNetworkPlayers[0]
     local lighting = gfx_rt64_get_area_lighting(np.currLevelNum, np.currAreaIndex)
 
-    -- cobject arrays start at 0
     local sun = lighting.lights[0]
     sun.diffuseColor.x = 204
     sun.yaw = (get_global_timer() % 3600) / 10.0

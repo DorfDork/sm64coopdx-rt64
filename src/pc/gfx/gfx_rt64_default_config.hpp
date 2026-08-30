@@ -19,14 +19,14 @@ struct RT64DefaultInt {
 };
 
 struct RT64DefaultColor {
-    RT64_VECTOR3 value;
+    Vec3f value;
     bool set;
     constexpr RT64DefaultColor(void) : value{ 0.0f, 0.0f, 0.0f }, set(false) {}
     constexpr RT64DefaultColor(s32 r, s32 g, s32 b) : value{ (float)(r), (float)(g), (float)(b) }, set(true) {}
 };
 
 struct RT64DefaultColorMix {
-    RT64_VECTOR4 value;
+    Vec4f value;
     bool set;
     constexpr RT64DefaultColorMix(void) : value{ 0.0f, 0.0f, 0.0f, 0.0f }, set(false) {}
     constexpr RT64DefaultColorMix(s32 r, s32 g, s32 b, float w) : value{ (float)(r), (float)(g), (float)(b), w }, set(true) {}
@@ -41,7 +41,7 @@ struct RT64DefaultMask {
 
 struct RT64DefaultLight {
     bool set;
-    RT64_VECTOR3 position;
+    Vec3f position;
     RT64DefaultColor diffuseColor;
     RT64DefaultColor specularColor;
     float attenuationRadius;
@@ -108,8 +108,8 @@ struct RT64DefaultScene {
     RT64DefaultColor ambientNoGIColor;
     RT64DefaultColor eyeLightDiffuseColor;
     RT64DefaultColor eyeLightSpecularColor;
-    RT64_VECTOR3 skyDiffuseMultiplier;
-    RT64_VECTOR3 skyHSLModifier;
+    Vec3f skyDiffuseMultiplier;
+    Vec3f skyHSLModifier;
     float skyYawOffset;
     float giDiffuseStrength;
     float giSkyStrength;
