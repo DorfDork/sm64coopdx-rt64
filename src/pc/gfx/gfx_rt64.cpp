@@ -355,16 +355,14 @@ static struct ShaderProgram *gfx_rt64_rapi_create_and_load_new_shader(struct Col
                     input.name = vertexShader->shaderInputs[i].name;
                     shaderProgram->customVertexInputs.push_back(input);
                 }
-            }
-            else {
+            } else {
                 gfx_destroy_shader(vertexShader);
                 gfx_destroy_shader(fragmentShader);
             }
 
             free(hlslVs);
             free(hlslFs);
-        }
-        else {
+        } else {
             gfx_destroy_shader(vertexShader);
             gfx_destroy_shader(fragmentShader);
         }
@@ -998,8 +996,7 @@ static void gfx_rt64_draw_triangles_common(const Mat4 &transform, float buf_vbo[
         vec4f_set(instDesc.material.diffuseColorMix, 255.0f, 0.0f, 255.0f, 0.5f);
         vec3f_set(instDesc.material.selfLightColor, 255.0f, 255.0f, 255.0f);
         instDesc.material.lightGroupMaskBits = 0;
-    }
-    else if (highlightGeoLayout) {
+    } else if (highlightGeoLayout) {
         vec4f_set(instDesc.material.diffuseColorMix, 255.0f, 255.0f, 89.0f, 0.5f);
         vec3f_set(instDesc.material.selfLightColor, 255.0f, 255.0f, 255.0f);
         instDesc.material.lightGroupMaskBits = 0;
@@ -1492,8 +1489,7 @@ static void gfx_rt64_rapi_end_frame(void) {
         // Keep the display list if it's not empty. Erase it otherwise.
         if (!dl.instances.empty() || !dl.meshes.empty() || (dl.light.groupBits > 0)) {
             dlIt++;
-        }
-        else {
+        } else {
             dlIt = cpuFrame->displayLists.erase(dlIt);
         }
     }
@@ -1581,8 +1577,7 @@ static void gfx_rt64_apply_geo_layout_mod_to_graph_node(void *graphNode, Recorde
 
         RT64_ApplyMaterialAttributes(graphMod->materialMod, geoMod->materialMod);
         graphMod->materialMod->enabledAttributes |= geoMod->materialMod->enabledAttributes;
-    }
-    else if (replace && (graphMod->materialMod != nullptr)) {
+    } else if (replace && (graphMod->materialMod != nullptr)) {
         graphMod->materialMod->enabledAttributes = RT64_ATTRIBUTE_NONE;
     }
 
@@ -1592,8 +1587,7 @@ static void gfx_rt64_apply_geo_layout_mod_to_graph_node(void *graphNode, Recorde
         }
 
         memcpy(graphMod->lightMod, geoMod->lightMod, sizeof(RT64_LIGHT));
-    }
-    else if (replace) {
+    } else if (replace) {
         delete graphMod->lightMod;
         graphMod->lightMod = nullptr;
     }
@@ -1632,8 +1626,7 @@ static void gfx_rt64_register_layout_graph_node(void *geoLayout, void *graphNode
                 if (nameIt != RT64.geoLayoutNameMap.end()) {
                     geoName = nameIt->second;
                 }
-            }
-            else {
+            } else {
                 const char *customName = dynos_actor_get_custom_name(geoLayout);
                 if (customName != nullptr) { geoName = customName; }
             }
@@ -1750,8 +1743,7 @@ static void gfx_rt64_bind_named_geo_layout(const std::string &geoName, void *geo
         if (modIt != RT64.geoLayoutMods.end()) {
             RT64.geoLayoutMods[geoLayout] = modIt->second;
         }
-    }
-    else {
+    } else {
         RT64.nameGeoLayoutMap[geoName] = geoLayout;
     }
 

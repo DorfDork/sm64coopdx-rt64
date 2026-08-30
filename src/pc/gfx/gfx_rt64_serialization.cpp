@@ -381,24 +381,21 @@ static RecordedMod *gfx_rt64_bind_geo_layout_mod(const std::string &geoName) {
     if (geoLayout != nullptr) {
         auto modIt = RT64.geoLayoutMods.find(geoLayout);
         if (modIt != RT64.geoLayoutMods.end()) { recordedMod = modIt->second; }
-    }
-    else {
+    } else {
         auto pendingIt = RT64.pendingGeoLayoutMods.find(geoName);
         if (pendingIt != RT64.pendingGeoLayoutMods.end()) { recordedMod = pendingIt->second; }
     }
 
     if (recordedMod == nullptr) {
         recordedMod = new RecordedMod();
-    }
-    else {
+    } else {
         gfx_rt64_reset_recorded_mod(recordedMod);
     }
 
     if (geoLayout != nullptr) {
         RT64.geoLayoutMods[geoLayout] = recordedMod;
         RT64.nameGeoLayoutMap[geoName] = geoLayout;
-    }
-    else {
+    } else {
         RT64.pendingGeoLayoutMods[geoName] = recordedMod;
     }
 
@@ -464,16 +461,14 @@ static RecordedMod *gfx_rt64_bind_texture_mod(const std::string &texName, u64 *o
     if (gfx_rt64_parse_placeholder_texture_name(texName, &texHash)) {
         RT64.texNameMap[texHash] = texName;
         RT64.nameTexMap[texName] = texHash;
-    }
-    else {
+    } else {
         texHash = gfx_rt64_get_texture_name_hash(texName);
     }
 
     RecordedMod *&texMod = RT64.texMods[texHash];
     if (texMod == nullptr) {
         texMod = new RecordedMod();
-    }
-    else {
+    } else {
         gfx_rt64_reset_recorded_mod(texMod);
     }
 
@@ -597,8 +592,7 @@ static bool gfx_rt64_lua_get_vector_field(lua_State *L, int index, const char *k
     for (int i = 0; i < count; i++) {
         if (byComponent) {
             lua_getfield(L, table, components[i]);
-        }
-        else {
+        } else {
             lua_rawgeti(L, table, i + 1);
         }
 
@@ -652,8 +646,7 @@ static void gfx_rt64_lua_read_light(lua_State *L, int index, RT64_LIGHT *light, 
     const std::string type = gfx_rt64_lua_get_string_field(L, index, "type", context);
     if (type == "point") {
         light->lightType = RT64_LIGHT_TYPE_POINT;
-    }
-    else if (!type.empty() && (type != "area")) {
+    } else if (!type.empty() && (type != "area")) {
         LOG_LUA_LINE("%s: unknown light type '%s', expected 'area' or 'point'", context, type.c_str());
     }
 
@@ -666,8 +659,7 @@ static void gfx_rt64_lua_read_light(lua_State *L, int index, RT64_LIGHT *light, 
     const std::string shape = gfx_rt64_lua_get_string_field(L, index, "shape", context);
     if (shape == "square") {
         light->lightShape = RT64_LIGHT_SHAPE_SQUARE;
-    }
-    else if (!shape.empty() && (shape != "circle")) {
+    } else if (!shape.empty() && (shape != "circle")) {
         LOG_LUA_LINE("%s: unknown light shape '%s', expected 'circle' or 'square'", context, shape.c_str());
     }
 
@@ -726,16 +718,13 @@ static void gfx_rt64_lua_read_material_mod(lua_State *L, int index, RT64_MATERIA
         if (shadingModel == "lambert") {
             materialMod->shadingModel = RT64_SHADING_MODEL_LAMBERT;
             materialMod->enabledAttributes |= RT64_ATTRIBUTE_SHADING_MODEL;
-        }
-        else if (shadingModel == "phong") {
+        } else if (shadingModel == "phong") {
             materialMod->shadingModel = RT64_SHADING_MODEL_PHONG;
             materialMod->enabledAttributes |= RT64_ATTRIBUTE_SHADING_MODEL;
-        }
-        else if (shadingModel == "blinn") {
+        } else if (shadingModel == "blinn") {
             materialMod->shadingModel = RT64_SHADING_MODEL_BLINN;
             materialMod->enabledAttributes |= RT64_ATTRIBUTE_SHADING_MODEL;
-        }
-        else {
+        } else {
             LOG_LUA_LINE("%s: unknown shading model '%s', expected 'lambert', 'phong' or 'blinn'", context, shadingModel.c_str());
         }
     }
@@ -857,8 +846,7 @@ void gfx_rt64_lua_register_level_lights(lua_State *L, int levelNum, int areaInde
                 RT64_LIGHT light;
                 gfx_rt64_lua_read_light(L, lua_gettop(L), &light, context);
                 lights.push_back(light);
-            }
-            else {
+            } else {
                 LOG_LUA_LINE("%s: Light %d must be a table, got %s", context, i, luaL_typename(L, -1));
             }
 
@@ -1068,8 +1056,7 @@ static void gfx_rt64_lua_close(std::ofstream &o, const std::string &path) {
     o.flush();
     if (o.bad()) {
         fprintf(stderr, "Error when saving %s.\n", path.c_str());
-    }
-    else {
+    } else {
         fprintf(stderr, "Saved %s.\n", path.c_str());
     }
 }

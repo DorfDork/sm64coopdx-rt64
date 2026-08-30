@@ -228,8 +228,7 @@ static void gfx_rt64_render_thread_apply_post_process_shader(void) {
     const std::lock_guard<std::mutex> lock(RT64.postProcessMutex);
     if (RT64.postProcessHLSL.empty()) {
         RT64.lib.SetPostProcessShader(RT64.device, nullptr, nullptr, 0, nullptr, 0, 0);
-    }
-    else {
+    } else {
         RT64.lib.SetPostProcessShader(RT64.device, RT64.postProcessHLSL.c_str(),
             RT64.postProcessInputs.data(), (unsigned int)(RT64.postProcessInputs.size()),
             RT64.postProcessOutputName.c_str(), RT64.postProcessWidth, RT64.postProcessHeight);
@@ -312,8 +311,7 @@ static void gfx_rt64_render_thread_upload_mesh(GPUMesh &dstMesh, const GameMesh 
 
     if ((dstMesh.positionHash != 0) && (dstMesh.positionHash == curMesh.positionHash)) {
         RT64.lib.SetMeshVertexData(dstMesh.mesh, curMesh.vertexBuffer, curMesh.vertexCount, curMesh.vertexStride, RT64.indexTriangleList, curMesh.indexCount);
-    }
-    else {
+    } else {
         RT64.lib.SetMesh(dstMesh.mesh, curMesh.vertexBuffer, curMesh.vertexCount, curMesh.vertexStride, RT64.indexTriangleList, curMesh.indexCount);
     }
 
@@ -333,12 +331,10 @@ static void gfx_rt64_render_thread_evict_meshes(Pool &pool, int evictFrames) {
             pooledMesh.inUse = false;
             pooledMesh.unusedFrames = 0;
             poolIt++;
-        }
-        else if (++pooledMesh.unusedFrames >= evictFrames) {
+        } else if (++pooledMesh.unusedFrames >= evictFrames) {
             gfx_rt64_destroy_gpu_mesh(pooledMesh);
             poolIt = pool.erase(poolIt);
-        }
-        else {
+        } else {
             poolIt++;
         }
     }
@@ -443,8 +439,7 @@ static inline void gfx_rt64_render_thread_draw_display_list(u32 uid, GameFrame *
         memcpy(instDesc.transform, curInstance.desc.transform, sizeof(Mat4));
         if (mtxf_axes_align(dstInstance.transform, instDesc.transform, minDot)) {
             mtxf_copy(instDesc.previousTransform, dstInstance.transform);
-        }
-        else {
+        } else {
             mtxf_copy(instDesc.previousTransform, instDesc.transform);
         }
 
@@ -502,15 +497,13 @@ static void gfx_rt64_render_thread_draw_frame(GameFrame *curFrame, GameFrame *pr
 
         if (dl.drawCount > 0) {
             dl.idleFrames = 0;
-        }
-        else {
+        } else {
             dl.idleFrames++;
         }
 
         if (dl.idleFrames >= CACHED_MESH_EVICT_FRAMES) {
             gpuDlIt = RT64.gpuDisplayLists.erase(gpuDlIt);
-        }
-        else {
+        } else {
             gpuDlIt++;
         }
     }
@@ -576,8 +569,7 @@ static void gfx_rt64_render_thread_preprocess_frames(GameFrame *curFrame, GameFr
                 pickSearchInstance = instance;
                 pickSearchTexture = RT64.pickTexture;
                 pickSearchGeoLayout = RT64.pickGeoLayout;
-            }
-            else {
+            } else {
                 if (RT64.pickTexture) { RT64.pickTextureHash = 0; }
             }
 
@@ -698,8 +690,7 @@ static void gfx_rt64_render_thread_upload_texture_queue(void) {
         auto existingIt = RT64.hashToTexture.find(uploadTexture.contentHash);
         if (existingIt != RT64.hashToTexture.end()) {
             gpuTexture.texture = existingIt->second;
-        }
-        else {
+        } else {
             gpuTexture.texture = RT64.lib.CreateTexture(RT64.device, uploadTexture.desc);
             RT64.hashToTexture[uploadTexture.contentHash] = gpuTexture.texture;
         }
@@ -761,8 +752,7 @@ void gfx_rt64_render_thread(void) {
             if (RT64.lib.SetInspectorMaterialDefaults != nullptr) {
                 RT64.lib.SetInspectorMaterialDefaults(RT64.renderInspector, &RT64.defaultMaterial);
             }
-        }
-        else if (!RT64.renderInspectorActive && (RT64.renderInspector != nullptr)) {
+        } else if (!RT64.renderInspectorActive && (RT64.renderInspector != nullptr)) {
             RT64.lib.DestroyInspector(RT64.renderInspector);
             RT64.renderInspector = nullptr;
         }
@@ -775,8 +765,7 @@ void gfx_rt64_render_thread(void) {
             if (RT64.renderViewDescChanged) {
                 RT64.lib.SetViewDescription(RT64.view, RT64.renderViewDesc);
                 RT64.renderViewDescChanged = false;
-            }
-            else if (RT64.renderInspectorActive && (RT64.lib.GetViewDescription != nullptr)) {
+            } else if (RT64.renderInspectorActive && (RT64.lib.GetViewDescription != nullptr)) {
                 RT64.lib.GetViewDescription(RT64.view, &RT64.inspectorViewDesc);
                 RT64.inspectorViewDescValid = true;
             }
@@ -1003,8 +992,7 @@ void gfx_rt64_publish_picked_geo_layout(void) {
                 RT64.pickedGeoLayoutLightEnabled = (geoMod->lightMod != nullptr);
                 if (geoMod->lightMod != nullptr) {
                     RT64.pickedGeoLayoutLight = *geoMod->lightMod;
-                }
-                else {
+                } else {
                     memset(&RT64.pickedGeoLayoutLight, 0, sizeof(RT64_LIGHT));
                     vec3f_set(RT64.pickedGeoLayoutLight.diffuseColor, 255.0f, 255.0f, 255.0f);
                     vec3f_set(RT64.pickedGeoLayoutLight.specularColor, 255.0f, 255.0f, 255.0f);
@@ -1022,8 +1010,7 @@ void gfx_rt64_publish_picked_geo_layout(void) {
                 }
 
                 *geoMod->lightMod = RT64.pickedGeoLayoutLight;
-            }
-            else {
+            } else {
                 delete geoMod->lightMod;
                 geoMod->lightMod = nullptr;
             }
@@ -1141,8 +1128,7 @@ static void gfx_rt64_filter_texture_id(RecordedTexture &recorded, u32 textureKey
     if (!name.empty()) {
         recorded.hash = gfx_rt64_texture_name_string_hash(name);
         gfx_rt64_register_texture_id(recorded.hash, textureKey, name);
-    }
-    else {
+    } else {
         recorded.hash = contentHash;
         RT64.textureHashIdMap[recorded.hash] = textureKey;
         gfx_rt64_name_content_hashed_texture(recorded.hash);
@@ -1480,8 +1466,7 @@ u32 gfx_rt64_stitch_skybox_texture(const Texture *const *tiles) {
             if (tileWidth == 0) {
                 tileWidth = width;
                 tileHeight = height;
-            }
-            else if ((width != tileWidth) || (height != tileHeight)) {
+            } else if ((width != tileWidth) || (height != tileHeight)) {
                 fprintf(stderr, "RT64: skybox tiles don't agree on a size, can't stitch a panorama.\n");
                 free(rgba32);
                 ok = false;
