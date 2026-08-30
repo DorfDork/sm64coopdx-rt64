@@ -49,6 +49,7 @@
 #include "pc/debuglog.h"
 #include "pc/utils/misc.h"
 #include "pc/mods/mods.h"
+#include "data/dynos.c.h"
 
 #include "debug_context.h"
 #include "menu/intro_geo.h"
@@ -272,6 +273,15 @@ void request_graphics_backend_change(void) {
 }
 
 static void apply_graphics_backend_change(void) {
+    if (gfx_wm_switch_backend_pending()) {
+#if defined(_WIN32)
+        // RT64 is the only backend that isn't usable the moment its init returns
+        if ((gRenderApi == &gfx_rt64_api) && !gfx_rt64_is_ready()) { return; }
+#endif
+        gfx_wm_finish_switch_backend();
+        return;
+    }
+
     if (!sGraphicsBackendChangePending) { return; }
     sGraphicsBackendChangePending = false;
 
@@ -294,6 +304,8 @@ static void apply_graphics_backend_change(void) {
     // some backends check gRenderApi from inside their own init, so publish it first
     gRenderApi = get_rendering_api_for_backend(backend);
     gfx_init_rendering_api(gRenderApi);
+
+    dynos_model_register_graph_node_layouts();
 
     // every shader and texture the mods handed us belonged to the old backend
     smlua_call_event_hooks(HOOK_ON_REFRESH_SHADERS);

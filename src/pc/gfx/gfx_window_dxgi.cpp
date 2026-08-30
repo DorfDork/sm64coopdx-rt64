@@ -97,7 +97,7 @@ static void gfx_window_dxgi_init(const char *window_title) {
     sSdlWindow = SDL_CreateWindow(
         window_title,
         xpos, ypos, configWindow.w, configWindow.h,
-        SDL_WINDOW_RESIZABLE
+        SDL_WINDOW_RESIZABLE | gfx_wm_window_visibility_flag()
     );
 
     gfx_wm_set_window(sSdlWindow);
@@ -123,6 +123,10 @@ static void gfx_window_dxgi_handle_events(SDL_Event event) {
 }
 
 static bool gfx_window_dxgi_start_frame(void) {
+    // prevents unlimited frame rates in fullscreen in DX12 when VSync is enabled
+    if (dxgi.waitable_object != nullptr) {
+        WaitForSingleObject(dxgi.waitable_object, 1000);
+    }
     return true;
 }
 

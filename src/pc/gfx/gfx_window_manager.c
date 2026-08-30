@@ -3,6 +3,7 @@
 #if defined(_WIN32)
 #include <windows.h>
 #include <SDL2/SDL_system.h>
+#include <SDL2/SDL_syswm.h>
 #endif
 
 #include <stdio.h>
@@ -46,6 +47,10 @@ static SDL_Window *sSdlWindow;
 
 // kept around so the window can be recreated with the same title when the backend is switched
 static char sWindowTitle[WAPI_WINDOW_TITLE_BUFSIZ] = { 0 };
+
+// the window a backend switch is leaving behind
+static SDL_Window *sOutgoingSdlWindow = NULL;
+static enum GfxWindowBackend sOutgoingBackend = GFX_WINDOW_BACKEND_DUMMY;
 
 static kb_callback_t kb_key_down = NULL;
 static kb_callback_t kb_key_up = NULL;
@@ -117,26 +122,54 @@ static void SDLCALL gfx_wm_windows_message_hook(void *userdata, void *hWnd, unsi
 }
 #endif
 
-// brings up the window for sCurrBackend and puts it in the state the game expects
-static void gfx_wm_open_window(void) {
-    sBackends[sCurrBackend]->init(sWindowTitle);
+u32 gfx_wm_window_visibility_flag(void) {
+    return (sOutgoingSdlWindow != NULL) ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN;
+}
 
+static bool gfx_wm_set_window_cloaked(SDL_Window *window, bool cloaked) {
+#if defined(_WIN32)
+    static HRESULT (WINAPI *sDwmSetWindowAttribute)(HWND, DWORD, LPCVOID, DWORD) = NULL;
+    if (sDwmSetWindowAttribute == NULL) {
+        HMODULE dwmapi = LoadLibraryW(L"dwmapi.dll");
+        if (dwmapi == NULL) { return false; }
+        *(FARPROC *)&sDwmSetWindowAttribute = GetProcAddress(dwmapi, "DwmSetWindowAttribute");
+        if (sDwmSetWindowAttribute == NULL) { return false; }
+    }
+
+    SDL_SysWMinfo wmInfo;
+    SDL_VERSION(&wmInfo.version);
+    if (!SDL_GetWindowWMInfo(window, &wmInfo)) { return false; }
+
+    BOOL value = cloaked ? TRUE : FALSE;
+    return SUCCEEDED(sDwmSetWindowAttribute(wmInfo.info.win.window, 13, &value, sizeof(value)));
+#else
+    (void)(window);
+    (void)(cloaked);
+    return false;
+#endif
+}
+
+static void gfx_wm_apply_fullscreen_state(void) {
     gfx_wm_set_fullscreen();
     if (configWindow.fullscreen) {
         SDL_ShowCursor(SDL_DISABLE);
     }
+}
 
+// brings up the window for sCurrBackend and puts it in the state the game expects
+static void gfx_wm_open_window(void) {
+    sBackends[sCurrBackend]->init(sWindowTitle);
+    gfx_wm_apply_fullscreen_state();
     SDL_PumpEvents();
 }
 
-// tears the window back down, leaving SDL itself running
-static void gfx_wm_close_window(void) {
-    if (sBackends[sCurrBackend]->shutdown) {
-        sBackends[sCurrBackend]->shutdown();
+// releases what the backend attached to a window and destroys it, leaving SDL itself running
+static void gfx_wm_close_window(enum GfxWindowBackend backend, SDL_Window *window) {
+    if (sBackends[backend]->shutdown) {
+        sBackends[backend]->shutdown();
     }
-    if (sSdlWindow) {
-        SDL_DestroyWindow(sSdlWindow);
-        sSdlWindow = NULL;
+    if (window) {
+        SDL_DestroyWindow(window);
     }
 }
 
@@ -175,20 +208,43 @@ void gfx_wm_switch_backend(enum GfxWindowBackend backend) {
     if (backend >= GFX_WINDOW_BACKEND_COUNT || backend == sCurrBackend) { return; }
     if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY || backend == GFX_WINDOW_BACKEND_DUMMY) { return; }
 
-    if (!IS_FULLSCREEN()) {
-        int xpos = 0, ypos = 0, width = 0, height = 0;
-        SDL_GetWindowPosition(sSdlWindow, &xpos, &ypos);
-        SDL_GetWindowSize(sSdlWindow, &width, &height);
-        configWindow.x = xpos;
-        configWindow.y = ypos;
-        configWindow.w = width;
-        configWindow.h = height;
+    if (sBackends[backend] == sBackends[sCurrBackend]) {
+        sCurrBackend = backend;
+        return;
     }
 
-    gfx_wm_close_window();
+    // build the incoming window behind the outgoing one
+    sOutgoingBackend = sCurrBackend;
+    sOutgoingSdlWindow = sSdlWindow;
 
     sCurrBackend = backend;
-    gfx_wm_open_window();
+    sBackends[sCurrBackend]->init(sWindowTitle);
+
+    if (gfx_wm_set_window_cloaked(sSdlWindow, true)) {
+        SDL_ShowWindow(sSdlWindow);
+    }
+
+    SDL_PumpEvents();
+}
+
+bool gfx_wm_switch_backend_pending(void) {
+    return sOutgoingSdlWindow != NULL;
+}
+
+void gfx_wm_finish_switch_backend(void) {
+    if (sOutgoingSdlWindow == NULL) { return; }
+
+    // reveal the incoming window before dropping the old one
+    SDL_ShowWindow(sSdlWindow);
+    gfx_wm_set_window_cloaked(sSdlWindow, false);
+    SDL_RaiseWindow(sSdlWindow);
+    gfx_wm_apply_fullscreen_state();
+
+    gfx_wm_close_window(sOutgoingBackend, sOutgoingSdlWindow);
+    sOutgoingSdlWindow = NULL;
+    sOutgoingBackend = GFX_WINDOW_BACKEND_DUMMY;
+
+    SDL_PumpEvents();
 }
 
 void gfx_wm_main_loop(void (*run_one_game_iter)(void)) {
@@ -385,7 +441,13 @@ void gfx_wm_reset_window_title(void) {
 void gfx_wm_shutdown(void) {
     if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
     if (SDL_WasInit(0)) {
-        gfx_wm_close_window();
+        if (sOutgoingSdlWindow != NULL) {
+            gfx_wm_close_window(sOutgoingBackend, sOutgoingSdlWindow);
+            sOutgoingSdlWindow = NULL;
+            sOutgoingBackend = GFX_WINDOW_BACKEND_DUMMY;
+        }
+        gfx_wm_close_window(sCurrBackend, sSdlWindow);
+        sSdlWindow = NULL;
         SDL_Quit();
     }
 }

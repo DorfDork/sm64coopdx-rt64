@@ -56,6 +56,7 @@ extern "C" {
 extern struct GfxRenderingAPI gfx_rt64_api;
 
 void gfx_rt64_reset_lua_config(void);
+bool gfx_rt64_is_ready(void);
 
 void gfx_rt64_lua_register_level_lights(struct lua_State *L, s32 levelNum, s32 areaIndex, s32 tableIndex);
 void gfx_rt64_lua_register_texture_mod(struct lua_State *L, const char *name, s32 tableIndex);

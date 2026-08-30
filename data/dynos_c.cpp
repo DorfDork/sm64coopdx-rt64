@@ -326,6 +326,10 @@ void dynos_model_overwrite_slot(u32 srcSlot, u32 dstSlot) {
     DynOS_Model_OverwriteSlot(srcSlot, dstSlot);
 }
 
+void dynos_model_register_graph_node_layouts(void) {
+    DynOS_Model_RegisterGraphNodeLayouts();
+}
+
 // -- gfx -- //
 
 Gfx *dynos_gfx_get_writable_display_list(Gfx* gfx) {

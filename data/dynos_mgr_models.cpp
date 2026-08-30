@@ -6,6 +6,8 @@ extern "C" {
 #include "engine/graph_node.h"
 #include "model_ids.h"
 #include "pc/lua/utils/smlua_model_utils.h"
+
+void gfx_register_layout_graph_node(void *geoLayout, void *graphNode);
 }
 
 enum ModelLoadType {
@@ -19,6 +21,7 @@ struct ModelInfo {
     void* asset;
     struct GraphNode* graphNode;
     enum ModelPool modelPool;
+    bool fromGeoLayout;
 };
 
 static struct DynamicPool* sModelPools[MODEL_POOL_MAX] = { 0 };
@@ -125,6 +128,7 @@ static struct GraphNode* DynOS_Model_LoadCommonInternal(u32* aId, enum ModelPool
         .asset = aAsset,
         .graphNode = node,
         .modelPool = aModelPool,
+        .fromGeoLayout = (mlt == MLT_GEO),
     };
 
     // store in maps
@@ -150,6 +154,15 @@ struct GraphNode* DynOS_Model_LoadDl(u32* aId, enum ModelPool aModelPool, u8 aLa
 
 struct GraphNode* DynOS_Model_StoreGeo(u32* aId, enum ModelPool aModelPool, void* aAsset, struct GraphNode* aGraphNode) {
     return DynOS_Model_LoadCommon(aId, aModelPool, aAsset, 0, aGraphNode, true, MLT_STORE);
+}
+
+void DynOS_Model_RegisterGraphNodeLayouts() {
+    for (s32 i = 0; i < MODEL_POOL_MAX; i++) {
+        for (auto& it : sAssetMap[i]) {
+            if (!it.second.fromGeoLayout) { continue; }
+            gfx_register_layout_graph_node(it.second.asset, it.second.graphNode);
+        }
+    }
 }
 
 struct GraphNode* DynOS_Model_GetErrorGeo() {

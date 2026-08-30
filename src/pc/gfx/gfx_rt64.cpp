@@ -1077,6 +1077,10 @@ bool gfx_rt64_lua_is_active(void) {
     return gfx_gfx_rt64_is_active();
 }
 
+bool gfx_rt64_is_ready(void) {
+    return !RT64.pauseMode;
+}
+
 struct Rt64AreaLighting *gfx_rt64_lua_get_area_lighting(s32 levelNum, s32 areaIndex) {
     if (!gfx_gfx_rt64_is_active()) { return nullptr; }
     if ((levelNum < 0) || (levelNum >= MAX_LEVELS) || (areaIndex < 0) || (areaIndex >= MAX_AREAS)) { return nullptr; }
@@ -1176,6 +1180,12 @@ static void gfx_rt64_rapi_init(void) {
 
     // Load the texture mods from a file.
     gfx_rt64_load_texture_mods();
+
+    gfx_rt64_load_geo_layout_mods();
+    RT64.loadedGeoLayoutMods = true;
+    RT64.graphNodeRootsNamed.clear();
+
+    gfx_rt64_invalidate_graph_node_mods();
 
     // Initialize other attributes.
     vec4i_zero(RT64.scissorRect);

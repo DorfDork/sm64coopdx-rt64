@@ -51,7 +51,10 @@ SDL_Window *gfx_wm_get_window(void);
 
 void gfx_wm_init(const char *window_title);
 enum GfxWindowBackend gfx_wm_get_backend(void);
+u32 gfx_wm_window_visibility_flag(void);
 void gfx_wm_switch_backend(enum GfxWindowBackend backend);
+bool gfx_wm_switch_backend_pending(void);
+void gfx_wm_finish_switch_backend(void);
 void gfx_wm_set_keyboard_callbacks(kb_callback_t on_key_down, kb_callback_t on_key_up, void (*on_all_keys_up)(void),
     void (*on_text_input)(char*), void (*on_text_editing)(char*, int));
 void gfx_wm_set_scroll_callback(void (*on_scroll)(float, float));

@@ -97,6 +97,7 @@ void dynos_model_overwrite_slot(u32 srcSlot, u32 dstSlot);
 u32 dynos_model_get_id_from_asset(void* aAsset);
 u32 dynos_model_get_id_from_graph_node(struct GraphNode* aGraphNode);
 void dynos_model_clear_pool(enum ModelPool aModelPool);
+void dynos_model_register_graph_node_layouts(void);
 
 // -- gfx -- //
 Gfx *dynos_gfx_get_writable_display_list(Gfx* gfx);

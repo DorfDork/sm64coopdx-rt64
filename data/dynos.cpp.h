@@ -1024,6 +1024,7 @@ u32 DynOS_Model_GetIdFromGraphNode(struct GraphNode* aNode);
 enum ModelPool DynOS_Model_GetModelPoolFromGraphNode(struct GraphNode* aNode);
 void DynOS_Model_OverwriteSlot(u32 srcSlot, u32 dstSlot);
 void DynOS_Model_ClearPool(enum ModelPool aModelPool);
+void DynOS_Model_RegisterGraphNodeLayouts();
 
 //
 // Gfx Manager

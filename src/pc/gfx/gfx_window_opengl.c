@@ -81,7 +81,7 @@ static void gfx_window_opengl_init(const char *window_title) {
     sSdlWindow = SDL_CreateWindow(
         window_title,
         xpos, ypos, configWindow.w, configWindow.h,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
+        SDL_WINDOW_OPENGL | gfx_wm_window_visibility_flag() | SDL_WINDOW_RESIZABLE
     );
     SDL_GLContext ctx = SDL_GL_CreateContext(sSdlWindow);
 

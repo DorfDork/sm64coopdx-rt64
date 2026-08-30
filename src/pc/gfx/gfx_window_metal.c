@@ -35,7 +35,7 @@ static void gfx_window_metal_init(const char *window_title) {
     sSdlWindow = SDL_CreateWindow(
         window_title,
         xpos, ypos, configWindow.w, configWindow.h,
-        SDL_WINDOW_METAL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
+        SDL_WINDOW_METAL | gfx_wm_window_visibility_flag() | SDL_WINDOW_RESIZABLE
     );
 
     gfx_wm_set_window(sSdlWindow);
