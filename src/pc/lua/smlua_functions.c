@@ -903,7 +903,7 @@ static int smlua_func_gfx_rt64_set_texture_mod(lua_State* L) {
 }
 
 static int smlua_func_gfx_rt64_is_active(lua_State* L) {
-    lua_pushboolean(L, gfx_rt64_lua_is_active());
+    lua_pushboolean(L, gfx_rt64_is_active());
     return 1;
 }
 

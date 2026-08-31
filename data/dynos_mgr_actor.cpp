@@ -6,9 +6,7 @@ extern "C" {
 #include "pc/configfile.h"
 #include "pc/lua/smlua_hooks.h"
 #include "pc/mods/mod_fs.h"
-#include "pc/gfx/gfx_rendering_api.h"
-
-struct GfxRenderingAPI *gfx_get_current_rendering_api(void);
+#include "pc/gfx/gfx_rt64.h"
 }
 
 static ObjectList sObjectListsToOverride[] = {
@@ -210,9 +208,8 @@ void DynOS_Actor_Invalid(const void* aGeoref, s32 aPackIndex) {
 }
 
 void DynOS_Actor_Override_Report(GraphNode *aOriginalNode, GraphNode *aReplacementNode) {
-    struct GfxRenderingAPI *api = gfx_get_current_rendering_api();
-    if (api && api->inherit_graph_node_mod) {
-        api->inherit_graph_node_mod(aOriginalNode, aReplacementNode);
+    if (gfx_rt64_is_active()) {
+        gfx_rt64_inherit_graph_node_mod(aOriginalNode, aReplacementNode);
     }
 }
 

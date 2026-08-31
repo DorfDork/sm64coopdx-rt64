@@ -320,7 +320,7 @@ void produce_interpolation_frames_and_delay(void) {
     bool shouldDelay = configFramerateMode != RRM_UNLIMITED;
     if (configWindow.vsync && displayRefreshRate <= refreshRate) {
         refreshRate = displayRefreshRate;
-        if (!gfx_backend_has(GFX_BACKEND_PRESENTS_DIRECTLY)) {
+        if (!gfx_rt64_is_active()) {
             shouldDelay = false;
         }
     }
@@ -343,6 +343,10 @@ void produce_interpolation_frames_and_delay(void) {
 
         // when we know how many frames to draw, use a precise delta
         f64 idealTime = shouldDelay ? (sFrameTimeStart + interpFrameTime * framesDrawn) : curTime;
+
+        // if the renderer is so slow that it can't keep up with the tick, the game will still run at the correct speed
+        if (idealTime < curTime) { idealTime = curTime; }
+
         f32 delta = clamp((idealTime - sFrameTimeStart) / sFrameTime, 0.f, 1.f);
         gFramePercentage = clamp((curTime - sFrameTimeStart) / sFrameTime, 0.f, 1.f);
         gRenderingDelta = delta;

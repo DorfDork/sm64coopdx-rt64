@@ -10,23 +10,6 @@ struct ShaderProgram;
 struct ColorCombiner;
 struct FramePass;
 
-enum GfxBackendCapability {
-    // Vertices remain in object space, with transforms supplied per batch.
-    GFX_BACKEND_MODEL_SPACE_GEOMETRY = (1 << 0),
-
-    // Backend handles visibility, clipping, and culling using its own camera.
-    GFX_BACKEND_GPU_VISIBILITY = (1 << 1),
-
-    // Backend tracks objects across frames using forwarded object identity tags.
-    GFX_BACKEND_OBJECT_IDENTITY = (1 << 2),
-
-    // Backend presents frames directly without engine-owned framebuffer compositing.
-    GFX_BACKEND_PRESENTS_DIRECTLY = (1 << 3),
-
-    // Backend stitches the skybox as a panoramic texture
-    GFX_BACKEND_SEPARATE_SKYBOX = (1 << 4),
-};
-
 struct GfxRenderingAPI {
     bool (*z_is_from_0_to_1)(void);
     void (*unload_shader)(struct ShaderProgram *old_prg);
@@ -65,26 +48,4 @@ struct GfxRenderingAPI {
     const char *(*get_name)(void);
     bool (*is_legacy)(void);
     void (*shutdown)(void);
-
-    // Hooks for ray tracer
-    void (*set_fog)(u8 fogR, u8 fogG, u8 fogB, s16 fogMul, s16 fogOffset);
-    void (*set_camera_perspective)(float fovDegrees, float nearDist, float farDist, bool canInterpolate);
-    void (*set_camera_matrix)(float matrix[4][4]);
-    void (*draw_triangles_ortho)(float bufVbo[], size_t bufVboLen, size_t bufVboNumTris, bool doubleSided, u32 uid);
-    void (*draw_triangles_persp)(float bufVbo[], size_t bufVboLen, size_t bufVboNumTris, float transformAffine[4][4], bool doubleSided, u32 uid);
-    void (*set_graph_node_mod)(void *graphNodeMod);
-    void (*set_texture_gen)(bool enabled, const float coeffU[4], const float coeffV[4]);
-    void (*register_layout_graph_node)(void *geoLayout, void *graphNode);
-    void (*inherit_graph_node_mod)(void *originalGraphNode, void *replacementGraphNode);
-    void *(*build_graph_node_mod)(void *graphNode, float modelviewMatrix[4][4], u32 uid);
-    void (*set_material_display_list)(const void *displayList);
-    void (*set_graph_node_root)(void *graphNodeRoot);
-    void (*lua_config_save)(void);
-    void (*toggle_inspector)(void);
-    bool (*inspector_active)(void);
-    bool (*handle_window_message)(void *hWnd, u32 message, uintptr_t wParam, intptr_t lParam);
-    void (*main_loop_iter)(void (*runOneGameIter)(void));
-    u32 (*get_capabilities)(void);
-    bool (*shader_uses_full_vertex_layout)(struct ShaderProgram *prg);
-    bool (*set_skybox)(const u8 *const *tiles, float diffuseColor[3]);
 };

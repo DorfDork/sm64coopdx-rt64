@@ -134,7 +134,7 @@ struct DisplayListNode
     Gfx *displayList;
     struct DisplayListNode *next;
     u8 usingCamSpace;
-    u32 uid;            // Per-instance identity, only read by backends declaring GFX_BACKEND_OBJECT_IDENTITY.
+    u32 uid;            // Per-instance identity, only read by RT64.
     void *graphNodeMod;
     void *graphNodeRoot;
 };

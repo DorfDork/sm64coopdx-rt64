@@ -492,34 +492,34 @@ static void gfx_rt64_rapi_upload_texture(const u8 *rgba32Buf, int width, int hei
     gfx_rt64_upload_texture(RT64.currentTextureIds[RT64.currentTile], rgba32Buf, width, height);
 }
 
-static void gfx_rt64_rapi_set_material_display_list(const void *displayList) {
+void gfx_rt64_set_material_display_list(const void *displayList) {
     RT64.materialDisplayList = displayList;
 }
 
-static bool gfx_rt64_rapi_shader_uses_full_vertex_layout(struct ShaderProgram *prg) {
+bool gfx_rt64_shader_uses_full_vertex_layout(struct ShaderProgram *prg) {
     if (prg == nullptr) { return false; }
     const ShaderProgramRT64 *p = (const ShaderProgramRT64 *)(prg);
     return p->hasCustomShader && !p->customShaderFailed.load(std::memory_order_relaxed);
 }
 
-static void gfx_rt64_rapi_toggle_inspector(void) {
+void gfx_rt64_toggle_inspector(void) {
 #if !RT64_INSPECTOR_ENABLED
     return;
 #else
-    if (!gfx_gfx_rt64_is_active()) {
+    if (!gfx_rt64_is_active()) {
         return;
     }
     RT64.renderInspectorActive = !RT64.renderInspectorActive;
 #endif
 }
 
-static bool gfx_rt64_rapi_inspector_active(void) {
-    return gfx_gfx_rt64_is_active() && RT64.renderInspectorActive;
+bool gfx_rt64_inspector_active(void) {
+    return gfx_rt64_is_active() && RT64.renderInspectorActive;
 }
 
-static bool gfx_rt64_rapi_handle_window_message(void *hWnd, unsigned int message, uintptr_t wParam, intptr_t lParam) {
+bool gfx_rt64_handle_window_message(void *hWnd, u32 message, uintptr_t wParam, intptr_t lParam) {
     (void)(hWnd);
-    if (!gfx_gfx_rt64_is_active() || !RT64.renderInspectorActive) {
+    if (!gfx_rt64_is_active() || !RT64.renderInspectorActive) {
         return false;
     }
 
@@ -608,6 +608,8 @@ static void gfx_rt64_rapi_set_use_alpha(bool use_alpha) {
 }
 
 bool gfx_rt64_use_vsync(void) {
+    if (configWindow.vrr) { return false; }
+
     return RT64.useVsync && !RT64.turboMode;
 }
 
@@ -1043,17 +1045,17 @@ static void gfx_rt64_draw_triangles_common(const Mat4 &transform, float buf_vbo[
     RT64.instancesDrawn++;
 }
 
-static void gfx_rt64_rapi_set_fog(u8 fog_r, u8 fog_g, u8 fog_b, s16 fog_mul, s16 fog_offset) {
+void gfx_rt64_set_fog(u8 fog_r, u8 fog_g, u8 fog_b, s16 fog_mul, s16 fog_offset) {
     vec3f_set(RT64.fogColor, (f32)(fog_r), (f32)(fog_g), (f32)(fog_b));
     RT64.fogMul = fog_mul;
     RT64.fogOffset = fog_offset;
 }
 
-static void gfx_rt64_rapi_draw_triangles_ortho(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided, u32 uid) {
+void gfx_rt64_draw_triangles_ortho(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool double_sided, u32 uid) {
     gfx_rt64_draw_triangles_common(RT64.identityTransform, buf_vbo, buf_vbo_len, buf_vbo_num_tris, double_sided, false, uid);
 }
 
-static void gfx_rt64_rapi_draw_triangles_persp(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, float transform_affine[4][4], bool double_sided, u32 uid) {
+void gfx_rt64_draw_triangles_persp(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, float transform_affine[4][4], bool double_sided, u32 uid) {
     // Stop considering the orthographic projection triangles as background as soon as perspective triangles are drawn.
     if (RT64.background) {
         RT64.background = false;
@@ -1066,12 +1068,8 @@ static void gfx_rt64_rapi_draw_triangles_persp(float buf_vbo[], size_t buf_vbo_l
 
 extern "C" struct GfxRenderingAPI *gRenderApi;
 
-bool gfx_gfx_rt64_is_active(void) {
+bool gfx_rt64_is_active(void) {
     return (gRenderApi == &gfx_rt64_api) && (RT64.device != nullptr);
-}
-
-bool gfx_rt64_lua_is_active(void) {
-    return gfx_gfx_rt64_is_active();
 }
 
 bool gfx_rt64_is_ready(void) {
@@ -1079,7 +1077,7 @@ bool gfx_rt64_is_ready(void) {
 }
 
 struct Rt64AreaLighting *gfx_rt64_lua_get_area_lighting(s32 levelNum, s32 areaIndex) {
-    if (!gfx_gfx_rt64_is_active()) { return nullptr; }
+    if (!gfx_rt64_is_active()) { return nullptr; }
     if ((levelNum < 0) || (levelNum >= MAX_LEVELS) || (areaIndex < 0) || (areaIndex >= MAX_AREAS)) { return nullptr; }
 
     const std::lock_guard<std::mutex> lightingLock(RT64.levelAreaLightingMutex);
@@ -1087,21 +1085,39 @@ struct Rt64AreaLighting *gfx_rt64_lua_get_area_lighting(s32 levelNum, s32 areaIn
     return reinterpret_cast<struct Rt64AreaLighting *>(&areaLighting);
 }
 
-void gfx_rt64_ensure_geo_layout_mods_loaded(void) {
-    if ((gRenderApi != &gfx_rt64_api) || RT64.loadedGeoLayoutMods) {
+void gfx_rt64_load_mod_configs(void) {
+    if (gRenderApi != &gfx_rt64_api) {
         return;
     }
 
-    gfx_rt64_load_geo_layout_mods();
-    RT64.loadedGeoLayoutMods = true;
+    if (!RT64.loadedGeoLayoutMods) {
+        gfx_rt64_load_geo_layout_mods();
+        RT64.loadedGeoLayoutMods = true;
+    }
+
+    if (!RT64.loadedTexMods) {
+        gfx_rt64_load_texture_mods();
+        RT64.loadedTexMods = true;
+    }
+
+    if (!RT64.loadedLevelLights) {
+        gfx_rt64_load_level_lights();
+        RT64.loadedLevelLights = true;
+    }
 }
 
-void gfx_rt64_invalidate_graph_node_mods(void) {
+void gfx_rt64_invalidate_mod_configs(void) {
     RT64.graphNodeModsSynced.clear();
+    RT64.materialNameHashes.clear();
+    RT64.materialNameHashDl = nullptr;
+    RT64.materialNameHashCached = 0;
+    RT64.materialModNameHashes.clear();
+
+    RT64.tickLights.clear();
 }
 
-static void gfx_rt64_rapi_lua_config_save(void) {
-    if (!gfx_gfx_rt64_is_active() || !RT64.renderInspectorActive) {
+void gfx_rt64_save_lua_config(void) {
+    if (!gfx_rt64_is_active() || !RT64.renderInspectorActive) {
         return;
     }
 
@@ -1119,10 +1135,12 @@ void gfx_rt64_reset_lua_config(void) {
     gfx_rt64_load_texture_mods();
     gfx_rt64_load_geo_layout_mods();
     RT64.loadedGeoLayoutMods = true;
+    RT64.loadedTexMods = true;
+    RT64.loadedLevelLights = true;
 
     RT64.graphNodeRootsNamed.clear();
 
-    gfx_rt64_invalidate_graph_node_mods();
+    gfx_rt64_invalidate_mod_configs();
 }
 
 static void gfx_rt64_apply_config(void) {
@@ -1173,16 +1191,11 @@ static void gfx_rt64_rapi_init(void) {
     // Start the game paused. Let the render thread unpause it once it's ready.
     RT64.pauseMode = true;
 
-    gfx_rt64_load_level_lights();
+    gfx_rt64_load_mod_configs();
 
-    // Load the texture mods from a file.
-    gfx_rt64_load_texture_mods();
-
-    gfx_rt64_load_geo_layout_mods();
-    RT64.loadedGeoLayoutMods = true;
     RT64.graphNodeRootsNamed.clear();
 
-    gfx_rt64_invalidate_graph_node_mods();
+    gfx_rt64_invalidate_mod_configs();
 
     // Initialize other attributes.
     vec4i_zero(RT64.scissorRect);
@@ -1537,13 +1550,7 @@ static bool gfx_rt64_rapi_is_legacy(void) {
     return false;
 }
 
-static u32 gfx_rt64_rapi_get_capabilities(void) {
-    return GFX_BACKEND_MODEL_SPACE_GEOMETRY | GFX_BACKEND_GPU_VISIBILITY |
-           GFX_BACKEND_OBJECT_IDENTITY | GFX_BACKEND_PRESENTS_DIRECTLY |
-           GFX_BACKEND_SEPARATE_SKYBOX;
-}
-
-static void gfx_rt64_rapi_set_camera_perspective(float fovDegrees, float nearDist, float farDist, bool canInterpolate) {
+void gfx_rt64_set_camera_perspective(float fovDegrees, float nearDist, float farDist, bool canInterpolate) {
     GameFrame *cpuFrame = &RT64.frames[RT64.cpuFrameIndex];
     cpuFrame->fovRadians = degrees_to_radians(fovDegrees);
 
@@ -1553,7 +1560,7 @@ static void gfx_rt64_rapi_set_camera_perspective(float fovDegrees, float nearDis
     cpuFrame->canReprojectView = cpuFrame->canReprojectView && canInterpolate;
 }
 
-static void gfx_rt64_rapi_set_camera_matrix(float matrix[4][4]) {
+void gfx_rt64_set_camera_matrix(float matrix[4][4]) {
     GameFrame *cpuFrame = &RT64.frames[RT64.cpuFrameIndex];
     memcpy(&cpuFrame->viewMatrix, matrix, sizeof(float) * 16);
     gd_inverse_mat4f(&cpuFrame->viewMatrix, &cpuFrame->invViewMatrix);
@@ -1607,7 +1614,7 @@ static void gfx_rt64_apply_geo_layout_mod_to_graph_node(void *graphNode, Recorde
 
 static void gfx_rt64_bind_named_geo_layout(const std::string &geoName, void *geoLayout);
 
-static void gfx_rt64_register_layout_graph_node(void *geoLayout, void *graphNode) {
+static void gfx_rt64_bind_layout_graph_node(void *geoLayout, void *graphNode) {
     if (graphNode != nullptr) {
         RT64.graphNodeMods.erase(graphNode);
         RT64.graphNodeGeoLayouts.erase(graphNode);
@@ -1659,7 +1666,7 @@ static void gfx_rt64_refresh_graph_node_mod(void *graphNode) {
     gfx_rt64_apply_geo_layout_mod_to_graph_node(graphNode, modIt->second, true);
 }
 
-static void *gfx_rt64_rapi_build_graph_node_mod(void *graphNode, f32 modelviewMatrix[4][4], u32 uid) {
+void *gfx_rt64_build_graph_node_mod(void *graphNode, f32 modelviewMatrix[4][4], u32 uid) {
     if (RT64.tickLightsTimestamp != gGlobalTimer) {
         RT64.tickLightsTimestamp = gGlobalTimer;
         RT64.tickLights.clear();
@@ -1701,22 +1708,22 @@ static void *gfx_rt64_rapi_build_graph_node_mod(void *graphNode, f32 modelviewMa
     return nullptr;
 }
 
-static void gfx_rt64_rapi_set_graph_node_mod(void *graph_node_mod) {
-    RT64.graphNodeMod = (RecordedMod *)(graph_node_mod);
+void gfx_rt64_set_graph_node_mod(void *graphNodeMod) {
+    RT64.graphNodeMod = (RecordedMod *)(graphNodeMod);
 }
 
-static void gfx_rt64_rapi_set_texture_gen(bool enabled, const float coeffU[4], const float coeffV[4]) {
+void gfx_rt64_set_texture_gen(bool enabled, const float coeffU[4], const float coeffV[4]) {
     RT64.textureGenEnabled = enabled;
     memcpy(RT64.textureGenU, coeffU, sizeof(Vec4f));
     memcpy(RT64.textureGenV, coeffV, sizeof(Vec4f));
 }
 
-static void gfx_rt64_rapi_register_layout_graph_node(void *geoLayout, void *graphNode) {
-    gfx_rt64_ensure_geo_layout_mods_loaded();
-    gfx_rt64_register_layout_graph_node(geoLayout, graphNode);
+void gfx_rt64_register_layout_graph_node(void *geoLayout, void *graphNode) {
+    gfx_rt64_load_mod_configs();
+    gfx_rt64_bind_layout_graph_node(geoLayout, graphNode);
 }
 
-static void gfx_rt64_rapi_inherit_graph_node_mod(void *originalGraphNode, void *replacementGraphNode) {
+void gfx_rt64_inherit_graph_node_mod(void *originalGraphNode, void *replacementGraphNode) {
     if ((originalGraphNode == nullptr) || (replacementGraphNode == nullptr) || (originalGraphNode == replacementGraphNode)) {
         return;
     }
@@ -1753,7 +1760,7 @@ static void gfx_rt64_bind_named_geo_layout(const std::string &geoName, void *geo
         RT64.pendingGeoLayoutMods.erase(pendingIt);
     }
 
-    gfx_rt64_invalidate_graph_node_mods();
+    gfx_rt64_invalidate_mod_configs();
 }
 
 static void *gfx_rt64_resolve_named_geo_layout(void *graphNodeRoot, void *geoLayout) {
@@ -1779,7 +1786,7 @@ static void *gfx_rt64_resolve_named_geo_layout(void *graphNodeRoot, void *geoLay
     return geoLayout;
 }
 
-static void gfx_rt64_rapi_set_graph_node_root(void *graphNodeRoot) {
+void gfx_rt64_set_graph_node_root(void *graphNodeRoot) {
     RT64.graphNodeGeoLayout = nullptr;
     if (graphNodeRoot == nullptr) {
         return;
@@ -1799,7 +1806,7 @@ static void gfx_rt64_rapi_set_graph_node_root(void *graphNodeRoot) {
     RT64.graphNodeGeoLayout = geoLayout;
 }
 
-static bool gfx_rt64_rapi_set_skybox(const Texture *const *tiles, float diffuseColor[3]) {
+bool gfx_rt64_set_skybox(const Texture *const *tiles, float diffuseColor[3]) {
     vec3f_copy(RT64.skyDiffuseMultiplier, diffuseColor);
 
     RT64.skyTextureKey = gfx_rt64_stitch_skybox_texture(tiles);
@@ -1807,7 +1814,7 @@ static bool gfx_rt64_rapi_set_skybox(const Texture *const *tiles, float diffuseC
     return (RT64.skyTextureKey != 0);
 }
 
-static void gfx_rt64_rapi_main_loop_iter(void (*run_one_game_iter)(void)) {
+void gfx_rt64_main_loop_iter(void (*runOneGameIter)(void)) {
     if (RT64.pauseMode) {
         gfx_wm_handle_events();
         gfx_wm_delay(1);
@@ -1818,7 +1825,7 @@ static void gfx_rt64_rapi_main_loop_iter(void (*run_one_game_iter)(void)) {
     vec3f_set(RT64.skyDiffuseMultiplier, 1.0f, 1.0f, 1.0f);
 
     LARGE_INTEGER gameStart = gfx_rt64_profile_marker();
-    run_one_game_iter();
+    runOneGameIter();
     LARGE_INTEGER gameEnd = gfx_rt64_profile_marker();
 
     if (RT64.renderInspectorActive) {
@@ -1883,27 +1890,6 @@ struct GfxRenderingAPI gfx_rt64_api = {
     gfx_rt64_rapi_get_name,
     gfx_rt64_rapi_is_legacy,
     gfx_rt64_rapi_shutdown,
-
-    gfx_rt64_rapi_set_fog,
-    gfx_rt64_rapi_set_camera_perspective,
-    gfx_rt64_rapi_set_camera_matrix,
-    gfx_rt64_rapi_draw_triangles_ortho,
-    gfx_rt64_rapi_draw_triangles_persp,
-    gfx_rt64_rapi_set_graph_node_mod,
-    gfx_rt64_rapi_set_texture_gen,
-    gfx_rt64_rapi_register_layout_graph_node,
-    gfx_rt64_rapi_inherit_graph_node_mod,
-    gfx_rt64_rapi_build_graph_node_mod,
-    gfx_rt64_rapi_set_material_display_list,
-    gfx_rt64_rapi_set_graph_node_root,
-    gfx_rt64_rapi_lua_config_save,
-    gfx_rt64_rapi_toggle_inspector,
-    gfx_rt64_rapi_inspector_active,
-    gfx_rt64_rapi_handle_window_message,
-    gfx_rt64_rapi_main_loop_iter,
-    gfx_rt64_rapi_get_capabilities,
-    gfx_rt64_rapi_shader_uses_full_vertex_layout,
-    gfx_rt64_rapi_set_skybox,
 };
 
 #endif // _WIN32

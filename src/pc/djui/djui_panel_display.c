@@ -10,9 +10,19 @@
 
 static struct DjuiInputbox* sFrameLimitInput = NULL;
 static struct DjuiSelectionbox* sInterpolationSelectionBox = NULL;
+static struct DjuiCheckbox *sVRRCheckbox = NULL;
 static struct DjuiText* sRestartText = NULL;
 static u32 sMsaaSelection = 0;
 static u32 sMsaaOriginal = OPTION_ORIGINAL_UNSET;
+
+static void djui_panel_display_update_vrr_visible(void) {
+    if (sVRRCheckbox == NULL) { return; }
+#if defined(_WIN32)
+    djui_base_set_visible(&sVRRCheckbox->base, configGraphicsBackend == GFX_WINDOW_BACKEND_RT64);
+#else
+    djui_base_set_visible(&sVRRCheckbox->base, false);
+#endif
+}
 
 static void djui_panel_display_apply(UNUSED struct DjuiBase* caller) {
     configWindow.settings_changed = true;
@@ -47,6 +57,7 @@ static void djui_panel_display_update_restart_text(UNUSED struct DjuiBase* calle
 
 static void djui_panel_display_graphics_backend_change(UNUSED struct DjuiBase* caller) {
     request_graphics_backend_change();
+    djui_panel_display_update_vrr_visible();
 }
 
 static void djui_panel_display_msaa_change(struct DjuiBase* caller) {
@@ -73,6 +84,8 @@ void djui_panel_display_create(struct DjuiBase* caller) {
         djui_checkbox_create(body, DLANG(DISPLAY, FORCE_4BY3), &configForce4By3, djui_panel_display_apply);
         djui_checkbox_create(body, DLANG(DISPLAY, SHOW_FPS), &configShowFPS, NULL);
         djui_checkbox_create(body, DLANG(DISPLAY, VSYNC), &configWindow.vsync, djui_panel_display_apply);
+        sVRRCheckbox = djui_checkbox_create(body, DLANG(DISPLAY, VRR), &configWindow.vrr, djui_panel_display_apply);
+        djui_panel_display_update_vrr_visible();
 
         if (GFX_WINDOW_BACKEND_MAX > 1) {
             char *gfxBackendChoices[GFX_WINDOW_BACKEND_MAX] = {

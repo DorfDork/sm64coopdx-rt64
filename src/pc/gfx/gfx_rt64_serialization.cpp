@@ -449,7 +449,7 @@ void gfx_gfx_rt64_set_geo_layout_mod(const std::string &geoName, const RT64_MATE
 
     sBaselineGeoLayoutMods[geoName] = gfx_rt64_snapshot_mod(recordedMod);
 
-    gfx_rt64_invalidate_graph_node_mods();
+    gfx_rt64_invalidate_mod_configs();
 }
 
 //
@@ -874,7 +874,7 @@ void gfx_rt64_lua_register_texture_mod(lua_State *L, const char *name, int table
 void gfx_rt64_lua_register_geo_layout_mod(lua_State *L, const char *name, int tableIndex) {
     static const char *const context = "gfx_rt64_set_geo_layout_mod";
 
-    gfx_rt64_ensure_geo_layout_mods_loaded();
+    gfx_rt64_load_mod_configs();
 
     RT64_MATERIAL materialMod;
     RT64_LIGHT lightMod;

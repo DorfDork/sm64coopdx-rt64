@@ -15,6 +15,7 @@
 #include "skybox.h"
 #include "pc/gfx/gfx_pc.h"
 #include "pc/gfx/gfx_rendering_api.h"
+#include "pc/gfx/gfx_rt64.h"
 
 /**
  * @file skybox.c
@@ -365,7 +366,7 @@ Gfx *create_skybox_facing_camera(s8 player, s8 background, f32 fov,
         colorIndex = 0;
     }
 
-    if (gfx_backend_has(GFX_BACKEND_SEPARATE_SKYBOX)) {
+    if (gfx_rt64_is_active()) {
         u8 *color = sSkyboxColors[colorIndex];
         float skyboxColor[3] = {
             (color[0] / 255.0f) * (gSkyboxColor[0] / 255.0f),

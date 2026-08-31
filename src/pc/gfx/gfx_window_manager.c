@@ -15,7 +15,7 @@
 #include "gfx_window_dxgi.h"
 #include "gfx_screen_config.h"
 #include "gfx_pc.h"
-#include "gfx_rendering_api.h"
+#include "gfx_rt64.h"
 
 #include "pc/pc_main.h"
 #include "pc/configfile.h"
@@ -115,10 +115,7 @@ static void gfx_wm_reset_dimension_and_pos(void) {
 #if defined(_WIN32)
 static void SDLCALL gfx_wm_windows_message_hook(void *userdata, void *hWnd, unsigned int message, Uint64 wParam, Sint64 lParam) {
     (void)(userdata);
-    struct GfxRenderingAPI *api = gfx_get_current_rendering_api();
-    if (api && api->handle_window_message) {
-        api->handle_window_message(hWnd, message, (uintptr_t)(wParam), (intptr_t)(lParam));
-    }
+    gfx_rt64_handle_window_message(hWnd, message, (uintptr_t)(wParam), (intptr_t)(lParam));
 }
 #endif
 
@@ -313,8 +310,7 @@ static void gfx_wm_update_inspector_cursor(void) {
     static SDL_bool sPrevRelativeMode = SDL_FALSE;
     static int sPrevCursorShown = SDL_ENABLE;
 
-    struct GfxRenderingAPI *api = gfx_get_current_rendering_api();
-    bool isInspectorActive = api && api->inspector_active && api->inspector_active();
+    bool isInspectorActive = gfx_rt64_inspector_active();
     if (isInspectorActive == sWasInspectorActive) {
         return;
     }

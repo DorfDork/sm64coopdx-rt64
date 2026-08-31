@@ -14,6 +14,7 @@
 #include "sm64.h"
 #include "pc/gfx/gfx_pc.h"
 #include "pc/gfx/gfx_rendering_api.h"
+#include "pc/gfx/gfx_rt64.h"
 #include "game/level_update.h"
 #include "pc/lua/smlua_hooks.h"
 #include "pc/utils/misc.h"
@@ -543,7 +544,7 @@ static void geo_process_master_list_sub(struct GraphNodeMasterList *node) {
         gSPSetGeometryMode(gDisplayListHead++, G_ZBUFFER);
     }
 
-    const bool shouldTagObjectID = gfx_backend_has(GFX_BACKEND_OBJECT_IDENTITY);
+    const bool isRt64Active = gfx_rt64_is_active();
 
     for (s32 i = 0; i < GFX_NUM_MASTER_LISTS; i++) {
         if ((currList = node->listHeads[i]) != NULL) {
@@ -561,7 +562,7 @@ static void geo_process_master_list_sub(struct GraphNodeMasterList *node) {
                 gSPMatrix(gDisplayListHead++, VIRTUAL_TO_PHYSICAL(currList->transformPrev),
                           G_MTX_MODELVIEW | G_MTX_LOAD | G_MTX_NOPUSH);
 
-                if (shouldTagObjectID) {
+                if (isRt64Active) {
                     gDPNoOpTag(gDisplayListHead++, (uintptr_t)(currList));
                 }
                 gSPDisplayList(gDisplayListHead++, currList->displayList);
@@ -575,7 +576,7 @@ static void geo_process_master_list_sub(struct GraphNodeMasterList *node) {
         gSPClearGeometryMode(gDisplayListHead++, G_ZBUFFER);
     }
 
-    if (shouldTagObjectID) {
+    if (isRt64Active) {
         gDPNoOpTag(gDisplayListHead++, (uintptr_t)(NULL));
     }
 }
@@ -1467,7 +1468,7 @@ static s32 obj_is_in_view(struct GraphNodeObject *node, Mat4 matrix) {
         return TRUE;
     }
 
-    if (gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY)) {
+    if (gfx_rt64_is_active()) {
         return TRUE;
     }
 

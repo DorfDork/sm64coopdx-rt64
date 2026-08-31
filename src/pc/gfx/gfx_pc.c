@@ -39,6 +39,7 @@
 #include "pc/gfx/gfx_cc.h"
 #include "pc/gfx/gfx_pc.h"
 #include "pc/gfx/gfx_rendering_api.h"
+#include "pc/gfx/gfx_rt64.h"
 #include "pc/gfx/gfx_screen_config.h"
 #include "pc/gfx/gfx_window_manager.h"
 
@@ -142,12 +143,6 @@ static bool sMatrixCacheValid = false;
 
 static struct GfxRenderingAPI *gfx_rapi = NULL;
 
-static u32 sBackendCaps = 0;
-
-bool gfx_backend_has(u32 caps) {
-    return (sBackendCaps & caps) != 0;
-}
-
 static struct {
     bool doubleSided;
     u32 currentUid;
@@ -241,18 +236,18 @@ static bool gfx_matrix_is_identity(Mat4 mat) {
 
 static void gfx_update_model_matrix(void) {
     mtxf_mul(rsp.M_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], gInverseCameraMatrix.m);
-    if (gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY)) {
+    if (gfx_rt64_is_active()) {
         mtxf_mul(rsp.M_matrix, rsp.M_matrix, sSceneState.extraModelMatrix);
     }
 }
 
 static void gfx_flush(void) {
     if (buf_vbo_len > 0) {
-        if ((gfx_rapi->draw_triangles_ortho != NULL) && (gfx_rapi->draw_triangles_persp != NULL)) {
+        if (gfx_rt64_is_active()) {
             if (sSceneState.isOrtho) {
-                gfx_rapi->draw_triangles_ortho(buf_vbo, buf_vbo_len, buf_vbo_num_tris, sSceneState.doubleSided, sSceneState.currentUid);
+                gfx_rt64_draw_triangles_ortho(buf_vbo, buf_vbo_len, buf_vbo_num_tris, sSceneState.doubleSided, sSceneState.currentUid);
             } else {
-                gfx_rapi->draw_triangles_persp(buf_vbo, buf_vbo_len, buf_vbo_num_tris, rsp.M_matrix, sSceneState.doubleSided, sSceneState.currentUid);
+                gfx_rt64_draw_triangles_persp(buf_vbo, buf_vbo_len, buf_vbo_num_tris, rsp.M_matrix, sSceneState.doubleSided, sSceneState.currentUid);
                 sSceneState.perspTrianglesDrawn = true;
             }
         } else {
@@ -764,12 +759,12 @@ static void OPTIMIZE_O3 gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
             mtxf_identity(sSceneState.extraModelMatrix);
             sSceneState.isOrtho = (matrix[3][3] != 0.0f);
         } else {
-            if (gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY) && !sSceneState.isOrtho &&
+            if (gfx_rt64_is_active() && !sSceneState.isOrtho &&
                 gfx_matrix_is_affine(matrix) && !gfx_matrix_is_identity(matrix)) {
                 if (sSceneState.cameraActive && !sSceneState.perspTrianglesDrawn) {
                     Mat4 modifiedCamera;
                     mtxf_mul(modifiedCamera, sSceneState.cameraMatrix, matrix);
-                    gfx_rapi->set_camera_matrix(modifiedCamera);
+                    gfx_rt64_set_camera_matrix(modifiedCamera);
                 } else {
                     mtxf_mul(sSceneState.extraModelMatrix, matrix, sSceneState.extraModelMatrix);
                 }
@@ -898,9 +893,9 @@ static OPTIMIZE_O3 void gfx_align_cached_vertices_to_matrix(size_t dest_index, s
 static void OPTIMIZE_O3 gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *vertices, bool worldGeometry) {
     if (!vertices) { return; }
 
-    const bool modelSpaceGeometry = gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY);
+    const bool isRt64Active = gfx_rt64_is_active();
 
-    if (modelSpaceGeometry) {
+    if (isRt64Active) {
         gfx_align_cached_vertices_to_matrix(dest_index, n_vertices);
     }
 
@@ -1020,7 +1015,7 @@ static void OPTIMIZE_O3 gfx_sp_vertex(size_t n_vertices, size_t dest_index, cons
             if (!gFullbright) {
                 for (int32_t i = 0; i < rsp.current_num_lights - 1; i++) {
                     float intensity = 0.6f;
-                    if (!modelSpaceGeometry) {
+                    if (!isRt64Active) {
                         intensity = 0;
                         intensity += nx * rsp.current_lights_coeffs[i][0];
                         intensity += ny * rsp.current_lights_coeffs[i][1];
@@ -1076,7 +1071,7 @@ static void OPTIMIZE_O3 gfx_sp_vertex(size_t n_vertices, size_t dest_index, cons
                 }
             }
 
-            if ((rsp.geometry_mode & G_TEXTURE_GEN) && !modelSpaceGeometry) {
+            if ((rsp.geometry_mode & G_TEXTURE_GEN) && !isRt64Active) {
                 float dotx = 0, doty = 0;
                 dotx += nx * rsp.current_lookat_coeffs[0][0];
                 dotx += ny * rsp.current_lookat_coeffs[0][1];
@@ -1220,15 +1215,14 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
     struct GfxVertex *v3 = &rsp.loaded_vertices[vtx3_idx];
     struct GfxVertex *v_arr[3] = { v1, v2, v3 };
 
-    const bool gpuVisibility = gfx_backend_has(GFX_BACKEND_GPU_VISIBILITY);
-    const bool modelSpaceGeometry = gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY);
+    const bool isRt64Active = gfx_rt64_is_active();
 
-    if (!gpuVisibility && (v1->clip_rej & v2->clip_rej & v3->clip_rej) && gCullingEnabled) {
+    if (!isRt64Active && (v1->clip_rej & v2->clip_rej & v3->clip_rej) && gCullingEnabled) {
         // The whole triangle lies outside the visible area
         return;
     }
 
-    if (gpuVisibility) {
+    if (isRt64Active) {
         bool doubleSided = ((rsp.geometry_mode & G_CULL_BOTH) == 0) || !gCullingEnabled;
         if (doubleSided != sSceneState.doubleSided) {
             gfx_flush();
@@ -1303,7 +1297,7 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
         sRenderingState.depth_z_sub = sDepthZSub;
     }
 
-    if (modelSpaceGeometry && (gfx_rapi->set_texture_gen != NULL)) {
+    if (isRt64Active) {
         const u32 textureGenBits = (G_LIGHTING | G_TEXTURE_GEN);
         const bool textureGenEnabled = ((rsp.geometry_mode & textureGenBits) == textureGenBits);
         float coeffU[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -1331,7 +1325,7 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
             sRenderingState.textureGenEnabled = textureGenEnabled;
             memcpy(sRenderingState.textureGenU, coeffU, sizeof(coeffU));
             memcpy(sRenderingState.textureGenV, coeffV, sizeof(coeffV));
-            gfx_rapi->set_texture_gen(textureGenEnabled, coeffU, coeffV);
+            gfx_rt64_set_texture_gen(textureGenEnabled, coeffU, coeffV);
         }
     }
 
@@ -1357,8 +1351,8 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
         sRenderingState.rdp_fog_color_g = rdp.fog_color.g;
         sRenderingState.rdp_fog_color_b = rdp.fog_color.b;
 
-        if (gfx_rapi->set_fog != NULL) {
-            gfx_rapi->set_fog(rdp.fog_color.r, rdp.fog_color.g, rdp.fog_color.b, (s16)(rsp.fog_mul * gFogIntensity), rsp.fog_offset);
+        if (gfx_rt64_is_active()) {
+            gfx_rt64_set_fog(rdp.fog_color.r, rdp.fog_color.g, rdp.fog_color.b, (s16)(rsp.fog_mul * gFogIntensity), rsp.fog_offset);
         }
     }
 
@@ -1427,16 +1421,16 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
         sRenderingState.alpha_blend = cm->use_alpha;
     }
 
-    if (gfx_rapi->set_material_display_list != NULL && sMaterialDisplayList != sRenderingState.materialDisplayList) {
+    if (gfx_rt64_is_active() && sMaterialDisplayList != sRenderingState.materialDisplayList) {
         gfx_flush();
-        gfx_rapi->set_material_display_list(sMaterialDisplayList);
+        gfx_rt64_set_material_display_list(sMaterialDisplayList);
         sRenderingState.materialDisplayList = sMaterialDisplayList;
     }
     uint8_t num_inputs;
     bool used_textures[2];
     gfx_rapi->shader_get_info(prg, &num_inputs, used_textures);
-    const bool fullVertexLayout = (gfx_rapi->shader_uses_full_vertex_layout != NULL) &&
-                                    gfx_rapi->shader_uses_full_vertex_layout(prg);
+    const bool fullVertexLayout = gfx_rt64_is_active() &&
+                                    gfx_rt64_shader_uses_full_vertex_layout(prg);
 
     for (int32_t i = 0; i < 2; i++) {
         if (used_textures[i]) {
@@ -1459,7 +1453,7 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
         }
     }
 
-    if (modelSpaceGeometry && !(fullVertexLayout && sSceneState.isOrtho)) {
+    if (isRt64Active && !(fullVertexLayout && sSceneState.isOrtho)) {
         const bool isOrtho = sSceneState.isOrtho;
         const bool useTexture = used_textures[0] || used_textures[1];
         struct TextureTileTransform tex = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
@@ -2083,7 +2077,7 @@ static void gfx_draw_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int32_t lr
     gfx_sp_tri1(MAX_VERTICES + 0, MAX_VERTICES + 1, MAX_VERTICES + 3);
     gfx_sp_tri1(MAX_VERTICES + 1, MAX_VERTICES + 2, MAX_VERTICES + 3);
 
-    if (gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY)) {
+    if (gfx_rt64_is_active()) {
         gfx_flush();
     }
 
@@ -2327,7 +2321,7 @@ static void OPTIMIZE_O3 gfx_run_dl(Gfx* cmd) {
                 }
                 break;
             case (uint8_t)G_ENDDL:
-                if (gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY | GFX_BACKEND_OBJECT_IDENTITY)) {
+                if (gfx_rt64_is_active()) {
                     gfx_flush();
                 }
                 sCurrentDisplayList = callerDisplayList;
@@ -2374,7 +2368,7 @@ static void OPTIMIZE_O3 gfx_run_dl(Gfx* cmd) {
 #endif
                 break;
             case (uint8_t)G_NOOP:
-                if (gfx_backend_has(GFX_BACKEND_OBJECT_IDENTITY)) {
+                if (gfx_rt64_is_active()) {
                     struct DisplayListNode *listNode = (struct DisplayListNode *)cmd->words.w1;
                     u32 uid = (listNode != NULL) ? listNode->uid : 0;
                     void *graphNodeMod = (listNode != NULL) ? listNode->graphNodeMod : NULL;
@@ -2386,12 +2380,8 @@ static void OPTIMIZE_O3 gfx_run_dl(Gfx* cmd) {
                         sSceneState.currentUid = uid;
                         sSceneState.currentGraphNodeMod = graphNodeMod;
                         sSceneState.currentGraphNodeRoot = graphNodeRoot;
-                        if (gfx_rapi->set_graph_node_mod != NULL) {
-                            gfx_rapi->set_graph_node_mod(graphNodeMod);
-                        }
-                        if (gfx_rapi->set_graph_node_root != NULL) {
-                            gfx_rapi->set_graph_node_root(graphNodeRoot);
-                        }
+                        gfx_rt64_set_graph_node_mod(graphNodeMod);
+                        gfx_rt64_set_graph_node_root(graphNodeRoot);
                     }
                 }
                 break;
@@ -2565,9 +2555,9 @@ void gfx_init_rendering_api(struct GfxRenderingAPI *rapi) {
     if (rapi == NULL) { return; }
 
     gfx_rapi = rapi;
-    sBackendCaps = (rapi->get_capabilities != NULL) ? rapi->get_capabilities() : 0;
-    sMaxBufferedTris = gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY) ? MAX_BUFFERED_MODEL_SPACE : MAX_BUFFERED;
     gfx_rapi->init();
+
+    sMaxBufferedTris = gfx_rt64_is_active() ? MAX_BUFFERED_MODEL_SPACE : MAX_BUFFERED;
 
     gfx_init_shaders();
     gfx_cc_precomp();
@@ -2595,7 +2585,6 @@ void gfx_shutdown_rendering_api(void) {
     if (gfx_rapi->shutdown != NULL) { gfx_rapi->shutdown(); }
 
     gfx_rapi = NULL;
-    sBackendCaps = 0;
     sMaxBufferedTris = MAX_BUFFERED;
 }
 
@@ -2615,14 +2604,14 @@ bool gfx_shader_stage_is(enum ShaderStage stage) {
 }
 
 void gfx_register_layout_graph_node(void *geoLayout, void *graphNode) {
-    if ((gfx_rapi != NULL) && (gfx_rapi->register_layout_graph_node != NULL)) {
-        gfx_rapi->register_layout_graph_node(geoLayout, graphNode);
+    if (gfx_rt64_is_active()) {
+        gfx_rt64_register_layout_graph_node(geoLayout, graphNode);
     }
 }
 
 void *gfx_build_graph_node_mod(void *graphNode, float modelviewMatrix[4][4], u32 uid) {
-    if ((gfx_rapi != NULL) && (gfx_rapi->build_graph_node_mod != NULL)) {
-        return gfx_rapi->build_graph_node_mod(graphNode, modelviewMatrix, uid);
+    if (gfx_rt64_is_active()) {
+        return gfx_rt64_build_graph_node_mod(graphNode, modelviewMatrix, uid);
     }
     return NULL;
 }
@@ -2641,13 +2630,12 @@ void gfx_start_frame(void) {
         rdp.loaded_texture[1].size_bytes = 0;
     }
 
-    if (!sSceneState.cameraActive && gfx_backend_has(GFX_BACKEND_MODEL_SPACE_GEOMETRY) &&
-        gfx_rapi != NULL && gfx_rapi->set_camera_matrix != NULL) {
+    if (!sSceneState.cameraActive && gfx_rt64_is_active()) {
         Mat4 view;
         mtxf_identity(view);
         mtxf_identity(gInverseCameraMatrix.m);
         mtxf_copy(sSceneState.cameraMatrix, view);
-        gfx_rapi->set_camera_matrix(view);
+        gfx_rt64_set_camera_matrix(view);
     }
     gfx_wm_handle_events();
     gfx_wm_get_dimensions(&gfx_current_dimensions.width, &gfx_current_dimensions.height);
@@ -2690,7 +2678,7 @@ struct FramePass *gfx_get_current_frame_pass(void) {
 }
 
 static void gfx_process_lua_passes(Gfx *commands, bool *isLuaPassesActive) {
-    if (gfx_backend_has(GFX_BACKEND_PRESENTS_DIRECTLY)) {
+    if (gfx_rt64_is_active()) {
         for (int i = 0; i < MAX_CUSTOM_FRAME_PASSES; i++) {
             if (gFramePasses[i].active) {
                 gfx_rapi->create_framebuffer(&gFramePasses[i]);
@@ -2786,7 +2774,7 @@ void gfx_run(Gfx *commands) {
     }
     sDroppedFrame = false;
 
-    const bool presentsDirectly = gfx_backend_has(GFX_BACKEND_PRESENTS_DIRECTLY);
+    const bool isRt64Active = gfx_rt64_is_active();
 
     bool isLuaPassesActive = false;
     gfx_process_lua_passes(commands, &isLuaPassesActive);
@@ -2804,7 +2792,7 @@ void gfx_run(Gfx *commands) {
         }
 
         // create/update fbo
-        if (!presentsDirectly) {
+        if (!isRt64Active) {
             u32 targetWidth, targetHeight;
             gfx_get_dimensions(&targetWidth, &targetHeight);
             if (gDefaultGeoFramePass.fbo == 0 || gDefaultGeoFramePass.width != targetWidth || gDefaultGeoFramePass.height != targetHeight) {
@@ -2828,7 +2816,7 @@ void gfx_run(Gfx *commands) {
         smlua_call_event_hooks(HOOK_ON_DRAW_GEOMETRY);
     }
 
-    if (presentsDirectly) {
+    if (isRt64Active) {
         return;
     }
 
@@ -2885,8 +2873,8 @@ void gfx_end_frame(void) {
 }
 
 void gfx_run_one_game_iter(void (*runOneGameIter)(void)) {
-    if (gfx_rapi != NULL && gfx_rapi->main_loop_iter != NULL) {
-        gfx_rapi->main_loop_iter(runOneGameIter);
+    if (gfx_rt64_is_active()) {
+        gfx_rt64_main_loop_iter(runOneGameIter);
     } else {
         gfx_wm_main_loop(runOneGameIter);
     }
@@ -2997,25 +2985,25 @@ void gfx_remove_all_color_combiners(void) {
 }
 
 void gfx_set_camera_perspective(float fovDegrees, float nearDist, float farDist, bool canInterpolate) {
-    if (gfx_rapi != NULL && gfx_rapi->set_camera_perspective != NULL) {
-        gfx_rapi->set_camera_perspective(fovDegrees, nearDist, farDist, canInterpolate);
+    if (gfx_rt64_is_active()) {
+        gfx_rt64_set_camera_perspective(fovDegrees, nearDist, farDist, canInterpolate);
     }
 }
 
 void gfx_set_camera_matrix(float mat[4][4]) {
-    if (gfx_rapi != NULL && gfx_rapi->set_camera_matrix != NULL) {
+    if (gfx_rt64_is_active()) {
         mtxf_copy(sSceneState.cameraMatrix, mat);
         sSceneState.cameraReported = true;
-        gfx_rapi->set_camera_matrix(mat);
+        gfx_rt64_set_camera_matrix(mat);
     }
 }
 
 bool gfx_set_skybox(const Texture *const *tiles, float diffuseColor[3]) {
-    if ((gfx_rapi == NULL) || (gfx_rapi->set_skybox == NULL)) {
+    if (!gfx_rt64_is_active()) {
         return false;
     }
 
-    return gfx_rapi->set_skybox(tiles, diffuseColor);
+    return gfx_rt64_set_skybox(tiles, diffuseColor);
 }
 
   /////////////////////////

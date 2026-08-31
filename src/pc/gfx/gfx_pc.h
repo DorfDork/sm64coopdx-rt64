@@ -113,7 +113,6 @@ void gfx_init_rendering_api(struct GfxRenderingAPI *rapi);
 void gfx_shutdown_rendering_api(void);
 struct GfxRenderingAPI *gfx_get_current_rendering_api(void);
 bool gfx_shader_stage_is(enum ShaderStage stage);
-bool gfx_backend_has(u32 caps);
 void gfx_register_layout_graph_node(void *geoLayout, void *graphNode);
 void *gfx_build_graph_node_mod(void *graphNode, float modelviewMatrix[4][4], u32 uid);
 void gfx_start_frame(void);

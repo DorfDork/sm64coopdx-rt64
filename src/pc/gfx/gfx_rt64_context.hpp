@@ -238,6 +238,8 @@ struct RT64Context {
     u64 materialNameHashCached = 0;
     std::unordered_map<const void *, u64> materialModNameHashes;
     bool loadedGeoLayoutMods = false;
+    bool loadedTexMods = false;
+    bool loadedLevelLights = false;
 
     // Runtime data.
     std::unordered_map<u32, RecordedTexture> textures;
@@ -392,8 +394,8 @@ static inline AreaLighting &gfx_rt64_get_or_add_area_lighting(unsigned int level
     return RT64.levelAreaLighting.emplace(key, RT64.defaultAreaLighting).first->second;
 }
 
-void gfx_rt64_ensure_geo_layout_mods_loaded(void);
-void gfx_rt64_invalidate_graph_node_mods(void);
+void gfx_rt64_load_mod_configs(void);
+void gfx_rt64_invalidate_mod_configs(void);
 
 struct ColorCombiner;
 struct FramePass;
@@ -420,4 +422,3 @@ void gfx_rt64_sync_inspector_map_names(int panel, RecordedMod *mod);
 int gfx_rt64_get_level_index(void);
 int gfx_rt64_get_area_index(void);
 bool gfx_rt64_use_vsync(void);
-bool gfx_gfx_rt64_is_active(void);

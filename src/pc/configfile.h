@@ -21,6 +21,7 @@
 typedef struct {
     unsigned int x, y, w, h;
     bool vsync;
+    bool vrr;
     bool reset;
     bool fullscreen;
     bool exiting_fullscreen;

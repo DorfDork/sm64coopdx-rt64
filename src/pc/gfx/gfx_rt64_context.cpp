@@ -898,10 +898,6 @@ void gfx_rt64_sync_inspector_map_names(int panel, RecordedMod *mod) {
         if (normalMapName[0] != '\0') { gfx_rt64_register_map_texture(normalMapName, nullptr); }
         if (specularMapName[0] != '\0') { gfx_rt64_register_map_texture(specularMapName, nullptr); }
 
-        if (panel == RT64_INSPECTOR_PANEL_GEO_LAYOUT) {
-            gfx_rt64_invalidate_graph_node_mods();
-        }
-
         return;
     }
 

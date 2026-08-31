@@ -72,6 +72,7 @@ ConfigWindow configWindow = {
     .w = DESIRED_SCREEN_WIDTH,
     .h = DESIRED_SCREEN_HEIGHT,
     .vsync = 1,
+    .vrr = false,
     .reset = false,
     .fullscreen = false,
     .exiting_fullscreen = false,
@@ -265,6 +266,7 @@ static const struct ConfigOption options[] = {
     {.name = "window_w",                       .type = CONFIG_TYPE_UINT, .uintValue = &configWindow.w},
     {.name = "window_h",                       .type = CONFIG_TYPE_UINT, .uintValue = &configWindow.h},
     {.name = "vsync",                          .type = CONFIG_TYPE_BOOL, .boolValue = &configWindow.vsync},
+    {.name = "vrr",                            .type = CONFIG_TYPE_BOOL, .boolValue = &configWindow.vrr},
     {.name = "msaa",                           .type = CONFIG_TYPE_UINT, .uintValue = &configWindow.msaa},
     // display settings
     {.name = "graphics_backend",               .type = CONFIG_TYPE_UINT, .uintValue = &configGraphicsBackend},
