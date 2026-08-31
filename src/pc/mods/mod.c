@@ -153,7 +153,8 @@ static void mod_activate_bhv(struct Mod *mod, struct ModFile *file) {
 static void mod_activate_gd(struct ModFile* file) {
     // copy gd name
     char gdName[64] = { 0 };
-    if (snprintf(gdName, 63, "%s", path_basename(file->relativePath)) < 0) {
+    s32 nameLength = snprintf(gdName, sizeof(gdName), "%s", path_basename(file->relativePath));
+    if (nameLength < 0 || nameLength >= (s32) sizeof(gdName)) {
         LOG_ERROR("Truncated gd name");
         return;
     }

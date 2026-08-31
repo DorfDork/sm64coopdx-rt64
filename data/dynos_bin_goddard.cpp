@@ -72,6 +72,12 @@ static void DynOS_Goddard_LoadHead() {
     }
 
     u8 *_Data = (u8 *) malloc(_Size);
+    if (_Data == NULL) {
+        BinFile::Close(_File);
+        Print("[DynOS] Goddard: failed to allocate %d bytes for %s", _Size, sHeadPath.c_str());
+        return;
+    }
+
     _File->Read<u8>(_Data, _Size);
     BinFile::Close(_File);
 

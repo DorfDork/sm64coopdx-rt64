@@ -442,6 +442,9 @@ failed:
 static void gd_apply_gdb2_skin_weights(void) {
     if (!sGoddardOverride.has_skin_weights) return;
     
+    u32 skinVtxCount = mario_Face_VtxInfo.count;
+    u32 skippedWeights = 0;
+
     for (u32 i = 0; i < sGoddardOverride.joint_skin_count; i++) {
         u32 joint_id = sGoddardOverride.joint_skins[i].joint_id;
         
@@ -476,11 +479,18 @@ static void gd_apply_gdb2_skin_weights(void) {
         for (u32 w = 0; w < sGoddardOverride.joint_skins[i].weight_count; w++) {
             u16 vtx_idx = sGoddardOverride.joint_skins[i].weights[w].vtx_idx;
             f32 weight = sGoddardOverride.joint_skins[i].weights[w].weight;
+            if (vtx_idx >= skinVtxCount) {
+                skippedWeights++;
+                continue;
+            }
             set_skin_weight(joint, vtx_idx, NULL, weight / 100.0f);
         }
     }
-    
+
     printf("[DynOS] Applied GDB2 skin weights to %d joints\n", sGoddardOverride.joint_skin_count);
+    if (skippedWeights > 0) {
+        printf("[DynOS] Goddard: skipped %d skin weights with out-of-range vertex IDs (%d vertices)\n", skippedWeights, skinVtxCount);
+    }
 }
 
 // Not sure what this data is, but it looks like stub animation data
