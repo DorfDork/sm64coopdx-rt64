@@ -9644,6 +9644,12 @@ function count_objects_with_behavior(behavior)
 end
 
 --- @param behavior Pointer_BehaviorScript
+--- Deletes all objects with the specified behavior
+function delete_all_objects_with_behavior(behavior)
+    -- ...
+end
+
+--- @param behavior Pointer_BehaviorScript
 --- @return Object
 --- Finds any object with the specified behavior
 function find_object_with_behavior(behavior)
@@ -10949,6 +10955,13 @@ end
 --- @return number
 --- Gets the fade volume of `player`
 function sequence_player_get_fade_volume(player)
+    -- ...
+end
+
+--- @param player integer
+--- @param volume number
+--- Sets the fade volume of `player`
+function sequence_player_set_fade_volume(player, volume)
     -- ...
 end
 

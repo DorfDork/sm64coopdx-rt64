@@ -24,6 +24,8 @@
 #include "pc/lua/smlua.h"
 #include "pc/debuglog.h"
 
+#define MAX_UNIFORM_CODE 65536
+
 struct ShaderInput *gShaderInputs = NULL;
 struct ShaderInput *gPostProcessShaderInputs = NULL;
 struct ShaderBinding *gShaderBindings = NULL;
@@ -57,17 +59,39 @@ static int sShaderUniformBlockCount = 0;
 static bool sShaderInsideCustomUniformBlock = false;
 static bool sShaderHasVersion = false;
 
-static char sShaderUniformCode[MAX_SHADER_CODE] = { 0 };
+static char sShaderUniformCode[MAX_UNIFORM_CODE] = { 0 };
 
 static const char *defaultUniformBlockName = "DefaultUniformBufferObject";
 
-static void append_str(char *buf, size_t *len, const char *str) {
-    while (*str != '\0') buf[(*len)++] = *str++;
+static void append_str(char *buf, size_t len, const char *str) {
+    if (!buf) { return; }
+    size_t currentLength = strlen(buf);
+    if (len > currentLength + 1) {
+        strncat(buf, str, len - currentLength - 1);
+    }
 }
 
-static void append_line(char *buf, size_t *len, const char *str) {
-    while (*str != '\0') buf[(*len)++] = *str++;
-    buf[(*len)++] = '\n';
+static void append_and_realloc_str(char **buf, size_t *len, const char *str) {
+    size_t requiredLength = strlen(str) + strlen(*buf) + 1; // get required length
+    if (requiredLength >= *len) { // if we aren't at capacity, increase capacity
+        // grab new length
+        size_t newLength = (*len == 0 ? requiredLength : *len * 2);
+        if (newLength < requiredLength) {
+            newLength = requiredLength; // make sure we hit the required length always
+        }
+
+        char *reallocatedBuffer = realloc(*buf, newLength); // reallocate to temp buffer
+        if (reallocatedBuffer) {
+            *len = newLength; // set length
+            *buf = reallocatedBuffer; // set buffer on success to reallocated buffer
+        }
+    }
+    append_str(*buf, *len, str);
+}
+
+static void append_line(char *buf, size_t len, const char *str) {
+    append_str(buf, len, str);
+    append_str(buf, len, "\n");
 }
 
 static const char *shader_item_to_str(uint32_t item, bool with_alpha, bool only_alpha, bool hint_single_element) {
@@ -152,7 +176,7 @@ static const char *shader_item_to_str(uint32_t item, bool with_alpha, bool only_
     return "unknown";
 }
 
-static void append_formula(char *buf, size_t *len, uint8_t* cmd, bool do_single, bool do_multiply, bool do_mix, bool with_alpha, bool only_alpha) {
+static void append_formula(char *buf, size_t len, uint8_t* cmd, bool do_single, bool do_multiply, bool do_mix, bool with_alpha, bool only_alpha) {
     if (do_single) {
         append_str(buf, len, shader_item_to_str(cmd[only_alpha * 4 + 3], with_alpha, only_alpha, false));
     } else if (do_multiply) {
@@ -183,106 +207,116 @@ char *gfx_get_default_vertex_shader_from_cc(struct ColorCombiner *cc) {
     struct CCFeatures ccf = { 0 };
     gfx_cc_get_features(cc, &ccf);
 
-    bool opt_fog = cc->cm.use_fog;
-    bool opt_tex_persp = cc->cm.tex_persp;
+    bool optFog = cc->cm.use_fog;
+    bool optTexPersp = cc->cm.tex_persp;
 
-    static char vs_buf[8192] = { 0 };
-    size_t vs_len = 0;
+    static char sVsBuf[8192] = { 0 };
+    sVsBuf[0] = '\0';
+    size_t vsLen = sizeof(sVsBuf);
 
-    append_line(vs_buf, &vs_len, "in vec4 aVtxPos;");
-    append_line(vs_buf, &vs_len, "in vec4 aLocalPos;");
+    append_line(sVsBuf, vsLen, "in vec4 aVtxPos;");
+    append_line(sVsBuf, vsLen, "in vec4 aLocalPos;");
     for (int t = 0; t < 2; t++) {
-        vs_len += sprintf(vs_buf + vs_len, "in vec2 aTexCoord%d;\n", t);
-        if (!opt_tex_persp) { append_str(vs_buf, &vs_len, "noperspective "); }
-        vs_len += sprintf(vs_buf + vs_len, "out vec2 vTexCoord%d;\n", t);
+        char texCoordBuf[128] = { 0 };
+        snprintf(texCoordBuf, sizeof(texCoordBuf), "in vec2 aTexCoord%d;\n%sout vec2 vTexCoord%d;\n", t, optTexPersp ? "" : "noperspective ", t);
+        append_str(sVsBuf, vsLen, texCoordBuf);
     }
-    append_line(vs_buf, &vs_len, "in vec2 aLightMap;");
-    append_line(vs_buf, &vs_len, "out vec2 vLightMap;");
+    append_line(sVsBuf, vsLen, "in vec2 aLightMap;");
+    append_line(sVsBuf, vsLen, "out vec2 vLightMap;");
     for (int i = 0; i < CC_MAX_INPUTS; i++) {
-        vs_len += sprintf(vs_buf + vs_len, "in vec4 aInput%d;\n", i + 1);
-        vs_len += sprintf(vs_buf + vs_len, "out vec4 vInput%d;\n", i + 1);
+        char inputBuf[128] = { 0 };
+        snprintf(inputBuf, sizeof(inputBuf), "in vec4 aInput%d;\nout vec4 vInput%d;\n", i + 1, i + 1);
+        append_str(sVsBuf, vsLen, inputBuf);
     }
-    append_line(vs_buf, &vs_len, "in vec3 aNormal;");
-    append_line(vs_buf, &vs_len, "in vec3 aBarycentric;");
-    if (opt_fog) {
-        append_line(vs_buf, &vs_len, "out float vFogZ;");
-        append_line(vs_buf, &vs_len, "uniform float uFogMul;");
-        append_line(vs_buf, &vs_len, "uniform float uFogIntensity;");
-        append_line(vs_buf, &vs_len, "uniform float uFogOffset;");
-        append_line(vs_buf, &vs_len, "uniform float uDepthZSub;");
-        append_line(vs_buf, &vs_len, "uniform float uDepthZMult;");
-        append_line(vs_buf, &vs_len, "uniform float uDepthZAdd;");
+    append_line(sVsBuf, vsLen, "in vec3 aNormal;");
+    append_line(sVsBuf, vsLen, "in vec3 aBarycentric;");
+    if (optFog) {
+        append_line(sVsBuf, vsLen, "out float vFogZ;");
+        append_line(sVsBuf, vsLen, "uniform float uFogMul;");
+        append_line(sVsBuf, vsLen, "uniform float uFogIntensity;");
+        append_line(sVsBuf, vsLen, "uniform float uFogOffset;");
+        append_line(sVsBuf, vsLen, "uniform float uDepthZSub;");
+        append_line(sVsBuf, vsLen, "uniform float uDepthZMult;");
+        append_line(sVsBuf, vsLen, "uniform float uDepthZAdd;");
     }
-    append_line(vs_buf, &vs_len, "void main() {");
+    append_line(sVsBuf, vsLen, "void main() {");
     for (int t = 0; t < 2; t++) {
-        vs_len += sprintf(vs_buf + vs_len, "vTexCoord%d = aTexCoord%d;\n", t, t);
+        char texCoordBuf[128] = { 0 };
+        snprintf(texCoordBuf, sizeof(texCoordBuf), "vTexCoord%d = aTexCoord%d;\n", t, t);
+        append_str(sVsBuf, vsLen, texCoordBuf);
     }
 
-    append_line(vs_buf, &vs_len, "vLightMap = aLightMap;");
+    append_line(sVsBuf, vsLen, "vLightMap = aLightMap;");
     for (int i = 0; i < CC_MAX_INPUTS; i++) {
-        vs_len += sprintf(vs_buf + vs_len, "vInput%d = aInput%d;\n", i + 1, i + 1);
+        char inputBuf[128] = { 0 };
+        snprintf(inputBuf, sizeof(inputBuf), "vInput%d = aInput%d;\n", i + 1, i + 1);
+        append_str(sVsBuf, vsLen, inputBuf);
     }
-    append_line(vs_buf, &vs_len, "gl_Position = aVtxPos;");
+    append_line(sVsBuf, vsLen, "gl_Position = aVtxPos;");
 
-    if (opt_fog) {
-        append_line(vs_buf, &vs_len, "float w = max(abs(aVtxPos.w), 0.001);");
-        append_line(vs_buf, &vs_len, "float winv = 1.0 / w;");
-        append_line(vs_buf, &vs_len, "float adjClipZ = aVtxPos.z;");
-        append_line(vs_buf, &vs_len, "adjClipZ -= uDepthZSub;");
-        append_line(vs_buf, &vs_len, "adjClipZ *= uDepthZMult;");
-        append_line(vs_buf, &vs_len, "adjClipZ += uDepthZAdd;");
-        append_line(vs_buf, &vs_len, "float fog_z = (adjClipZ * winv * uFogMul * uFogIntensity) + uFogOffset;");
-        append_line(vs_buf, &vs_len, "vFogZ = clamp(fog_z / 255.0, 0.0, 1.0);");
+    if (optFog) {
+        append_line(sVsBuf, vsLen, "float w = max(abs(aVtxPos.w), 0.001);");
+        append_line(sVsBuf, vsLen, "float winv = 1.0 / w;");
+        append_line(sVsBuf, vsLen, "float adjClipZ = aVtxPos.z;");
+        append_line(sVsBuf, vsLen, "adjClipZ -= uDepthZSub;");
+        append_line(sVsBuf, vsLen, "adjClipZ *= uDepthZMult;");
+        append_line(sVsBuf, vsLen, "adjClipZ += uDepthZAdd;");
+        append_line(sVsBuf, vsLen, "float fog_z = (adjClipZ * winv * uFogMul * uFogIntensity) + uFogOffset;");
+        append_line(sVsBuf, vsLen, "vFogZ = clamp(fog_z / 255.0, 0.0, 1.0);");
     }
 
-    append_line(vs_buf, &vs_len, "}");
+    append_line(sVsBuf, vsLen, "}");
 
-    vs_buf[vs_len] = '\0';
+    sVsBuf[vsLen-1] = '\0';
 
-    return vs_buf;
+    return sVsBuf;
 }
 
 char *gfx_get_default_fragment_shader_from_cc(struct ColorCombiner *cc) {
     struct CCFeatures ccf = { 0 };
     gfx_cc_get_features(cc, &ccf);
 
-    bool opt_alpha = cc->cm.use_alpha;
-    bool opt_fog = cc->cm.use_fog;
-    bool opt_texture_edge = cc->cm.texture_edge;
-    bool opt_2cycle = cc->cm.use_2cycle;
-    bool opt_light_map = cc->cm.light_map;
-    bool opt_tex_persp = cc->cm.tex_persp;
-    bool world_geometry = cc->cm.world_geometry;
-    bool opt_dither = cc->cm.use_dither;
+    bool optAlpha = cc->cm.use_alpha;
+    bool optFog = cc->cm.use_fog;
+    bool optTextureEdge = cc->cm.texture_edge;
+    bool opt2Cycle = cc->cm.use_2cycle;
+    bool optLightMap = cc->cm.light_map;
+    bool optTexPersp = cc->cm.tex_persp;
+    bool optWorldGeometry = cc->cm.world_geometry;
+    bool optDither = cc->cm.use_dither;
 
-    static char fs_buf[8192] = { 0 };
-    size_t fs_len = 0;
+    static char sFsBuf[8192] = { 0 };
+    sFsBuf[0] = '\0';
+    size_t fsLen = sizeof(sFsBuf);
 
-    append_line(fs_buf, &fs_len, "out vec4 fragColor;");
+    append_line(sFsBuf, fsLen, "out vec4 fragColor;");
     for (int t = 0; t < 2; t++) {
-        if (!opt_tex_persp) { append_str(fs_buf, &fs_len, "noperspective "); }
-        fs_len += sprintf(fs_buf + fs_len, "in vec2 vTexCoord%d;\n", t);
+        char texCoordBuf[128] = { 0 };
+        snprintf(texCoordBuf, sizeof(texCoordBuf), "%sin vec2 vTexCoord%d;\n", optTexPersp ? "" : "noperspective ", t);
+        append_str(sFsBuf, fsLen, texCoordBuf);
     }
-    append_line(fs_buf, &fs_len, "in vec2 vLightMap;");
+    append_line(sFsBuf, fsLen, "in vec2 vLightMap;");
     for (int i = 0; i < CC_MAX_INPUTS; i++) {
-        fs_len += sprintf(fs_buf + fs_len, "in vec4 vInput%d;\n", i + 1);
+        char inputBuf[128] = { 0 };
+        snprintf(inputBuf, sizeof(inputBuf), "in vec4 vInput%d;\n", i + 1);
+        append_str(sFsBuf, fsLen, inputBuf);
     }
 
-    if (opt_fog) {
-        append_line(fs_buf, &fs_len, "in float vFogZ;");
+    if (optFog) {
+        append_line(sFsBuf, fsLen, "in float vFogZ;");
     }
-    append_line(fs_buf, &fs_len, "uniform float uFogMul;");
-    append_line(fs_buf, &fs_len, "uniform float uFogIntensity;");
-    append_line(fs_buf, &fs_len, "uniform float uFogOffset;");
-    append_line(fs_buf, &fs_len, "uniform float uDepthZSub;");
-    append_line(fs_buf, &fs_len, "uniform float uDepthZMult;");
-    append_line(fs_buf, &fs_len, "uniform float uDepthZAdd;");
+    append_line(sFsBuf, fsLen, "uniform float uFogMul;");
+    append_line(sFsBuf, fsLen, "uniform float uFogIntensity;");
+    append_line(sFsBuf, fsLen, "uniform float uFogOffset;");
+    append_line(sFsBuf, fsLen, "uniform float uDepthZSub;");
+    append_line(sFsBuf, fsLen, "uniform float uDepthZMult;");
+    append_line(sFsBuf, fsLen, "uniform float uDepthZAdd;");
 
     for (int t = 0; t < 2; t++) {
         if (ccf.used_textures[t]) {
-            fs_len += sprintf(fs_buf + fs_len, "uniform sampler2D uTex%d;\n", t);
-            fs_len += sprintf(fs_buf + fs_len, "uniform vec2 uTex%dSize;\n", t);
-            fs_len += sprintf(fs_buf + fs_len, "uniform bool uTex%dFilter;\n", t);
+            char texUniforms[128] = { 0 };
+            snprintf(texUniforms, sizeof(texUniforms), "uniform sampler2D uTex%d;\nuniform vec2 uTex%dSize;\nuniform bool uTex%dFilter;\n", t, t, t);
+            append_str(sFsBuf, fsLen, texUniforms);
         }
     }
 
@@ -290,220 +324,222 @@ char *gfx_get_default_fragment_shader_from_cc(struct ColorCombiner *cc) {
     // Original author: ArthurCarvalho
     // Modified GLSL implementation by twinaphex, mupen64plus-libretro project.
     if (ccf.used_textures[0] || ccf.used_textures[1]) {
-        append_line(fs_buf, &fs_len, "#define TEX_OFFSET(off) texture(tex, texCoord - (off)/texSize)");
-        append_line(fs_buf, &fs_len, "vec4 filter3point(in sampler2D tex, in vec2 texCoord, in vec2 texSize) {");
-        append_line(fs_buf, &fs_len, "    vec2 offset = fract(texCoord*texSize - vec2(0.5));");
-        append_line(fs_buf, &fs_len, "    offset -= step(1.0, offset.x + offset.y);");
-        append_line(fs_buf, &fs_len, "    vec4 c0 = TEX_OFFSET(offset);");
-        append_line(fs_buf, &fs_len, "    vec4 c1 = TEX_OFFSET(vec2(offset.x - sign(offset.x), offset.y));");
-        append_line(fs_buf, &fs_len, "    vec4 c2 = TEX_OFFSET(vec2(offset.x, offset.y - sign(offset.y)));");
-        append_line(fs_buf, &fs_len, "    return c0 + abs(offset.x)*(c1-c0) + abs(offset.y)*(c2-c0);");
-        append_line(fs_buf, &fs_len, "}");
-        append_line(fs_buf, &fs_len, "vec4 sampleTex(in sampler2D tex, in vec2 uv, in vec2 texSize, in bool dofilter, in int filterType) {");
-        append_line(fs_buf, &fs_len, "    if (dofilter && filterType == 2)");
-        append_line(fs_buf, &fs_len, "        return filter3point(tex, uv, texSize);");
-        append_line(fs_buf, &fs_len, "    else");
-        append_line(fs_buf, &fs_len, "        return texture(tex, uv);");
-        append_line(fs_buf, &fs_len, "}");
+        append_line(sFsBuf, fsLen, "#define TEX_OFFSET(off) texture(tex, texCoord - (off)/texSize)");
+        append_line(sFsBuf, fsLen, "vec4 filter3point(in sampler2D tex, in vec2 texCoord, in vec2 texSize) {");
+        append_line(sFsBuf, fsLen, "    vec2 offset = fract(texCoord*texSize - vec2(0.5));");
+        append_line(sFsBuf, fsLen, "    offset -= step(1.0, offset.x + offset.y);");
+        append_line(sFsBuf, fsLen, "    vec4 c0 = TEX_OFFSET(offset);");
+        append_line(sFsBuf, fsLen, "    vec4 c1 = TEX_OFFSET(vec2(offset.x - sign(offset.x), offset.y));");
+        append_line(sFsBuf, fsLen, "    vec4 c2 = TEX_OFFSET(vec2(offset.x, offset.y - sign(offset.y)));");
+        append_line(sFsBuf, fsLen, "    return c0 + abs(offset.x)*(c1-c0) + abs(offset.y)*(c2-c0);");
+        append_line(sFsBuf, fsLen, "}");
+        append_line(sFsBuf, fsLen, "vec4 sampleTex(in sampler2D tex, in vec2 uv, in vec2 texSize, in bool dofilter, in int filterType) {");
+        append_line(sFsBuf, fsLen, "    if (dofilter && filterType == 2)");
+        append_line(sFsBuf, fsLen, "        return filter3point(tex, uv, texSize);");
+        append_line(sFsBuf, fsLen, "    else");
+        append_line(sFsBuf, fsLen, "        return texture(tex, uv);");
+        append_line(sFsBuf, fsLen, "}");
     }
 
-    if (world_geometry) {
-        append_line(fs_buf, &fs_len, "float dither4x4(vec2 position, float brightness) {");
-        append_line(fs_buf, &fs_len, "    int x = int(mod(position.x, 4.0));");
-        append_line(fs_buf, &fs_len, "    int y = int(mod(position.y, 4.0));");
-        append_line(fs_buf, &fs_len, "    int index = x + y * 4;");
-        append_line(fs_buf, &fs_len, "    float limit = 0.0;");
-        append_line(fs_buf, &fs_len, "    if (x < 8) {");
-        append_line(fs_buf, &fs_len, "        if (index == 0) limit = 0.0625;");
-        append_line(fs_buf, &fs_len, "        if (index == 1) limit = 0.5625;");
-        append_line(fs_buf, &fs_len, "        if (index == 2) limit = 0.1875;");
-        append_line(fs_buf, &fs_len, "        if (index == 3) limit = 0.6875;");
-        append_line(fs_buf, &fs_len, "        if (index == 4) limit = 0.8125;");
-        append_line(fs_buf, &fs_len, "        if (index == 5) limit = 0.3125;");
-        append_line(fs_buf, &fs_len, "        if (index == 6) limit = 0.9375;");
-        append_line(fs_buf, &fs_len, "        if (index == 7) limit = 0.4375;");
-        append_line(fs_buf, &fs_len, "        if (index == 8) limit = 0.25;");
-        append_line(fs_buf, &fs_len, "        if (index == 9) limit = 0.75;");
-        append_line(fs_buf, &fs_len, "        if (index == 10) limit = 0.125;");
-        append_line(fs_buf, &fs_len, "        if (index == 11) limit = 0.625;");
-        append_line(fs_buf, &fs_len, "        if (index == 12) limit = 1.0;");
-        append_line(fs_buf, &fs_len, "        if (index == 13) limit = 0.5;");
-        append_line(fs_buf, &fs_len, "        if (index == 14) limit = 0.875;");
-        append_line(fs_buf, &fs_len, "        if (index == 15) limit = 0.375;");
-        append_line(fs_buf, &fs_len, "    }");
-        append_line(fs_buf, &fs_len, "    return brightness < limit ? 0.0 : 1.0;");
-        append_line(fs_buf, &fs_len, "}");
+    if (optWorldGeometry) {
+        append_line(sFsBuf, fsLen, "float dither4x4(vec2 position, float brightness) {");
+        append_line(sFsBuf, fsLen, "    int x = int(mod(position.x, 4.0));");
+        append_line(sFsBuf, fsLen, "    int y = int(mod(position.y, 4.0));");
+        append_line(sFsBuf, fsLen, "    int index = x + y * 4;");
+        append_line(sFsBuf, fsLen, "    float limit = 0.0;");
+        append_line(sFsBuf, fsLen, "    if (x < 8) {");
+        append_line(sFsBuf, fsLen, "        if (index == 0) limit = 0.0625;");
+        append_line(sFsBuf, fsLen, "        if (index == 1) limit = 0.5625;");
+        append_line(sFsBuf, fsLen, "        if (index == 2) limit = 0.1875;");
+        append_line(sFsBuf, fsLen, "        if (index == 3) limit = 0.6875;");
+        append_line(sFsBuf, fsLen, "        if (index == 4) limit = 0.8125;");
+        append_line(sFsBuf, fsLen, "        if (index == 5) limit = 0.3125;");
+        append_line(sFsBuf, fsLen, "        if (index == 6) limit = 0.9375;");
+        append_line(sFsBuf, fsLen, "        if (index == 7) limit = 0.4375;");
+        append_line(sFsBuf, fsLen, "        if (index == 8) limit = 0.25;");
+        append_line(sFsBuf, fsLen, "        if (index == 9) limit = 0.75;");
+        append_line(sFsBuf, fsLen, "        if (index == 10) limit = 0.125;");
+        append_line(sFsBuf, fsLen, "        if (index == 11) limit = 0.625;");
+        append_line(sFsBuf, fsLen, "        if (index == 12) limit = 1.0;");
+        append_line(sFsBuf, fsLen, "        if (index == 13) limit = 0.5;");
+        append_line(sFsBuf, fsLen, "        if (index == 14) limit = 0.875;");
+        append_line(sFsBuf, fsLen, "        if (index == 15) limit = 0.375;");
+        append_line(sFsBuf, fsLen, "    }");
+        append_line(sFsBuf, fsLen, "    return brightness < limit ? 0.0 : 1.0;");
+        append_line(sFsBuf, fsLen, "}");
 
-        append_line(fs_buf, &fs_len, "vec3 rgb2hsv(vec3 c) {");
-        append_line(fs_buf, &fs_len, "    vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);");
-        append_line(fs_buf, &fs_len, "    vec4 p = mix(vec4(c.bg, K.wz),");
-        append_line(fs_buf, &fs_len, "                 vec4(c.gb, K.xy),");
-        append_line(fs_buf, &fs_len, "                 step(c.b, c.g));");
-        append_line(fs_buf, &fs_len, "    vec4 q = mix(vec4(p.xyw, c.r),");
-        append_line(fs_buf, &fs_len, "                 vec4(c.r, p.yzx),");
-        append_line(fs_buf, &fs_len, "                 step(p.x, c.r));");
-        append_line(fs_buf, &fs_len, "    float d = q.x - min(q.w, q.y);");
-        append_line(fs_buf, &fs_len, "    float e = 1.0e-10;");
-        append_line(fs_buf, &fs_len, "    return vec3(");
-        append_line(fs_buf, &fs_len, "        abs(q.z + (q.w - q.y) / (6.0 * d + e)), // hue");
-        append_line(fs_buf, &fs_len, "        d / (q.x + e),                          // saturation");
-        append_line(fs_buf, &fs_len, "        q.x                                     // value");
-        append_line(fs_buf, &fs_len, "    );");
-        append_line(fs_buf, &fs_len, "}");
-        append_line(fs_buf, &fs_len, "");
-        append_line(fs_buf, &fs_len, "vec3 hsv2rgb(vec3 c) {");
-        append_line(fs_buf, &fs_len, "    vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0);");
-        append_line(fs_buf, &fs_len, "    return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);");
-        append_line(fs_buf, &fs_len, "}");
+        append_line(sFsBuf, fsLen, "vec3 rgb2hsv(vec3 c) {");
+        append_line(sFsBuf, fsLen, "    vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);");
+        append_line(sFsBuf, fsLen, "    vec4 p = mix(vec4(c.bg, K.wz),");
+        append_line(sFsBuf, fsLen, "                 vec4(c.gb, K.xy),");
+        append_line(sFsBuf, fsLen, "                 step(c.b, c.g));");
+        append_line(sFsBuf, fsLen, "    vec4 q = mix(vec4(p.xyw, c.r),");
+        append_line(sFsBuf, fsLen, "                 vec4(c.r, p.yzx),");
+        append_line(sFsBuf, fsLen, "                 step(p.x, c.r));");
+        append_line(sFsBuf, fsLen, "    float d = q.x - min(q.w, q.y);");
+        append_line(sFsBuf, fsLen, "    float e = 1.0e-10;");
+        append_line(sFsBuf, fsLen, "    return vec3(");
+        append_line(sFsBuf, fsLen, "        abs(q.z + (q.w - q.y) / (6.0 * d + e)), // hue");
+        append_line(sFsBuf, fsLen, "        d / (q.x + e),                          // saturation");
+        append_line(sFsBuf, fsLen, "        q.x                                     // value");
+        append_line(sFsBuf, fsLen, "    );");
+        append_line(sFsBuf, fsLen, "}");
+        append_line(sFsBuf, fsLen, "");
+        append_line(sFsBuf, fsLen, "vec3 hsv2rgb(vec3 c) {");
+        append_line(sFsBuf, fsLen, "    vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0);");
+        append_line(sFsBuf, fsLen, "    return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);");
+        append_line(sFsBuf, fsLen, "}");
     }
 
-    if ((opt_alpha && opt_dither) || ccf.do_noise) {
-        append_line(fs_buf, &fs_len, "uniform uint uFrameCount;");
+    if ((optAlpha && optDither) || ccf.do_noise) {
+        append_line(sFsBuf, fsLen, "uniform uint uFrameCount;");
 
-        append_line(fs_buf, &fs_len, "float random(in vec3 value) {");
-        append_line(fs_buf, &fs_len, "    float random = dot(sin(value), vec3(12.9898, 78.233, 37.719));");
-        append_line(fs_buf, &fs_len, "    return fract(sin(random) * 143758.5453);");
-        append_line(fs_buf, &fs_len, "}");
+        append_line(sFsBuf, fsLen, "float random(in vec3 value) {");
+        append_line(sFsBuf, fsLen, "    float random = dot(sin(value), vec3(12.9898, 78.233, 37.719));");
+        append_line(sFsBuf, fsLen, "    return fract(sin(random) * 143758.5453);");
+        append_line(sFsBuf, fsLen, "}");
     }
 
-    if (opt_light_map) {
-        append_line(fs_buf, &fs_len, "uniform vec3 uLightmapColor;");
+    if (optLightMap) {
+        append_line(sFsBuf, fsLen, "uniform vec3 uLightmapColor;");
     }
 
-    if (world_geometry) {
-        append_line(fs_buf, &fs_len, "uniform bool uShaderFlagsEnabled;");
-        fs_len += sprintf(fs_buf + fs_len, "uniform int uShaderFlags[%d];\n", SHADER_FLAG_MAX);
-        fs_len += sprintf(fs_buf + fs_len, "uniform float uShaderFlagValues[%d];\n", SHADER_FLAG_MAX);
+    if (optWorldGeometry) {
+        append_line(sFsBuf, fsLen, "uniform bool uShaderFlagsEnabled;");
+
+        char shaderFlagsBuf[128] = { 0 };
+        snprintf(shaderFlagsBuf, sizeof(shaderFlagsBuf), "uniform int uShaderFlags[%d];\nuniform float uShaderFlagValues[%d];\n", SHADER_FLAG_MAX, SHADER_FLAG_MAX);
+        append_str(sFsBuf, fsLen, shaderFlagsBuf);
     }
 
-    append_line(fs_buf, &fs_len, "uniform int uFilter;");
+    append_line(sFsBuf, fsLen, "uniform int uFilter;");
 
-    if (opt_fog) {
-        append_line(fs_buf, &fs_len, "uniform vec3 uFogColor;");
+    if (optFog) {
+        append_line(sFsBuf, fsLen, "uniform vec3 uFogColor;");
     }
 
-    append_line(fs_buf, &fs_len, "void main() {");
+    append_line(sFsBuf, fsLen, "void main() {");
 
-    if ((opt_alpha && opt_dither) || ccf.do_noise) {
-        append_line(fs_buf, &fs_len, "float noise = floor(random(floor(vec3(gl_FragCoord.xy, uFrameCount))) + 0.5);");
+    if ((optAlpha && optDither) || ccf.do_noise) {
+        append_line(sFsBuf, fsLen, "float noise = floor(random(floor(vec3(gl_FragCoord.xy, uFrameCount))) + 0.5);");
     }
 
     if (ccf.used_textures[0]) {
-        append_line(fs_buf, &fs_len, "vec4 texVal0 = sampleTex(uTex0, vTexCoord0, uTex0Size, uTex0Filter, uFilter);");
+        append_line(sFsBuf, fsLen, "vec4 texVal0 = sampleTex(uTex0, vTexCoord0, uTex0Size, uTex0Filter, uFilter);");
     }
     if (ccf.used_textures[1]) {
-        if (opt_light_map) {
-            append_line(fs_buf, &fs_len, "vec4 texVal1 = sampleTex(uTex1, vLightMap, uTex1Size, uTex1Filter, uFilter);");
-            append_line(fs_buf, &fs_len, "texVal0.rgb *= uLightmapColor.rgb;");
-            append_line(fs_buf, &fs_len, "texVal1.rgb = texVal1.rgb * texVal1.rgb + texVal1.rgb;");
+        if (optLightMap) {
+            append_line(sFsBuf, fsLen, "vec4 texVal1 = sampleTex(uTex1, vLightMap, uTex1Size, uTex1Filter, uFilter);");
+            append_line(sFsBuf, fsLen, "texVal0.rgb *= uLightmapColor.rgb;");
+            append_line(sFsBuf, fsLen, "texVal1.rgb = texVal1.rgb * texVal1.rgb + texVal1.rgb;");
         } else {
-            append_line(fs_buf, &fs_len, "vec4 texVal1 = sampleTex(uTex1, vTexCoord1, uTex1Size, uTex1Filter, uFilter);");
+            append_line(sFsBuf, fsLen, "vec4 texVal1 = sampleTex(uTex1, vTexCoord1, uTex1Size, uTex1Filter, uFilter);");
         }
     }
 
-    append_str(fs_buf, &fs_len, (opt_alpha) ? "vec4 texel = vec4(0.0);" : "vec3 texel = vec3(0.0);");
-    for (int i = 0; i < (opt_2cycle + 1); i++) {
+    append_str(sFsBuf, fsLen, (optAlpha) ? "vec4 texel = vec4(0.0);" : "vec3 texel = vec3(0.0);");
+    for (int i = 0; i < (opt2Cycle + 1); i++) {
         u8 *cmd = &cc->shader_commands[i * 8];
-        append_str(fs_buf, &fs_len, "texel = ");
-        if (!ccf.color_alpha_same[i] && opt_alpha) {
-            append_str(fs_buf, &fs_len, "vec4(");
-            append_formula(fs_buf, &fs_len, cmd, ccf.do_single[i*2+0], ccf.do_multiply[i*2+0], ccf.do_mix[i*2+0], false, false);
-            append_str(fs_buf, &fs_len, ", ");
-            append_formula(fs_buf, &fs_len, cmd, ccf.do_single[i*2+1], ccf.do_multiply[i*2+1], ccf.do_mix[i*2+1], true, true);
-            append_str(fs_buf, &fs_len, ")");
+        append_str(sFsBuf, fsLen, "texel = ");
+        if (!ccf.color_alpha_same[i] && optAlpha) {
+            append_str(sFsBuf, fsLen, "vec4(");
+            append_formula(sFsBuf, fsLen, cmd, ccf.do_single[i*2+0], ccf.do_multiply[i*2+0], ccf.do_mix[i*2+0], false, false);
+            append_str(sFsBuf, fsLen, ", ");
+            append_formula(sFsBuf, fsLen, cmd, ccf.do_single[i*2+1], ccf.do_multiply[i*2+1], ccf.do_mix[i*2+1], true, true);
+            append_str(sFsBuf, fsLen, ")");
         } else {
-            append_formula(fs_buf, &fs_len, cmd, ccf.do_single[i*2+0], ccf.do_multiply[i*2+0], ccf.do_mix[i*2+0], opt_alpha, false);
+            append_formula(sFsBuf, fsLen, cmd, ccf.do_single[i*2+0], ccf.do_multiply[i*2+0], ccf.do_mix[i*2+0], optAlpha, false);
         }
-        append_line(fs_buf, &fs_len, ";");
+        append_line(sFsBuf, fsLen, ";");
 
         if (i == 0) {
-            append_line(fs_buf, &fs_len, "texel = mod(texel + 0.5, 2.0) - 0.5;");
+            append_line(sFsBuf, fsLen, "texel = mod(texel + 0.5, 2.0) - 0.5;");
         }
     }
 
-    append_line(fs_buf, &fs_len, "texel = clamp(mod(texel + 0.5, 2.0) - 0.5, 0.0, 1.0);");
+    append_line(sFsBuf, fsLen, "texel = clamp(mod(texel + 0.5, 2.0) - 0.5, 0.0, 1.0);");
 
-    if (opt_texture_edge && opt_alpha) {
-        append_line(fs_buf, &fs_len, "if (texel.a > 0.3) texel.a = 1.0; else discard;");
+    if (optTextureEdge && optAlpha) {
+        append_line(sFsBuf, fsLen, "if (texel.a > 0.3) texel.a = 1.0; else discard;");
     }
 
     // TODO discard if alpha is 0?
 
-    if (world_geometry) {
-        append_line(fs_buf, &fs_len, "if (uShaderFlagsEnabled == true) {");
+    if (optWorldGeometry) {
+        append_line(sFsBuf, fsLen, "if (uShaderFlagsEnabled == true) {");
 
         // hue
-        append_line(fs_buf, &fs_len, "if (uShaderFlags[0] == 1) {");
-        append_line(fs_buf, &fs_len, "vec3 hsv = rgb2hsv(texel.rgb);");
-        append_line(fs_buf, &fs_len, "hsv.x = fract(hsv.x + uShaderFlagValues[0]);");
-        append_line(fs_buf, &fs_len, "vec3 finalColor = hsv2rgb(hsv);");
-        append_line(fs_buf, &fs_len, "texel.rgb = finalColor;");
-        append_line(fs_buf, &fs_len, "}");
+        append_line(sFsBuf, fsLen, "if (uShaderFlags[0] == 1) {");
+        append_line(sFsBuf, fsLen, "vec3 hsv = rgb2hsv(texel.rgb);");
+        append_line(sFsBuf, fsLen, "hsv.x = fract(hsv.x + uShaderFlagValues[0]);");
+        append_line(sFsBuf, fsLen, "vec3 finalColor = hsv2rgb(hsv);");
+        append_line(sFsBuf, fsLen, "texel.rgb = finalColor;");
+        append_line(sFsBuf, fsLen, "}");
 
         // saturation
-        append_line(fs_buf, &fs_len, "if (uShaderFlags[1] == 1) {");
-        append_line(fs_buf, &fs_len, "const vec3 w = vec3(0.2125, 0.7154, 0.0721);");
-        append_line(fs_buf, &fs_len, "vec3 intensity = vec3(dot(texel.rgb, w));");
-        append_line(fs_buf, &fs_len, "texel.rgb = mix(intensity, texel.rgb, uShaderFlagValues[1]);");
-        append_line(fs_buf, &fs_len, "}");
+        append_line(sFsBuf, fsLen, "if (uShaderFlags[1] == 1) {");
+        append_line(sFsBuf, fsLen, "const vec3 w = vec3(0.2125, 0.7154, 0.0721);");
+        append_line(sFsBuf, fsLen, "vec3 intensity = vec3(dot(texel.rgb, w));");
+        append_line(sFsBuf, fsLen, "texel.rgb = mix(intensity, texel.rgb, uShaderFlagValues[1]);");
+        append_line(sFsBuf, fsLen, "}");
 
         // brightness
-        append_line(fs_buf, &fs_len, "if (uShaderFlags[2] == 1) {");
-        append_line(fs_buf, &fs_len, "texel.rgb *= uShaderFlagValues[2];");
-        append_line(fs_buf, &fs_len, "}");
+        append_line(sFsBuf, fsLen, "if (uShaderFlags[2] == 1) {");
+        append_line(sFsBuf, fsLen, "texel.rgb *= uShaderFlagValues[2];");
+        append_line(sFsBuf, fsLen, "}");
 
         // contrast
-        append_line(fs_buf, &fs_len, "if (uShaderFlags[3] == 1) {");
-        append_line(fs_buf, &fs_len, "texel.rgb = 0.5 + uShaderFlagValues[3] * (texel.rgb - 0.5);");
-        append_line(fs_buf, &fs_len, "}");
+        append_line(sFsBuf, fsLen, "if (uShaderFlags[3] == 1) {");
+        append_line(sFsBuf, fsLen, "texel.rgb = 0.5 + uShaderFlagValues[3] * (texel.rgb - 0.5);");
+        append_line(sFsBuf, fsLen, "}");
 
         // exposure
-        append_line(fs_buf, &fs_len, "if (uShaderFlags[4] == 1) {");
-        append_line(fs_buf, &fs_len, "texel.rgb = texel.rgb + (uShaderFlagValues[4] - 2) * texel.rgb + texel.rgb;");
-        append_line(fs_buf, &fs_len, "}");
+        append_line(sFsBuf, fsLen, "if (uShaderFlags[4] == 1) {");
+        append_line(sFsBuf, fsLen, "texel.rgb = texel.rgb + (uShaderFlagValues[4] - 2) * texel.rgb + texel.rgb;");
+        append_line(sFsBuf, fsLen, "}");
 
         // dithering
-        append_line(fs_buf, &fs_len, "if (uShaderFlags[5] == 1) {");
-        append_line(fs_buf, &fs_len, "texel.rgb *= dither4x4(gl_FragCoord.xy, dot(texel.rgb, vec3(0.299, 0.587, 0.114)));");
-        append_line(fs_buf, &fs_len, "}");
+        append_line(sFsBuf, fsLen, "if (uShaderFlags[5] == 1) {");
+        append_line(sFsBuf, fsLen, "texel.rgb *= dither4x4(gl_FragCoord.xy, dot(texel.rgb, vec3(0.299, 0.587, 0.114)));");
+        append_line(sFsBuf, fsLen, "}");
 
         // posterization
-        append_line(fs_buf, &fs_len, "if (uShaderFlags[6] == 1) {");
-        append_line(fs_buf, &fs_len, "int levels = int(max(1.0, uShaderFlagValues[6]));");
-        append_line(fs_buf, &fs_len, "texel.rgb = floor(texel.rgb * levels) / levels;");
-        append_line(fs_buf, &fs_len, "}");
+        append_line(sFsBuf, fsLen, "if (uShaderFlags[6] == 1) {");
+        append_line(sFsBuf, fsLen, "int levels = int(max(1.0, uShaderFlagValues[6]));");
+        append_line(sFsBuf, fsLen, "texel.rgb = floor(texel.rgb * levels) / levels;");
+        append_line(sFsBuf, fsLen, "}");
 
         // scan lines
-        append_line(fs_buf, &fs_len, "if (uShaderFlags[7] == 1) {");
-        append_line(fs_buf, &fs_len, "float scan = sin(gl_FragCoord.y * 1.5) * 0.04;");
-        append_line(fs_buf, &fs_len, "texel.rgb -= scan * uShaderFlagValues[7];");
-        append_line(fs_buf, &fs_len, "}");
+        append_line(sFsBuf, fsLen, "if (uShaderFlags[7] == 1) {");
+        append_line(sFsBuf, fsLen, "float scan = sin(gl_FragCoord.y * 1.5) * 0.04;");
+        append_line(sFsBuf, fsLen, "texel.rgb -= scan * uShaderFlagValues[7];");
+        append_line(sFsBuf, fsLen, "}");
 
-        append_line(fs_buf, &fs_len, "}");
+        append_line(sFsBuf, fsLen, "}");
     }
 
-    if (opt_fog) {
-        if (opt_alpha) {
-            append_line(fs_buf, &fs_len, "texel = vec4(mix(texel.rgb, uFogColor, vFogZ), texel.a);");
+    if (optFog) {
+        if (optAlpha) {
+            append_line(sFsBuf, fsLen, "texel = vec4(mix(texel.rgb, uFogColor, vFogZ), texel.a);");
         } else {
-            append_line(fs_buf, &fs_len, "texel = mix(texel, uFogColor, vFogZ);");
+            append_line(sFsBuf, fsLen, "texel = mix(texel, uFogColor, vFogZ);");
         }
     }
 
-    if (opt_alpha && opt_dither) {
-        append_line(fs_buf, &fs_len, "texel.a *= noise;");
+    if (optAlpha && optDither) {
+        append_line(sFsBuf, fsLen, "texel.a *= noise;");
     }
 
-    if (opt_alpha) {
-        append_line(fs_buf, &fs_len, "fragColor = texel;");
+    if (optAlpha) {
+        append_line(sFsBuf, fsLen, "fragColor = texel;");
     } else {
-        append_line(fs_buf, &fs_len, "fragColor = vec4(texel, 1.0);");
+        append_line(sFsBuf, fsLen, "fragColor = vec4(texel, 1.0);");
     }
-    append_line(fs_buf, &fs_len, "}");
+    append_line(sFsBuf, fsLen, "}");
 
-    fs_buf[fs_len] = '\0';
+    sFsBuf[fsLen-1] = '\0';
 
-    return fs_buf;
+    return sFsBuf;
 }
 
 static void gfx_init_shader_inputs() {
@@ -635,7 +671,7 @@ static void strip_array_from_name(char *name) {
     }
 }
 
-static bool process_shader_line(struct Shader *shader, struct ShaderInput *referenceInputs, struct ShaderBinding *referenceBindings, char *output, const char *line) {
+static bool process_shader_line(struct Shader *shader, struct ShaderInput *referenceInputs, struct ShaderBinding *referenceBindings, char **output, size_t *outputSize, const char *line) {
     char qualifier[32] = { 0 }, storageQualifier[32] = { 0 }, type[32] = { 0 }, name[MAX_SHADER_VARIABLE_NAME] = { 0 };
 
     // parse and update uniform blocks
@@ -646,18 +682,18 @@ static bool process_shader_line(struct Shader *shader, struct ShaderInput *refer
         sShaderInsideCustomUniformBlock = true;
         char layoutLine[128];
         snprintf(layoutLine, sizeof(layoutLine), "layout(std140, set = 0, binding = %d) uniform %s {\n", sShaderUniformBlockCount++, name);
-        strncat(output, layoutLine, MAX_SHADER_CODE - strlen(output) - 1);
+        append_and_realloc_str(output, outputSize, layoutLine);
         return true;
     }
 
     // exit uniform block when needed
     if (sShaderInsideCustomUniformBlock && strchr(line, '}')) {
         sShaderInsideCustomUniformBlock = false;
-        strncat(output, line, MAX_SHADER_CODE - strlen(output) - 1);
+        append_and_realloc_str(output, outputSize, line);
         return true;
     } else if (sShaderInsideCustomUniformBlock) {
         // we're in a uniform block, no parsing needed here
-        strncat(output, line, MAX_SHADER_CODE - strlen(output) - 1);
+        append_and_realloc_str(output, outputSize, line);
         return true;
     }
 
@@ -668,7 +704,7 @@ static bool process_shader_line(struct Shader *shader, struct ShaderInput *refer
             if (referenceInputs[i].name[0] != '\0' && strcmp(referenceInputs[i].name, name) == 0) {
                 char layoutLine[sizeof(type) + MAX_SHADER_VARIABLE_NAME + 64];
                 snprintf(layoutLine, sizeof(layoutLine), "layout(location=%d) %s in %s %s", referenceInputs[i].location, qualifier, type, name);
-                strncat(output, layoutLine, MAX_SHADER_CODE - strlen(output) - 1);
+                append_and_realloc_str(output, outputSize, layoutLine);
                 if (shader) {
                     snprintf(shader->shaderInputs[sShaderInputCount].name, MAX_SHADER_VARIABLE_NAME, "%s", referenceInputs[i].name);
                     shader->shaderInputs[sShaderInputCount].location = referenceInputs[i].location;
@@ -687,7 +723,7 @@ static bool process_shader_line(struct Shader *shader, struct ShaderInput *refer
             if (referenceInputs[i].name[0] != '\0' && strcmp(referenceInputs[i].name, name) == 0) {
                 char layoutLine[sizeof(type) + MAX_SHADER_VARIABLE_NAME + 64];
                 snprintf(layoutLine, sizeof(layoutLine), "layout(location=%d) in %s %s", referenceInputs[i].location, type, name);
-                strncat(output, layoutLine, MAX_SHADER_CODE - strlen(output) - 1);
+                append_and_realloc_str(output, outputSize, layoutLine);
                 if (shader) {
                     snprintf(shader->shaderInputs[sShaderInputCount].name, MAX_SHADER_VARIABLE_NAME, "%s", referenceInputs[i].name);
                     shader->shaderInputs[sShaderInputCount].location = referenceInputs[i].location;
@@ -710,7 +746,7 @@ static bool process_shader_line(struct Shader *shader, struct ShaderInput *refer
         }
         char layoutLine[sizeof(type) + MAX_SHADER_VARIABLE_NAME + 64];
         snprintf(layoutLine, sizeof(layoutLine), "layout(location=%d) %s out %s %s", sShaderOutputCount, qualifier, type, name);
-        strncat(output, layoutLine, MAX_SHADER_CODE - strlen(output) - 1);
+        append_and_realloc_str(output, outputSize, layoutLine);
         if (sShaderOutputCount < MAX_SHADER_OUTPUTS - 1) { sShaderOutputCount++; }
         return true;
     }
@@ -724,7 +760,7 @@ static bool process_shader_line(struct Shader *shader, struct ShaderInput *refer
         }
         char layoutLine[sizeof(type) + MAX_SHADER_VARIABLE_NAME + 64];
         snprintf(layoutLine, sizeof(layoutLine), "layout(location=%d) out %s %s", sShaderOutputCount, type, name);
-        strncat(output, layoutLine, MAX_SHADER_CODE - strlen(output) - 1);
+        append_and_realloc_str(output, outputSize, layoutLine);
         if (sShaderOutputCount < MAX_SHADER_OUTPUTS - 1) { sShaderOutputCount++; }
         return true;
     }
@@ -737,15 +773,15 @@ static bool process_shader_line(struct Shader *shader, struct ShaderInput *refer
                 if (referenceBindings[i].name[0] != '\0' && strcmp(referenceBindings[i].name, name) == 0) {
                     char layoutLine[sizeof(type) + MAX_SHADER_VARIABLE_NAME + 64];
                     snprintf(layoutLine, sizeof(layoutLine), "layout(binding=%d) uniform %s %s", referenceBindings[i].binding, type, name);
-                    strncat(output, layoutLine, MAX_SHADER_CODE - strlen(output) - 1);
+                    append_and_realloc_str(output, outputSize, layoutLine);
                     return true;
                 }
             }
         } else {
             // add uniform to uniform code for inserting into default uniform block
-            char layoutLine[sizeof(type) + MAX_SHADER_VARIABLE_NAME + 64];
-            snprintf(layoutLine, sizeof(layoutLine), "    %s %s;\n", type, name);
-            strncat(sShaderUniformCode, layoutLine, MAX_SHADER_CODE - strlen(sShaderUniformCode) - 1);
+            char uniformLine[sizeof(type) + MAX_SHADER_VARIABLE_NAME + 64];
+            snprintf(uniformLine, sizeof(uniformLine), "    %s %s;\n", type, name);
+            append_str(sShaderUniformCode, MAX_UNIFORM_CODE, uniformLine);
             return false;
         }
     }
@@ -755,39 +791,47 @@ static bool process_shader_line(struct Shader *shader, struct ShaderInput *refer
     ||  sscanf(line, " #version %31s %31s", type, name) == 2
     ||  sscanf(line, "#version %31s", type) == 1
     ||  sscanf(line, " #version %31s", type) == 1) {
-        char layoutLine[32] = { 0 };
-        snprintf(layoutLine, sizeof(layoutLine), "#version 450 core");
-        strncat(output, layoutLine, MAX_SHADER_CODE - strlen(output) - 1);
+        char versionLine[32] = { 0 };
+        snprintf(versionLine, sizeof(versionLine), "#version 450 core");
+        append_and_realloc_str(output, outputSize, versionLine);
         sShaderHasVersion = true;
         return true;
     }
 
-    strncat(output, line, MAX_SHADER_CODE - strlen(output) - 1);
+    append_and_realloc_str(output, outputSize, line);
     return true;
 }
 
 static void gfx_sanitize_shader(struct Shader *shader, struct ShaderInput *referenceInputs, struct ShaderBinding *referenceBindings, char **shaderCode) {
     if (!shaderCode || !*shaderCode) { return; }
 
-    char *sanitized = (char *)calloc(1, MAX_SHADER_CODE);
+    size_t sizeofShaderCode = strlen(*shaderCode) + 1; // +1 for null terminator
+
+    // as a buffer area to try avoiding reallocation, for added layout specifiers,
+    // uniform blocks, etc.. a good guess is 256 extra characters to allocate, but
+    // reallocation will probably be necessary
+    sizeofShaderCode += 256;
+
+    char *sanitized = calloc(1, sizeofShaderCode); // allocate sanitized str
     if (!sanitized) { return; }
 
-    char *sourceCopy = strdup(*shaderCode);
+    char *sourceCopy = strdup(*shaderCode); // copy shader code
     char *line = sourceCopy;
 
+    // reset state variables
     sShaderInputCount = 0;
     sShaderOutputCount = 0;
     sShaderInsideCustomUniformBlock = false;
     sShaderHasVersion = false;
 
-    memset(sShaderUniformCode, 0, sizeof(char) * MAX_SHADER_CODE);
+    memset(sShaderUniformCode, 0, sizeof(char) * MAX_UNIFORM_CODE);
 
     while (line && *line) {
         char *lineEnd = strpbrk(line, "\n;");
 
-        // if no delimiter was found, process the line and exit
+        // if no delimiter was found, process the final line and exit
         if (lineEnd == 0) {
-            process_shader_line(shader, referenceInputs, referenceBindings, sanitized, line);
+            process_shader_line(shader, referenceInputs, referenceBindings, &sanitized, &sizeofShaderCode, line);
             break;
         }
 
@@ -796,12 +840,10 @@ static void gfx_sanitize_shader(struct Shader *shader, struct ShaderInput *refer
         *lineEnd = '\0';
 
         // process line
-        if (process_shader_line(shader, referenceInputs, referenceBindings, sanitized, line)) {
-            size_t len = strlen(sanitized);
-            if (len < MAX_SHADER_CODE - 2) {
-                sanitized[len] = delimiter;
-                sanitized[len + 1] = '\0';
-            }
+        if (process_shader_line(shader, referenceInputs, referenceBindings, &sanitized, &sizeofShaderCode, line)) {
+            char delimiterString[2] = { 0 };
+            snprintf(delimiterString, sizeof(delimiterString), "%c", delimiter);
+            append_and_realloc_str(&sanitized, &sizeofShaderCode, delimiterString);
         }
 
         line = lineEnd + 1;
@@ -816,10 +858,10 @@ static void gfx_sanitize_shader(struct Shader *shader, struct ShaderInput *refer
             return;
         }
 
-        memset(sanitized, 0, MAX_SHADER_CODE);
+        memset(sanitized, 0, sizeof(char) * sizeofShaderCode);
 
-        strncat(sanitized, "#version 450 core\n", MAX_SHADER_CODE - 1);
-        strncat(sanitized, sanitizedSource, MAX_SHADER_CODE - strlen(sanitized) - 1);
+        append_and_realloc_str(&sanitized, &sizeofShaderCode, "#version 450 core\n");
+        append_and_realloc_str(&sanitized, &sizeofShaderCode, sanitizedSource);
         free(sanitizedSource);
     }
 
@@ -833,25 +875,24 @@ static void gfx_sanitize_shader(struct Shader *shader, struct ShaderInput *refer
         }
 
         // zero out sanitized string
-        memset(sanitized, 0, sizeof(char) * MAX_SHADER_CODE);
+        memset(sanitized, 0, sizeof(char) * sizeofShaderCode);
 
         // append version string
-        strncat(sanitized, "#version 450 core", MAX_SHADER_CODE - 1);
-        strncat(sanitized, "\n", MAX_SHADER_CODE - 1);
+        append_and_realloc_str(&sanitized, &sizeofShaderCode, "#version 450 core\n");
 
         // append block
         char defaultUniformBlockString[MAX_SHADER_VARIABLE_NAME + 128];
         snprintf(defaultUniformBlockString, sizeof(defaultUniformBlockString), "layout(std140, set = 0, binding = %d) uniform %s {\n", sShaderUniformBlockCount++, defaultUniformBlockName);
-        strncat(sanitized, defaultUniformBlockString, MAX_SHADER_CODE - 1);
+        append_and_realloc_str(&sanitized, &sizeofShaderCode, defaultUniformBlockString);
 
         // append uniform code
-        strncat(sanitized, sShaderUniformCode, MAX_SHADER_CODE - 1);
+        append_and_realloc_str(&sanitized, &sizeofShaderCode, sShaderUniformCode);
 
         // cleanup block
-        strncat(sanitized, "};\n", MAX_SHADER_CODE - 1);
+        append_and_realloc_str(&sanitized, &sizeofShaderCode, "};\n");
 
         // append rest of code
-        strncat(sanitized, sanitizedSource + 17, MAX_SHADER_CODE - 1); // 17 is length of version text
+        append_and_realloc_str(&sanitized, &sizeofShaderCode, sanitizedSource + 17);  // 17 is length of version text, which by this point is guranteed to exist
 
         // cleanup
         free(sanitizedSource);
@@ -976,6 +1017,7 @@ bool gfx_compile_shader_to_spirv(glslang_stage_t stage, const char *shaderCode, 
     glslang_program_delete(program);
     glslang_shader_delete(slangShader);
 
+    free(shader->spirVShader.words);
     shader->spirVShader = spirvShader;
 
     free(shaderCode450);
@@ -1366,9 +1408,9 @@ bool gfx_generate_vertex_and_fragment_shader_from_cc(struct Shader *vertexShader
 bool gfx_generate_post_process_vertex_and_fragment_shader(struct Shader *vertexShader, struct Shader *fragmentShader, char **outVertShader, char **outFragShader) {
     char *fallbackVsCode = strdup(gDefaultPostProcessVertexShader);
     char *fallbackFsCode = strdup(gDefaultPostProcessFragmentShader);
-    char *vsShaderCode = strdup(fallbackVsCode);
-    char *fsShaderCode = strdup(fallbackFsCode);
-    if (!fallbackVsCode || !fallbackFsCode || !vsShaderCode || !fsShaderCode) {
+    char *vsShaderCode = NULL;
+    char *fsShaderCode = NULL;
+    if (!fallbackVsCode || !fallbackFsCode) {
         sys_fatal("Failed to generate vertex and fragment shader, ran out of memory!");
     }
 

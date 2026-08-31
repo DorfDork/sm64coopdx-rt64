@@ -576,7 +576,16 @@ int main(int argc, char *argv[]) {
 
 #ifdef _WIN32
     // handle Windows console
+    bool console = false;
     if (gCLIOpts.console || gCLIOpts.headless) {
+        console = true;
+    } else {
+        // detect if the game should keep the console open
+        DWORD pids[2];
+        DWORD pcount = GetConsoleProcessList(pids, 2);
+        console = pcount > 1;
+    }
+    if (console) {
         SetConsoleOutputCP(CP_UTF8);
     } else {
         FreeConsole();

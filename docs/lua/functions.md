@@ -1647,6 +1647,7 @@
    - [find_unimportant_object](functions-6.md#find_unimportant_object)
    - [count_unimportant_objects](functions-6.md#count_unimportant_objects)
    - [count_objects_with_behavior](functions-6.md#count_objects_with_behavior)
+   - [delete_all_objects_with_behavior](functions-6.md#delete_all_objects_with_behavior)
    - [find_object_with_behavior](functions-6.md#find_object_with_behavior)
    - [cur_obj_find_nearby_held_actor](functions-6.md#cur_obj_find_nearby_held_actor)
    - [cur_obj_reset_timer_and_subaction](functions-6.md#cur_obj_reset_timer_and_subaction)
@@ -1862,6 +1863,7 @@
    - [sequence_player_set_transposition](functions-6.md#sequence_player_set_transposition)
    - [sequence_player_get_volume](functions-6.md#sequence_player_get_volume)
    - [sequence_player_get_fade_volume](functions-6.md#sequence_player_get_fade_volume)
+   - [sequence_player_set_fade_volume](functions-6.md#sequence_player_set_fade_volume)
    - [sequence_player_get_mute_volume_scale](functions-6.md#sequence_player_get_mute_volume_scale)
 
 <br />

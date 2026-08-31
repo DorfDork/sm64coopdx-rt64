@@ -26062,6 +26062,24 @@ int smlua_func_count_objects_with_behavior(lua_State* L) {
     return 1;
 }
 
+int smlua_func_delete_all_objects_with_behavior(lua_State* L) {
+    if (L == NULL) { return 0; }
+
+    int top = lua_gettop(L);
+    if (top != 1) {
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "delete_all_objects_with_behavior", 1, top);
+        return 0;
+    }
+
+    BehaviorScript * behavior = (BehaviorScript *)smlua_to_cpointer(L, 1, LVT_BEHAVIORSCRIPT_P);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "delete_all_objects_with_behavior"); return 0; }
+
+    extern void delete_all_objects_with_behavior(const BehaviorScript *behavior);
+    delete_all_objects_with_behavior(behavior);
+
+    return 0;
+}
+
 int smlua_func_find_object_with_behavior(lua_State* L) {
     if (L == NULL) { return 0; }
 
@@ -28301,11 +28319,11 @@ int smlua_func_obj_set_collision_data(lua_State* L) {
 
     struct Object* obj = (struct Object*)smlua_to_cobject(L, 1, LOT_OBJECT);
     if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "obj_set_collision_data"); return 0; }
-//  void * segAddr = (void *)smlua_to_cobject(L, 2, LOT_???); <--- UNIMPLEMENTED
+//  void * collisionPtr = (void *)smlua_to_cobject(L, 2, LOT_???); <--- UNIMPLEMENTED
     if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 2, "obj_set_collision_data"); return 0; }
 
-    extern void obj_set_collision_data(struct Object *obj, const void *segAddr);
-    obj_set_collision_data(obj, segAddr);
+    extern void obj_set_collision_data(struct Object *obj, const void *collisionPtr);
+    obj_set_collision_data(obj, collisionPtr);
 
     return 0;
 }
@@ -29610,6 +29628,25 @@ int smlua_func_sequence_player_get_fade_volume(lua_State* L) {
     lua_pushnumber(L, sequence_player_get_fade_volume(player));
 
     return 1;
+}
+
+int smlua_func_sequence_player_set_fade_volume(lua_State* L) {
+    if (L == NULL) { return 0; }
+
+    int top = lua_gettop(L);
+    if (top != 2) {
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "sequence_player_set_fade_volume", 2, top);
+        return 0;
+    }
+
+    u8 player = smlua_to_integer(L, 1);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "sequence_player_set_fade_volume"); return 0; }
+    f32 volume = smlua_to_number(L, 2);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 2, "sequence_player_set_fade_volume"); return 0; }
+
+    sequence_player_set_fade_volume(player, volume);
+
+    return 0;
 }
 
 int smlua_func_sequence_player_get_mute_volume_scale(lua_State* L) {
@@ -38353,6 +38390,7 @@ void smlua_bind_functions_autogen(void) {
     smlua_bind_function(L, "find_unimportant_object", smlua_func_find_unimportant_object);
     smlua_bind_function(L, "count_unimportant_objects", smlua_func_count_unimportant_objects);
     smlua_bind_function(L, "count_objects_with_behavior", smlua_func_count_objects_with_behavior);
+    smlua_bind_function(L, "delete_all_objects_with_behavior", smlua_func_delete_all_objects_with_behavior);
     smlua_bind_function(L, "find_object_with_behavior", smlua_func_find_object_with_behavior);
     smlua_bind_function(L, "cur_obj_find_nearby_held_actor", smlua_func_cur_obj_find_nearby_held_actor);
     smlua_bind_function(L, "cur_obj_reset_timer_and_subaction", smlua_func_cur_obj_reset_timer_and_subaction);
@@ -38561,6 +38599,7 @@ void smlua_bind_functions_autogen(void) {
     smlua_bind_function(L, "sequence_player_set_transposition", smlua_func_sequence_player_set_transposition);
     smlua_bind_function(L, "sequence_player_get_volume", smlua_func_sequence_player_get_volume);
     smlua_bind_function(L, "sequence_player_get_fade_volume", smlua_func_sequence_player_get_fade_volume);
+    smlua_bind_function(L, "sequence_player_set_fade_volume", smlua_func_sequence_player_set_fade_volume);
     smlua_bind_function(L, "sequence_player_get_mute_volume_scale", smlua_func_sequence_player_get_mute_volume_scale);
 
     // smlua_anim_utils.h

@@ -147,6 +147,8 @@ A shader may contain uniforms. As per the GLSL naming convention, uniform variab
 | `uLightmapColor` | `vec3` | RGB multiplier applied to the environment/light map |
 | `uAspectRatio` | `float` | The current viewport aspect ratio (`width`/`height`) |
 | `uXAdjustRatio` | `float` | The horizontal clip-space scaling factor used for widescreen rendering |
+| `uScreenWidth` | `float` | The width of the screen in pixels |
+| `uScreenHeight` | `float` | The height of the screen in pixels |
 | `uModelViewProjectionMatrix` | `mat4` | Transforms local space directly to clip space |
 | `uModelViewMatrix` | `mat4` | Transforms local space to view space |
 | `uModelMatrix` | `mat4` | Transforms local space to world space |

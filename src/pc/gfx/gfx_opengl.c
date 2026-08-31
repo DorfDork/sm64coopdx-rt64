@@ -579,6 +579,7 @@ static void gfx_opengl_bind_texture_raw(int tile, uint64_t texture_id) {
 }
 
 static void gfx_opengl_upload_texture(const uint8_t *rgba32_buf, int width, int height) {
+    if (width <= 0 || height <= 0) { sys_fatal("Texture dimensions are invalid!"); }
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba32_buf);
     opengl_tex[opengl_curtex]->size[0] = width;
     opengl_tex[opengl_curtex]->size[1] = height;
@@ -663,12 +664,15 @@ static void gfx_opengl_set_vsync(UNUSED bool enabled) {
 static void upload_opengl_uniform_buffers(struct Shader *shader) {
     for (int i = 0; i < shader->uniformBlockCount; i++) {
         struct ShaderUniformBlock *uniformBlock = &shader->uniformBlocks[i];
-        if (uniformBlock->size > 0 && uniformBlock->glBufferId != 0) {
-            glBindBuffer(GL_UNIFORM_BUFFER, uniformBlock->glBufferId);
-            glBufferData(GL_UNIFORM_BUFFER, uniformBlock->size, NULL, GL_STREAM_DRAW); // orphan
-            glBufferSubData(GL_UNIFORM_BUFFER, 0, uniformBlock->size, uniformBlock->buffer);
-            glBindBufferBase(GL_UNIFORM_BUFFER, uniformBlock->location, uniformBlock->glBufferId);
+
+        if (uniformBlock->size == 0 || uniformBlock->glBufferId == 0) {
+            continue;
         }
+
+        glBindBuffer(GL_UNIFORM_BUFFER, uniformBlock->glBufferId);
+        glBufferData(GL_UNIFORM_BUFFER, uniformBlock->size, NULL, GL_STREAM_DRAW); // orphan
+        glBufferSubData(GL_UNIFORM_BUFFER, 0, uniformBlock->size, uniformBlock->buffer);
+        glBindBufferBase(GL_UNIFORM_BUFFER, uniformBlock->location, uniformBlock->glBufferId);
     }
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }

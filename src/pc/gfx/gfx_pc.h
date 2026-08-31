@@ -75,6 +75,8 @@ struct FramePass {
     // global
     u32 width;
     u32 height;
+    u32 lastWidth;
+    u32 lastHeight;
     bool active;
     bool drawWorldGeometry;
     ColorRGBA clearColor;

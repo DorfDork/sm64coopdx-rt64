@@ -2704,8 +2704,13 @@ static void gfx_process_lua_passes(Gfx *commands, bool *isLuaPassesActive) {
         gCurrentFramePassIndex = i;
 
         // setup framebuffer
-        if (framePass->fbo == 0) {
+        if (framePass->fbo == 0 || framePass->width != framePass->lastWidth || framePass->height != framePass->lastHeight) {
+            if (framePass->fbo != 0) {
+                gfx_rapi->delete_framebuffer(framePass);
+            }
             gfx_rapi->create_framebuffer(framePass);
+            framePass->lastWidth = framePass->width;
+            framePass->lastHeight = framePass->height;
         }
         gfx_rapi->set_framebuffer(framePass);
 
@@ -2964,6 +2969,11 @@ void gfx_set_builtin_uniforms(void) {
     float xAdjustRatio = (float)gfx_current_dimensions.x_adjust_ratio;
     gfx_rapi->set_uniform(NULL, "uAspectRatio", SHADER_UNIFORM_TYPE_FLOAT, &aspectRatio, 1);
     gfx_rapi->set_uniform(NULL, "uXAdjustRatio", SHADER_UNIFORM_TYPE_FLOAT, &xAdjustRatio, 1);
+
+    float screenWidth = (float)gfx_current_dimensions.width;
+    float screenHeight = (float)gfx_current_dimensions.height;
+    gfx_rapi->set_uniform(NULL, "uScreenWidth", SHADER_UNIFORM_TYPE_FLOAT, &screenWidth, 1);
+    gfx_rapi->set_uniform(NULL, "uScreenHeight", SHADER_UNIFORM_TYPE_FLOAT, &screenHeight, 1);
 
     int shaderFlagEnabled = gShaderFlagsEnabled ? 1 : 0;
     gfx_rapi->set_uniform(NULL, "uShaderFlagsEnabled", SHADER_UNIFORM_TYPE_BOOL, &shaderFlagEnabled, 1);
