@@ -59,6 +59,10 @@ static int sShaderUniformBlockCount = 0;
 static bool sShaderInsideCustomUniformBlock = false;
 static bool sShaderHasVersion = false;
 
+bool gUseSdlGpuBindings = false;
+static int sSdlGpuSamplerBinding = 0;
+static int sSdlGpuUniformBinding = 0;
+
 static char sShaderUniformCode[MAX_UNIFORM_CODE] = { 0 };
 
 static const char *defaultUniformBlockName = "DefaultUniformBufferObject";
@@ -681,7 +685,12 @@ static bool process_shader_line(struct Shader *shader, struct ShaderInput *refer
     if (!sShaderInsideCustomUniformBlock && (sscanf(line, " uniform %127s %c", name, &brace) == 2 || sscanf(line, "uniform %127s %c", name, &brace) == 2) && brace == '{') {
         sShaderInsideCustomUniformBlock = true;
         char layoutLine[128];
-        snprintf(layoutLine, sizeof(layoutLine), "layout(std140, set = 0, binding = %d) uniform %s {\n", sShaderUniformBlockCount++, name);
+        if (gUseSdlGpuBindings) {
+            snprintf(layoutLine, sizeof(layoutLine), "layout(std140, set = %d, binding = %d) uniform %s {\n",
+                (shader->stage == SHADER_STAGE_VERTEX ? 1 : 3), sSdlGpuUniformBinding++, name);
+        } else {
+            snprintf(layoutLine, sizeof(layoutLine), "layout(std140, set = 0, binding = %d) uniform %s {\n", sShaderUniformBlockCount++, name);
+        }
         append_and_realloc_str(output, outputSize, layoutLine);
         return true;
     }
@@ -772,7 +781,17 @@ static bool process_shader_line(struct Shader *shader, struct ShaderInput *refer
             for (int i = 0; i < MAX_SHADER_BINDINGS; i++) {
                 if (referenceBindings[i].name[0] != '\0' && strcmp(referenceBindings[i].name, name) == 0) {
                     char layoutLine[sizeof(type) + MAX_SHADER_VARIABLE_NAME + 64];
-                    snprintf(layoutLine, sizeof(layoutLine), "layout(binding=%d) uniform %s %s", referenceBindings[i].binding, type, name);
+                    if (gUseSdlGpuBindings) {
+                        int sdlSlot = sSdlGpuSamplerBinding++;
+                        int engineSlot = referenceBindings[i].binding;
+                        if (engineSlot >= 0 && engineSlot < MAX_SHADER_BINDINGS) {
+                            shader->sdlGpuSamplerSlots[engineSlot] = (u8)sdlSlot;
+                        }
+                        snprintf(layoutLine, sizeof(layoutLine), "layout(set=%d, binding=%d) uniform %s %s",
+                            (shader->stage == SHADER_STAGE_VERTEX ? 0 : 2), sdlSlot, type, name);
+                    } else {
+                        snprintf(layoutLine, sizeof(layoutLine), "layout(binding=%d) uniform %s %s", referenceBindings[i].binding, type, name);
+                    }
                     append_and_realloc_str(output, outputSize, layoutLine);
                     return true;
                 }
@@ -804,6 +823,10 @@ static bool process_shader_line(struct Shader *shader, struct ShaderInput *refer
 
 static void gfx_sanitize_shader(struct Shader *shader, struct ShaderInput *referenceInputs, struct ShaderBinding *referenceBindings, char **shaderCode) {
     if (!shaderCode || !*shaderCode) { return; }
+
+    sSdlGpuSamplerBinding = 0;
+    sSdlGpuUniformBinding = 0;
+    memset(shader->sdlGpuSamplerSlots, SAMPLER_SLOT_UNUSED, sizeof(shader->sdlGpuSamplerSlots));
 
     size_t sizeofShaderCode = strlen(*shaderCode) + 1; // +1 for null terminator
 
@@ -882,7 +905,12 @@ static void gfx_sanitize_shader(struct Shader *shader, struct ShaderInput *refer
 
         // append block
         char defaultUniformBlockString[MAX_SHADER_VARIABLE_NAME + 128];
-        snprintf(defaultUniformBlockString, sizeof(defaultUniformBlockString), "layout(std140, set = 0, binding = %d) uniform %s {\n", sShaderUniformBlockCount++, defaultUniformBlockName);
+        if (gUseSdlGpuBindings) {
+            snprintf(defaultUniformBlockString, sizeof(defaultUniformBlockString), "layout(std140, set = %d, binding = %d) uniform %s {\n",
+                (shader->stage == SHADER_STAGE_VERTEX ? 1 : 3), sSdlGpuUniformBinding++, defaultUniformBlockName);
+        } else {
+            snprintf(defaultUniformBlockString, sizeof(defaultUniformBlockString), "layout(std140, set = 0, binding = %d) uniform %s {\n", sShaderUniformBlockCount++, defaultUniformBlockName);
+        }
         append_and_realloc_str(&sanitized, &sizeofShaderCode, defaultUniformBlockString);
 
         // append uniform code
@@ -1278,6 +1306,22 @@ void gfx_convert_spirv_to_msl(char **shaderCode, struct Shader *shader) {
 
     spvc_context_destroy(context);
     return;
+}
+
+void gfx_reflect_spirv(struct Shader *shader) {
+    spvc_context context = NULL;
+    spvc_compiler compiler = NULL;
+    spvc_parsed_ir ir = NULL;
+
+    SpirVShader *spirvShader = &shader->spirVShader;
+
+    SPVC_CHECK(spvc_context_create(&context));
+    SPVC_CHECK(spvc_context_parse_spirv(context, spirvShader->words, spirvShader->size, &ir));
+    SPVC_CHECK(spvc_context_create_compiler(context, SPVC_BACKEND_NONE, ir, SPVC_CAPTURE_MODE_TAKE_OWNERSHIP, &compiler));
+
+    reflect_shader_data(shader, context, compiler);
+
+    spvc_context_destroy(context);
 }
 
 #undef SPVC_CHECK

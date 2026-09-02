@@ -36,12 +36,11 @@ static void gfx_window_sdl_gpu_init(const char *window_title) {
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, ypos);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, configWindow.w);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, configWindow.h);
-    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_WINDOW_METAL | SDL_WINDOW_RESIZABLE);
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, gfx_wm_window_visibility_flag() | SDL_WINDOW_RESIZABLE);
     sSdlWindow = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
 
     gfx_wm_set_window(sSdlWindow);
-    gfx_window_sdl_gpu_set_vsync(configWindow.vsync);
 }
 
 static void gfx_window_sdl_gpu_handle_events(SDL_Event event) {
@@ -73,6 +72,10 @@ static int gfx_window_sdl_gpu_get_max_msaa(void) {
     return 0;
 }
 
+static void gfx_window_sdl_gpu_shutdown(void) {
+    sSdlWindow = NULL;
+}
+
 struct GfxWindowBackendAPI gfx_window_sdl_gpu = {
     gfx_window_sdl_gpu_init,
     gfx_window_sdl_gpu_set_fullscreen,
@@ -82,4 +85,5 @@ struct GfxWindowBackendAPI gfx_window_sdl_gpu = {
     gfx_window_sdl_gpu_swap_buffers_end,
     gfx_window_sdl_gpu_get_time,
     gfx_window_sdl_gpu_get_max_msaa,
+    gfx_window_sdl_gpu_shutdown,
 };

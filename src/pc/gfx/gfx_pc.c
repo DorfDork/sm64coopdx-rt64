@@ -2107,18 +2107,18 @@ static void gfx_draw_fullscreen_quad() {
          1.0f,  1.0f, 0.0f, 1.0f,   1.0f, 1.0f
     };
 
-#if defined(WIN32) || defined(OSX_BUILD)
 #if defined(WIN32)
-    if (gRenderApi == &gfx_direct3d11_api || gRenderApi == &gfx_direct3d12_api) {
+    if (gRenderApi == &gfx_sdl_gpu_api || gRenderApi == &gfx_direct3d11_api || gRenderApi == &gfx_direct3d12_api) {
+#elif defined(OSX_BUILD)
+    if (gRenderApi == &gfx_sdl_gpu_api || gRenderApi == &gfx_metal_api) {
 #else
-    if (gRenderApi == &gfx_metal_api) {
+    if (gRenderApi == &gfx_sdl_gpu_api) {
 #endif
         // flip y coordinates
         for (int i = 0; i < 6; i++) {
             quadVertices[i * 6 + 5] = 1.0f - quadVertices[i * 6 + 5];
         }
     }
-#endif
 
     gfx_rapi->create_or_load_post_process_shader();
     sRenderingState.shader_program = NULL;
@@ -2773,7 +2773,6 @@ void gfx_run_basic(Gfx *commands) {
 }
 
 void gfx_run(Gfx *commands) {
-    gfx_run_basic(commands); return;
     if (!gfx_wm_start_frame()) {
         sDroppedFrame = true;
         return;

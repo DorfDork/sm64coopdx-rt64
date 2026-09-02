@@ -160,11 +160,14 @@ static void gfx_wm_open_window(void) {
     SDL_PumpEvents();
 }
 
-// releases what the backend attached to a window and destroys it, leaving SDL itself running
-static void gfx_wm_close_window(enum GfxWindowBackend backend, SDL_Window *window) {
+// releases the backend attached to a window, leaving the window itself alive
+static void gfx_wm_detach_backend(enum GfxWindowBackend backend) {
     if (sBackends[backend]->shutdown) {
         sBackends[backend]->shutdown();
     }
+}
+
+static void gfx_wm_close_window(SDL_Window *window) {
     if (window) {
         SDL_DestroyWindow(window);
     }
@@ -214,6 +217,8 @@ void gfx_wm_switch_backend(enum GfxWindowBackend backend) {
     sOutgoingBackend = sCurrBackend;
     sOutgoingSdlWindow = sSdlWindow;
 
+    gfx_wm_detach_backend(sOutgoingBackend);
+
     sCurrBackend = backend;
     sBackends[sCurrBackend]->init(sWindowTitle);
 
@@ -237,7 +242,7 @@ void gfx_wm_finish_switch_backend(void) {
     SDL_RaiseWindow(sSdlWindow);
     gfx_wm_apply_fullscreen_state();
 
-    gfx_wm_close_window(sOutgoingBackend, sOutgoingSdlWindow);
+    gfx_wm_close_window(sOutgoingSdlWindow);
     sOutgoingSdlWindow = NULL;
     sOutgoingBackend = GFX_WINDOW_BACKEND_DUMMY;
 
