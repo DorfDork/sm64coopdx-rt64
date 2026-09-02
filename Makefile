@@ -751,6 +751,30 @@ else
   BACKEND_LDFLAGS += -lGL
 endif
 
+# glslang
+GLSLANG_LIBS :=
+ifeq ($(WINDOWS_BUILD),1)
+  GLSLANG_LIBS := -lglslang -lMachineIndependent -lGenericCodeGen -lOSDependent -lSPIRV -lSPIRV-Tools -lSPIRV-Tools-opt -lglslang-default-resource-limits
+  BACKEND_LDFLAGS += $(GLSLANG_LIBS)
+else ifeq ($(OSX_BUILD),1)
+  GLSLANG_LIBS := -lglslang -lSPIRV -lSPIRV-Tools -lSPIRV-Tools-opt -lglslang-default-resource-limits
+  BACKEND_LDFLAGS += $(GLSLANG_LIBS)
+else
+  GLSLANG_LIBS := $(shell pkg-config --static --libs glslang SPIRV-Tools)
+  BACKEND_LDFLAGS += $(GLSLANG_LIBS) -lglslang-default-resource-limits
+endif
+
+# SPIR-V Cross
+ifeq ($(WINDOWS_BUILD),1)
+  SPIRV_CROSS_LIBS := -lspirv-cross-c -lspirv-cross-hlsl -lspirv-cross-msl -lspirv-cross-glsl -lspirv-cross-cpp -lspirv-cross-reflect -lspirv-cross-core -lSPIRV-Tools-opt -lSPIRV-Tools
+else ifeq ($(OSX_BUILD),1)
+  SPIRV_CROSS_LIBS := $(BREW_PREFIX)/lib/libspirv-cross-c.a $(BREW_PREFIX)/lib/libspirv-cross-hlsl.a $(BREW_PREFIX)/lib/libspirv-cross-msl.a $(BREW_PREFIX)/lib/libspirv-cross-glsl.a $(BREW_PREFIX)/lib/libspirv-cross-cpp.a $(BREW_PREFIX)/lib/libspirv-cross-reflect.a $(BREW_PREFIX)/lib/libspirv-cross-core.a
+else
+  SPIRV_CROSS_LIBS := -Wl,-Bstatic -lspirv-cross-c -lspirv-cross-glsl -lspirv-cross-hlsl -lspirv-cross-msl -lspirv-cross-cpp -lspirv-cross-reflect -lspirv-cross-core -Wl,-Bdynamic
+endif
+
+BACKEND_LDFLAGS += $(SPIRV_CROSS_LIBS)
+
 C_DEFINES += $(foreach d,$(DEFINES),-D$(d))
 DEF_INC_CFLAGS := $(foreach i,$(INCLUDE_DIRS),-I$(i)) $(C_DEFINES)
 

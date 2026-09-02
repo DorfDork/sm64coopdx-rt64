@@ -2,8 +2,6 @@
 
 #if defined(_WIN32)
 #include <windows.h>
-#include <SDL2/SDL_system.h>
-#include <SDL2/SDL_syswm.h>
 #endif
 
 #include <stdio.h>
@@ -113,14 +111,15 @@ static void gfx_wm_reset_dimension_and_pos(void) {
 }
 
 #if defined(_WIN32)
-static void SDLCALL gfx_wm_windows_message_hook(void *userdata, void *hWnd, unsigned int message, Uint64 wParam, Sint64 lParam) {
+static bool SDLCALL gfx_wm_windows_message_hook(void *userdata, MSG *msg) {
     (void)(userdata);
-    gfx_rt64_handle_window_message(hWnd, message, (uintptr_t)(wParam), (intptr_t)(lParam));
+    gfx_rt64_handle_window_message(msg->hwnd, msg->message, (uintptr_t)(msg->wParam), (intptr_t)(msg->lParam));
+    return true;
 }
 #endif
 
 u32 gfx_wm_window_visibility_flag(void) {
-    return (sOutgoingSdlWindow != NULL) ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN;
+    return (sOutgoingSdlWindow != NULL) ? SDL_WINDOW_HIDDEN : 0;
 }
 
 static bool gfx_wm_set_window_cloaked(SDL_Window *window, bool cloaked) {
@@ -133,12 +132,11 @@ static bool gfx_wm_set_window_cloaked(SDL_Window *window, bool cloaked) {
         if (sDwmSetWindowAttribute == NULL) { return false; }
     }
 
-    SDL_SysWMinfo wmInfo;
-    SDL_VERSION(&wmInfo.version);
-    if (!SDL_GetWindowWMInfo(window, &wmInfo)) { return false; }
+    HWND hWnd = (HWND)SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+    if (hWnd == NULL) { return false; }
 
     BOOL value = cloaked ? TRUE : FALSE;
-    return SUCCEEDED(sDwmSetWindowAttribute(wmInfo.info.win.window, 13, &value, sizeof(value)));
+    return SUCCEEDED(sDwmSetWindowAttribute(hWnd, 13, &value, sizeof(value)));
 #else
     (void)(window);
     (void)(cloaked);
@@ -149,7 +147,7 @@ static bool gfx_wm_set_window_cloaked(SDL_Window *window, bool cloaked) {
 static void gfx_wm_apply_fullscreen_state(void) {
     gfx_wm_set_fullscreen();
     if (configWindow.fullscreen) {
-        SDL_ShowCursor(SDL_DISABLE);
+        SDL_HideCursor();
     }
 }
 
@@ -179,14 +177,20 @@ void gfx_wm_init(const char *window_title) {
     SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
     SDL_Init(SDL_INIT_VIDEO);
 
-    SDL_StopTextInput(sSdlWindow);
-
     snprintf(sWindowTitle, sizeof(sWindowTitle), "%s", window_title);
 
-    gfx_wm_set_fullscreen();
-    if (configWindow.fullscreen) {
-        SDL_HideCursor();
-    }
+#if defined(_WIN32) || defined(__APPLE__)
+    sCurrBackend = gCLIOpts.backend < GFX_WINDOW_BACKEND_COUNT ? gCLIOpts.backend : configGraphicsBackend;
+#else
+    sCurrBackend = configGraphicsBackend;
+#endif
+    gfx_wm_open_window();
+
+    SDL_StopTextInput(sSdlWindow);
+
+#if defined(_WIN32)
+    SDL_SetWindowsMessageHook(gfx_wm_windows_message_hook, NULL);
+#endif
 
     controller_bind_init();
 }
@@ -301,8 +305,8 @@ static void gfx_wm_ondropfile(char* path) {
 
 static void gfx_wm_update_inspector_cursor(void) {
     static bool sWasInspectorActive = false;
-    static SDL_bool sPrevRelativeMode = SDL_FALSE;
-    static int sPrevCursorShown = SDL_ENABLE;
+    static bool sPrevRelativeMode = false;
+    static bool sPrevCursorShown = true;
 
     bool isInspectorActive = gfx_rt64_inspector_active();
     if (isInspectorActive == sWasInspectorActive) {
@@ -311,13 +315,17 @@ static void gfx_wm_update_inspector_cursor(void) {
 
     sWasInspectorActive = isInspectorActive;
     if (isInspectorActive) {
-        sPrevRelativeMode = SDL_GetRelativeMouseMode();
-        sPrevCursorShown = SDL_ShowCursor(SDL_QUERY);
-        SDL_SetRelativeMouseMode(SDL_FALSE);
-        SDL_ShowCursor(SDL_ENABLE);
+        sPrevRelativeMode = SDL_GetWindowRelativeMouseMode(sSdlWindow);
+        sPrevCursorShown = SDL_CursorVisible();
+        SDL_SetWindowRelativeMouseMode(sSdlWindow, false);
+        SDL_ShowCursor();
     } else {
-        SDL_SetRelativeMouseMode(sPrevRelativeMode);
-        SDL_ShowCursor(sPrevCursorShown);
+        SDL_SetWindowRelativeMouseMode(sSdlWindow, sPrevRelativeMode);
+        if (sPrevCursorShown) {
+            SDL_ShowCursor();
+        } else {
+            SDL_HideCursor();
+        }
     }
 }
 
@@ -440,12 +448,12 @@ bool gfx_wm_has_focus(void) {
 }
 
 void gfx_wm_start_text_input(void) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
     SDL_StartTextInput(sSdlWindow);
 }
 
 void gfx_wm_stop_text_input(void) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
     SDL_StopTextInput(sSdlWindow);
 }
 
@@ -466,7 +474,7 @@ void gfx_wm_set_clipboard_text(const char *text) {
 }
 
 void gfx_wm_set_cursor_visible(bool visible) {
-    if (currBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
+    if (sCurrBackend == GFX_WINDOW_BACKEND_DUMMY) { return; }
     if (visible) {
         SDL_ShowCursor();
     } else {

@@ -99,7 +99,7 @@ static void gfx_window_dxgi_init(const char *window_title) {
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, ypos);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, configWindow.w);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, configWindow.h);
-    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_WINDOW_RESIZABLE);
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, gfx_wm_window_visibility_flag() | SDL_WINDOW_RESIZABLE);
     sSdlWindow = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
 

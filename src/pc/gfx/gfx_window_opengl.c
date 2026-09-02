@@ -48,6 +48,7 @@
 #endif
 
 static SDL_Window *sSdlWindow;
+static SDL_GLContext sGlContext = NULL;
 
 static inline void gfx_window_opengl_set_vsync(const bool enabled) {
     SDL_GL_SetSwapInterval(enabled);
@@ -84,11 +85,18 @@ static void gfx_window_opengl_init(const char *window_title) {
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, ypos);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, configWindow.w);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, configWindow.h);
-    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_WINDOW_OPENGL | gfx_wm_window_visibility_flag() | SDL_WINDOW_RESIZABLE);
     sSdlWindow = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
 
     sGlContext = SDL_GL_CreateContext(sSdlWindow);
+
+    if (!sGlContext) {
+        // try again with 4.1
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+        sGlContext = SDL_GL_CreateContext(sSdlWindow);
+    }
 
     gfx_wm_set_window(sSdlWindow);
     gfx_window_opengl_set_vsync(configWindow.vsync);
@@ -152,8 +160,7 @@ static int gfx_window_opengl_get_max_msaa(void) {
 }
 
 static void gfx_window_opengl_shutdown(void) {
-    SDL_GLContext ctx = SDL_GL_GetCurrentContext();
-    if (ctx) { SDL_GL_DeleteContext(ctx); }
+    if (sGlContext) { SDL_GL_DestroyContext(sGlContext); sGlContext = NULL; }
     sSdlWindow = NULL;
 }
 
