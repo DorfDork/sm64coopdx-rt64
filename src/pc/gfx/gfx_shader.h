@@ -108,6 +108,7 @@ struct Shader {
     struct ShaderBinding shaderBindings[MAX_SHADER_BINDINGS];
     struct ShaderUniformBlock uniformBlocks[MAX_UNIFORM_BLOCKS];
     int uniformBlockCount;
+    int samplerCount;
 };
 
 extern struct ShaderInput *gShaderInputs;

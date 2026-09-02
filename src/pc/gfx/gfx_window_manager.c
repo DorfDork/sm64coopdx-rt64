@@ -10,6 +10,7 @@
 #include "gfx_window_manager.h"
 #include "gfx_window_opengl.h"
 #include "gfx_window_metal.h"
+#include "gfx_window_sdl_gpu.h"
 #include "gfx_window_dxgi.h"
 #include "gfx_screen_config.h"
 #include "gfx_pc.h"
@@ -35,6 +36,7 @@ static struct GfxWindowBackendAPI *sBackends[GFX_WINDOW_BACKEND_COUNT] = {
     #if defined(__APPLE__)
         [GFX_WINDOW_BACKEND_METAL] = &gfx_window_metal,
     #endif
+    [GFX_WINDOW_BACKEND_SDL_GPU] = &gfx_window_sdl_gpu,
     [GFX_WINDOW_BACKEND_OPENGL] = &gfx_window_opengl,
     [GFX_WINDOW_BACKEND_DUMMY] = &gfx_window_dummy,
 };

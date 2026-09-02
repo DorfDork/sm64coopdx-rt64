@@ -455,7 +455,7 @@ struct ShaderProgram *gfx_metal_create_or_load_post_process_shader(void) {
     prg->hash = framePassIndex;
     prg->numInputs = iedIndex;
     prg->numFloats = numFloats;
-    prg->usedTextures[0] = true;
+    prg->usedTextures[0] = false;
     prg->usedTextures[1] = false;
     prg->usedLightmap = false;
     prg->usedFog = false;

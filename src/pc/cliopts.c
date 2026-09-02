@@ -138,6 +138,8 @@ bool parse_cli_opts(int argc, char* argv[]) {
             } else if (!strcmp(argv[i + 1], "metal")) {
                 gCLIOpts.backend = GFX_WINDOW_BACKEND_METAL;
 #endif
+            } else if (!strcmp(argv[i + 1], "sdlgpu")) {
+                gCLIOpts.backend = GFX_WINDOW_BACKEND_SDL_GPU;
             }
 #endif
         } else if (!strcmp(argv[i], "--help")) {

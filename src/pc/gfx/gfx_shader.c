@@ -1035,7 +1035,7 @@ bool gfx_compile_shader_to_spirv(glslang_stage_t stage, const char *shaderCode, 
         } \
     } while(0)
 
-static void reflect_uniform_data(struct Shader *shader, spvc_context context, spvc_compiler compiler) {
+static void reflect_shader_data(struct Shader *shader, spvc_context context, spvc_compiler compiler) {
     spvc_resources resources;
     spvc_compiler_create_shader_resources(compiler, &resources);
 
@@ -1174,6 +1174,19 @@ static void reflect_uniform_data(struct Shader *shader, spvc_context context, sp
             }
         }
     }
+
+    // reflect samplers
+    const spvc_reflected_resource *samplerList;
+    size_t samplerCount = 0;
+    shader->samplerCount = 0;
+
+    if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_SAMPLED_IMAGE, &samplerList, &samplerCount) == SPVC_SUCCESS) {
+        shader->samplerCount += (int)samplerCount;
+    }
+
+    if (spvc_resources_get_resource_list_for_type(resources, SPVC_RESOURCE_TYPE_SEPARATE_SAMPLERS, &samplerList, &samplerCount) == SPVC_SUCCESS) {
+        shader->samplerCount += (int)samplerCount;
+    }
 }
 
 void gfx_convert_spirv_to_glsl_410(char **shaderCode, struct Shader *shader) {
@@ -1191,7 +1204,7 @@ void gfx_convert_spirv_to_glsl_410(char **shaderCode, struct Shader *shader) {
     spvc_resources resources;
     spvc_compiler_create_shader_resources(compiler, &resources);
 
-    reflect_uniform_data(shader, context, compiler);
+    reflect_shader_data(shader, context, compiler);
 
     spvc_compiler_options options;
     spvc_compiler_create_compiler_options(compiler, &options);
@@ -1219,7 +1232,7 @@ void gfx_convert_spirv_to_hlsl(char **shaderCode, struct Shader *shader) {
     SPVC_CHECK(spvc_context_parse_spirv(context, spirvShader->words, spirvShader->size, &ir));
     SPVC_CHECK(spvc_context_create_compiler(context, SPVC_BACKEND_HLSL, ir, SPVC_CAPTURE_MODE_TAKE_OWNERSHIP, &compiler));
 
-    reflect_uniform_data(shader, context, compiler);
+    reflect_shader_data(shader, context, compiler);
 
     spvc_compiler_options options;
     spvc_compiler_create_compiler_options(compiler, &options);
@@ -1248,7 +1261,7 @@ void gfx_convert_spirv_to_msl(char **shaderCode, struct Shader *shader) {
     spvc_resources resources;
     spvc_compiler_create_shader_resources(compiler, &resources);
 
-    reflect_uniform_data(shader, context, compiler);
+    reflect_shader_data(shader, context, compiler);
 
     // set compilations options
     spvc_compiler_options options;

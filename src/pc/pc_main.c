@@ -246,6 +246,8 @@ static struct GfxRenderingAPI *get_rendering_api_for_backend(enum GfxWindowBacke
         case GFX_WINDOW_BACKEND_METAL:
             return &gfx_metal_api;
 #endif
+        case GFX_WINDOW_BACKEND_SDL_GPU:
+            return &gfx_sdl_gpu_api;
         default:
             return &gfx_dummy_renderer_api;
     }
