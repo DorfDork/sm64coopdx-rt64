@@ -2108,9 +2108,7 @@ static void gfx_draw_fullscreen_quad() {
     };
 
 #if defined(WIN32)
-    if (gRenderApi == &gfx_sdl_gpu_api || gRenderApi == &gfx_direct3d11_api || gRenderApi == &gfx_direct3d12_api) {
-#elif defined(OSX_BUILD)
-    if (gRenderApi == &gfx_sdl_gpu_api || gRenderApi == &gfx_metal_api) {
+    if (gRenderApi == &gfx_sdl_gpu_api || gRenderApi == &gfx_direct3d11_api) {
 #else
     if (gRenderApi == &gfx_sdl_gpu_api) {
 #endif
@@ -2573,6 +2571,9 @@ void gfx_shutdown_rendering_api(void) {
         }
     }
 
+    gDefaultGeoFramePass.width = 0;
+    gDefaultGeoFramePass.height = 0;
+
     if (gfx_rapi->remove_shaders != NULL) { gfx_rapi->remove_shaders(); }
 
     gfx_remove_all_color_combiners();
@@ -2870,11 +2871,6 @@ void gfx_display_frame(void) {
         gfx_rapi->finish_render();
         gfx_wm_swap_buffers_end();
     }
-}
-
-void gfx_end_frame(void) {
-    gfx_end_frame_render();
-    gfx_display_frame();
 }
 
 void gfx_run_one_game_iter(void (*runOneGameIter)(void)) {

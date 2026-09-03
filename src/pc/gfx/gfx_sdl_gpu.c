@@ -15,10 +15,14 @@
 #include "gfx_pc.h"
 #include "gfx_shader.h"
 
+#if defined(_WIN32)
+#include <d3dcompiler.h>
+#endif
+
 #define MAX_FRAMES_IN_FLIGHT 3
 #define MAX_STORAGE_BUFFER_SIZE 32 * 1024 * 1024
 
-static SDL_GPUShaderFormat sShaderFormats = (SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL);
+static SDL_GPUShaderFormat sShaderFormat = SDL_GPU_SHADERFORMAT_SPIRV;
 static SDL_GPUDevice *sGpuDevice = NULL;
 static SDL_Window *sSdlWindow = NULL;
 static SDL_GPUCommandBuffer *sCmdBuffer = NULL;
@@ -45,6 +49,9 @@ struct GpuRingBuffer {
 
 static struct GpuRingBuffer sVertexRingBuffer = { 0 };
 
+static u32 sVertexDirtyBegin = 0;
+static u32 sVertexDirtyEnd = 0; // == sVertexDirtyBegin means there is nothing pending
+
 struct TextureData {
     SDL_GPUTexture *texture;
     SDL_GPUSampler *sampler;
@@ -57,17 +64,13 @@ struct TextureData {
 
 struct ShaderProgramSdlGpu {
     SDL_GPUGraphicsPipeline *pipelines[2][2][2];
-
     SDL_GPUShader *sdlVertexShader;
     SDL_GPUShader *sdlFragmentShader;
-
     struct Shader *vertexShader;
     struct Shader *fragmentShader;
-
     u64 hash;
-
+    u8 samplerBindingCount;
     u8 numInputs;
-
     bool usedTextures[MAX_TEXTURES];
     bool usedFog;
 };
@@ -87,6 +90,9 @@ static struct TextureData *sTextures = NULL;
 static u32 sTexturesCapacity = 0;
 static u32 sTexturesCount = 0;
 
+static const char *const sTexSizeUniformNames[MAX_TEXTURES] = { "uTex0Size", "uTex1Size" };
+static const char *const sTexFilterUniformNames[MAX_TEXTURES] = { "uTex0Filter", "uTex1Filter" };
+
 static s32 sCurrentTile = 0;
 static u32 sCurrentTextureIds[MAX_TEXTURES] = { 0 };
 
@@ -99,6 +105,8 @@ static bool sDepthTest = false;
 static bool sDepthMask = false;
 static bool sZModeDecal = false;
 
+static struct ShaderUniformBlock *sPushedUniformBlocks[2][MAX_UNIFORM_BLOCKS] = { 0 };
+
 static SDL_GPUGraphicsPipeline *sLastPipeline = NULL;
 static u32 sLastTextureIds[MAX_SHADER_BINDINGS] = { 0 };
 static SDL_GPUTexture *sLastBoundTextures[MAX_SHADER_BINDINGS] = { 0 };
@@ -106,7 +114,77 @@ static struct ShaderProgramSdlGpu *sLastCachedProgram = NULL;
 
 static bool sStartedFrame = false;
 
-// helper functions
+#if defined(_WIN32)
+static HMODULE sD3dCompilerModule = NULL;
+static pD3DCompile sD3dCompile = NULL;
+
+static bool gfx_sdl_gpu_load_d3d_compiler(void) {
+    if (sD3dCompile != NULL) { return true; }
+
+    if (sD3dCompilerModule == NULL) {
+        sD3dCompilerModule = LoadLibraryW(L"D3DCompiler_47.dll");
+        if (sD3dCompilerModule == NULL) {
+            sD3dCompilerModule = LoadLibraryW(L"D3DCompiler_43.dll");
+        }
+        if (sD3dCompilerModule == NULL) { return false; }
+    }
+
+    sD3dCompile = (pD3DCompile)(void *)GetProcAddress(sD3dCompilerModule, "D3DCompile");
+    return sD3dCompile != NULL;
+}
+#endif
+
+static const char *gfx_sdl_gpu_driver_for_backend(enum GfxWindowBackend backend) {
+    switch (backend) {
+#if defined(_WIN32)
+        case GFX_WINDOW_BACKEND_DIRECTX12:
+            return "direct3d12";
+        case GFX_WINDOW_BACKEND_VULKAN:
+            return "vulkan";
+#elif defined(__APPLE__)
+        case GFX_WINDOW_BACKEND_METAL:
+            return "metal";
+#else
+        case GFX_WINDOW_BACKEND_VULKAN:
+            return "vulkan";
+#endif
+        default:
+            return NULL;
+    }
+}
+
+static SDL_GPUShaderFormat gfx_sdl_gpu_shader_format_for_backend(enum GfxWindowBackend backend) {
+    switch (backend) {
+#if defined(_WIN32)
+        case GFX_WINDOW_BACKEND_DIRECTX12:
+            return SDL_GPU_SHADERFORMAT_DXBC;
+        case GFX_WINDOW_BACKEND_VULKAN:
+            return SDL_GPU_SHADERFORMAT_SPIRV;
+#elif defined(__APPLE__)
+        case GFX_WINDOW_BACKEND_METAL:
+            return SDL_GPU_SHADERFORMAT_MSL;
+#else
+        case GFX_WINDOW_BACKEND_VULKAN:
+            return SDL_GPU_SHADERFORMAT_SPIRV;
+#endif
+        default:
+            return SDL_GPU_SHADERFORMAT_INVALID;
+    }
+}
+
+bool gfx_sdl_gpu_is_backend_supported(enum GfxWindowBackend backend) {
+    const char *driver = gfx_sdl_gpu_driver_for_backend(backend);
+    if (driver == NULL) { return false; }
+
+#if defined(_WIN32)
+    if (backend == GFX_WINDOW_BACKEND_DIRECTX12 && !gfx_sdl_gpu_load_d3d_compiler()) { return false; }
+#endif
+
+    if (!SDL_WasInit(SDL_INIT_VIDEO) && !SDL_InitSubSystem(SDL_INIT_VIDEO)) { return false; }
+
+    return SDL_GPUSupportsShaderFormats(gfx_sdl_gpu_shader_format_for_backend(backend), driver);
+}
+
 static void gfx_sdl_gpu_create_ring_buffer(struct GpuRingBuffer *ringBuffer, u32 size, SDL_GPUBufferUsageFlags usage) {
     ringBuffer->size = size;
     ringBuffer->currentOffset = 0;
@@ -150,11 +228,40 @@ static u32 gfx_sdl_gpu_allocate_to_ring_buffer(struct GpuRingBuffer *ringBuffer,
     return allocatedOffset;
 }
 
+static void gfx_sdl_gpu_flush_vertex_uploads(void) {
+    if (sVertexDirtyEnd <= sVertexDirtyBegin) { return; }
+
+    if (sUploadCmdBuffer == NULL) {
+        sUploadCmdBuffer = SDL_AcquireGPUCommandBuffer(sGpuDevice);
+        if (sUploadCmdBuffer == NULL) {
+            sys_fatal("Failed to acquire GPU upload command buffer: %s", SDL_GetError());
+        }
+    }
+
+    SDL_GPUTransferBufferLocation transferSrc = {
+        .transfer_buffer = sVertexRingBuffer.transferBuffer,
+        .offset = sVertexDirtyBegin
+    };
+
+    SDL_GPUBufferRegion bufferDst = {
+        .buffer = sVertexRingBuffer.gpuBuffer,
+        .offset = sVertexDirtyBegin,
+        .size = sVertexDirtyEnd - sVertexDirtyBegin
+    };
+
+    SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(sUploadCmdBuffer);
+    SDL_UploadToGPUBuffer(copyPass, &transferSrc, &bufferDst, false);
+    SDL_EndGPUCopyPass(copyPass);
+
+    sVertexDirtyBegin = sVertexDirtyEnd;
+}
+
 static void gfx_sdl_gpu_reset_state(void) {
     sLastPipeline = NULL;
     sLastCachedProgram = NULL;
     memset(sLastTextureIds, 0, sizeof(sLastTextureIds));
     memset(sLastBoundTextures, 0, sizeof(sLastBoundTextures));
+    memset(sPushedUniformBlocks, 0, sizeof(sPushedUniformBlocks));
 }
 
 static void gfx_sdl_gpu_forget_raw_textures(void) {
@@ -169,6 +276,19 @@ static void gfx_sdl_gpu_end_render_pass(void) {
     sRenderPass = NULL;
 }
 
+static SDL_GPUTexture *gfx_sdl_gpu_create_texture(SDL_GPUTextureFormat format, SDL_GPUTextureUsageFlags usage, u32 width, u32 height) {
+    SDL_GPUTextureCreateInfo desc = {
+        .type = SDL_GPU_TEXTURETYPE_2D,
+        .format = format,
+        .usage = usage,
+        .width = width,
+        .height = height,
+        .layer_count_or_depth = 1,
+        .num_levels = 1,
+    };
+    return SDL_CreateGPUTexture(sGpuDevice, &desc);
+}
+
 static void gfx_sdl_gpu_create_depth_texture(void) {
     gfx_sdl_gpu_end_render_pass();
 
@@ -177,17 +297,7 @@ static void gfx_sdl_gpu_create_depth_texture(void) {
         sDepthTexture = NULL;
     }
 
-    SDL_GPUTextureCreateInfo depthDesc = {
-        .type = SDL_GPU_TEXTURETYPE_2D,
-        .format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT,
-        .usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET,
-        .width = sRenderWidth,
-        .height = sRenderHeight,
-        .layer_count_or_depth = 1,
-        .num_levels = 1,
-    };
-
-    sDepthTexture = SDL_CreateGPUTexture(sGpuDevice, &depthDesc);
+    sDepthTexture = gfx_sdl_gpu_create_texture(SDL_GPU_TEXTUREFORMAT_D32_FLOAT, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET, sRenderWidth, sRenderHeight);
     if (!sDepthTexture) {
         sys_fatal("Failed to create swapchain depth texture: %s", SDL_GetError());
     }
@@ -207,32 +317,17 @@ static void gfx_sdl_gpu_setup_command_buffer(void) {
     sRenderPass = NULL;
 }
 
-static SDL_GPUShader *gfx_sdl_gpu_create_shader_from_spirv(SDL_GPUShaderStage stage, SpirVShader *spirvShader, u32 numSamplers, u32 numUniformBuffers) {
+static SDL_GPUShader *gfx_sdl_gpu_create_shader_from_bytes(struct Shader *shader, SDL_GPUShaderStage stage, const void *code, size_t codeSize, const char *entrypoint) {
     SDL_GPUShaderCreateInfo createInfo = {
-        .code_size = (size_t)spirvShader->size * sizeof(u32),
-        .code = (const u8 *)spirvShader->words,
-        .entrypoint = "main",
-        .format = SDL_GPU_SHADERFORMAT_SPIRV,
+        .code_size = codeSize,
+        .code = (const u8 *)code,
+        .entrypoint = entrypoint,
+        .format = sShaderFormat,
         .stage = stage,
-        .num_samplers = numSamplers,
+        .num_samplers = shader->samplerCount,
         .num_storage_textures = 0,
         .num_storage_buffers = 0,
-        .num_uniform_buffers = numUniformBuffers
-    };
-    return SDL_CreateGPUShader(sGpuDevice, &createInfo);
-}
-
-static SDL_GPUShader *gfx_sdl_gpu_create_shader_from_msl(SDL_GPUShaderStage stage, char *mslCode, u32 numSamplers, u32 numUniformBuffers) {
-    SDL_GPUShaderCreateInfo createInfo = {
-        .code_size = strlen(mslCode),
-        .code = (const u8 *)mslCode,
-        .entrypoint = "main0",
-        .format = SDL_GPU_SHADERFORMAT_MSL,
-        .stage = stage,
-        .num_samplers = numSamplers,
-        .num_storage_textures = 0,
-        .num_storage_buffers = 0,
-        .num_uniform_buffers = numUniformBuffers
+        .num_uniform_buffers = shader->uniformBlockCount
     };
     return SDL_CreateGPUShader(sGpuDevice, &createInfo);
 }
@@ -240,19 +335,52 @@ static SDL_GPUShader *gfx_sdl_gpu_create_shader_from_msl(SDL_GPUShaderStage stag
 static SDL_GPUShader *gfx_sdl_gpu_create_shader(struct Shader *shader) {
     SDL_GPUShaderStage stage = (shader->stage == SHADER_STAGE_VERTEX ? SDL_GPU_SHADERSTAGE_VERTEX : SDL_GPU_SHADERSTAGE_FRAGMENT);
 
-#ifdef __APPLE__
-    char *mslCode = NULL;
-    gfx_convert_spirv_to_msl(&mslCode, shader);
+    switch (sShaderFormat) {
+        case SDL_GPU_SHADERFORMAT_MSL: {
+            char *mslCode = NULL;
+            gfx_convert_spirv_to_msl(&mslCode, shader);
 
-    SDL_GPUShader *sdlShader = gfx_sdl_gpu_create_shader_from_msl(stage, mslCode, shader->samplerCount, shader->uniformBlockCount);
+            SDL_GPUShader *sdlShader = gfx_sdl_gpu_create_shader_from_bytes(shader, stage, mslCode, strlen(mslCode), "main0");
 
-    free(mslCode);
-    return sdlShader;
-#else
-    gfx_reflect_spirv(shader);
+            free(mslCode);
+            return sdlShader;
+        }
+#if defined(_WIN32)
+        case SDL_GPU_SHADERFORMAT_DXBC: {
+            char *hlslCode = NULL;
+            gfx_convert_spirv_to_hlsl(&hlslCode, shader, 51);
 
-    return gfx_sdl_gpu_create_shader_from_spirv(stage, &shader->spirVShader, shader->samplerCount, shader->uniformBlockCount);
+            const char *target = (stage == SDL_GPU_SHADERSTAGE_VERTEX) ? "vs_5_1" : "ps_5_1";
+            ID3DBlob *codeBlob = NULL;
+            ID3DBlob *errorBlob = NULL;
+
+            HRESULT hr = sD3dCompile(hlslCode, strlen(hlslCode), NULL, NULL, NULL, "main", target,
+                D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &codeBlob, &errorBlob);
+            free(hlslCode);
+
+            if (FAILED(hr)) {
+                const char *message = (errorBlob != NULL) ? (const char *)errorBlob->lpVtbl->GetBufferPointer(errorBlob) : "unknown error";
+                LOG_ERROR("Failed to compile %s shader to DXBC: %s", target, message);
+                if (errorBlob != NULL) { errorBlob->lpVtbl->Release(errorBlob); }
+                if (codeBlob != NULL) { codeBlob->lpVtbl->Release(codeBlob); }
+                return NULL;
+            }
+            if (errorBlob != NULL) { errorBlob->lpVtbl->Release(errorBlob); }
+
+            SDL_GPUShader *sdlShader = gfx_sdl_gpu_create_shader_from_bytes(shader, stage,
+                codeBlob->lpVtbl->GetBufferPointer(codeBlob), codeBlob->lpVtbl->GetBufferSize(codeBlob), "main");
+
+            codeBlob->lpVtbl->Release(codeBlob);
+            return sdlShader;
+        }
 #endif
+        default: {
+            gfx_reflect_spirv(shader);
+
+            return gfx_sdl_gpu_create_shader_from_bytes(shader, stage, shader->spirVShader.words,
+                (size_t)shader->spirVShader.size * sizeof(u32), "main");
+        }
+    }
 }
 
 static SDL_GPUTextureFormat gfx_sdl_gpu_color_target_format(void) {
@@ -288,6 +416,13 @@ static u32 gfx_sdl_gpu_build_vertex_layout(struct Shader *vertexShader, SDL_GPUV
     return attributeCount;
 }
 
+static u8 gfx_sdl_gpu_count_sampler_bindings(struct Shader *fragmentShader) {
+    for (s32 i = MAX_SHADER_BINDINGS - 1; i >= 0; i--) {
+        if (fragmentShader->sdlGpuSamplerSlots[i] != SAMPLER_SLOT_UNUSED) { return (u8)(i + 1); }
+    }
+    return 0;
+}
+
 static void gfx_sdl_gpu_create_pipeline_variants(struct ShaderProgramSdlGpu *prg, SDL_GPUGraphicsPipelineCreateInfo *pipelineInfo) {
     for (s32 test = 0; test < 2; test++) {
         for (s32 mask = 0; mask < 2; mask++) {
@@ -314,10 +449,6 @@ static SDL_GPUSamplerAddressMode gfx_cm_to_sdl_gpu(u32 cm) {
         return SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     }
     return (cm & G_TX_MIRROR) ? SDL_GPU_SAMPLERADDRESSMODE_MIRRORED_REPEAT : SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
-}
-
-static bool gfx_sdl_gpu_z_is_from_0_to_1(void) {
-    return true;
 }
 
 static void gfx_sdl_gpu_unload_shader(UNUSED struct ShaderProgram *oldPrg) {
@@ -366,37 +497,12 @@ static void gfx_sdl_gpu_remove_shaders(void) {
     sShaderProgram = NULL;
 }
 
-static struct ShaderProgram *gfx_sdl_gpu_create_and_load_new_shader(struct ColorCombiner *cc) {
-    struct CCFeatures ccFeatures = { 0 };
-    gfx_cc_get_features(cc, &ccFeatures);
-
-    struct Shader *vertexShader = (struct Shader *)calloc(1, sizeof(struct Shader));
-    struct Shader *fragmentShader = (struct Shader *)calloc(1, sizeof(struct Shader));
-    if (!vertexShader || !fragmentShader) {
-        sys_fatal("Failed to allocate shaders, ran out of memory!");
-    }
-
-    gUseSdlGpuBindings = true;
-    gfx_generate_vertex_and_fragment_shader_from_cc(vertexShader, fragmentShader, cc, NULL, NULL);
-    gUseSdlGpuBindings = false;
-
+static u32 gfx_sdl_gpu_build_program(struct ShaderProgramSdlGpu *prg, struct Shader *vertexShader, struct Shader *fragmentShader, bool useAlpha) {
     SDL_GPUShader *sdlVs = gfx_sdl_gpu_create_shader(vertexShader);
     SDL_GPUShader *sdlFs = gfx_sdl_gpu_create_shader(fragmentShader);
 
     if (!sdlVs || !sdlFs) {
         sys_fatal("Failed to create SDL GPU Shaders: %s", SDL_GetError());
-    }
-
-    s32 framePassIndex = gCurrentFramePassIndex + 1;
-    if (framePassIndex < 0 || framePassIndex >= MAX_FRAME_PASSES) { framePassIndex = 0; }
-
-    u8 poolIndex = sShaderProgramPoolIndex[framePassIndex];
-
-    struct ShaderProgramSdlGpu *prg = &sShaderProgramPool[framePassIndex][poolIndex];
-
-    sShaderProgramPoolIndex[framePassIndex] = (poolIndex + 1) % CC_MAX_SHADERS;
-    if (sShaderProgramPoolSize[framePassIndex] < CC_MAX_SHADERS) {
-        sShaderProgramPoolSize[framePassIndex]++;
     }
 
     SDL_GPUVertexAttribute vertexAttributes[MAX_SHADER_INPUTS];
@@ -413,7 +519,7 @@ static struct ShaderProgram *gfx_sdl_gpu_create_and_load_new_shader(struct Color
     SDL_GPUColorTargetDescription colorTargetDesc = {
         .format = gfx_sdl_gpu_color_target_format(),
         .blend_state = {
-            .enable_blend = cc->cm.use_alpha,
+            .enable_blend = useAlpha,
             .src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA,
             .dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA,
             .color_blend_op = SDL_GPU_BLENDOP_ADD,
@@ -446,20 +552,52 @@ static struct ShaderProgram *gfx_sdl_gpu_create_and_load_new_shader(struct Color
         }
     };
 
+    gfx_sdl_gpu_create_pipeline_variants(prg, &pipelineInfo);
+
+    prg->samplerBindingCount = gfx_sdl_gpu_count_sampler_bindings(fragmentShader);
+    prg->sdlVertexShader = sdlVs;
+    prg->sdlFragmentShader = sdlFs;
+    prg->vertexShader = vertexShader;
+    prg->fragmentShader = fragmentShader;
+
+    return attributeCount;
+}
+
+static struct ShaderProgram *gfx_sdl_gpu_create_and_load_new_shader(struct ColorCombiner *cc) {
+    struct CCFeatures ccFeatures = { 0 };
+    gfx_cc_get_features(cc, &ccFeatures);
+
+    struct Shader *vertexShader = (struct Shader *)calloc(1, sizeof(struct Shader));
+    struct Shader *fragmentShader = (struct Shader *)calloc(1, sizeof(struct Shader));
+    if (!vertexShader || !fragmentShader) {
+        sys_fatal("Failed to allocate shaders, ran out of memory!");
+    }
+
+    gUseSdlGpuBindings = true;
+    gfx_generate_vertex_and_fragment_shader_from_cc(vertexShader, fragmentShader, cc, NULL, NULL);
+    gUseSdlGpuBindings = false;
+
+    s32 framePassIndex = gCurrentFramePassIndex + 1;
+    if (framePassIndex < 0 || framePassIndex >= MAX_FRAME_PASSES) { framePassIndex = 0; }
+
+    u8 poolIndex = sShaderProgramPoolIndex[framePassIndex];
+
+    struct ShaderProgramSdlGpu *prg = &sShaderProgramPool[framePassIndex][poolIndex];
+
+    sShaderProgramPoolIndex[framePassIndex] = (poolIndex + 1) % CC_MAX_SHADERS;
+    if (sShaderProgramPoolSize[framePassIndex] < CC_MAX_SHADERS) {
+        sShaderProgramPoolSize[framePassIndex]++;
+    }
+
     if (sShaderProgram == prg) { sShaderProgram = NULL; }
     gfx_sdl_gpu_release_program(prg);
-    gfx_sdl_gpu_create_pipeline_variants(prg, &pipelineInfo);
+    gfx_sdl_gpu_build_program(prg, vertexShader, fragmentShader, cc->cm.use_alpha);
 
     prg->hash = cc->hash;
     prg->numInputs = ccFeatures.num_inputs;
     prg->usedTextures[0] = ccFeatures.used_textures[0];
     prg->usedTextures[1] = ccFeatures.used_textures[1];
     prg->usedFog = cc->cm.use_fog;
-
-    prg->sdlVertexShader = sdlVs;
-    prg->sdlFragmentShader = sdlFs;
-    prg->vertexShader = vertexShader;
-    prg->fragmentShader = fragmentShader;
 
     sShaderProgram = prg;
     return (struct ShaderProgram *)prg;
@@ -486,84 +624,21 @@ static struct ShaderProgram *gfx_sdl_gpu_create_or_load_post_process_shader(void
     gfx_generate_post_process_vertex_and_fragment_shader(vertexShader, fragmentShader, NULL, NULL);
     gUseSdlGpuBindings = false;
 
-    SDL_GPUShader *sdlVs = gfx_sdl_gpu_create_shader(vertexShader);
-    SDL_GPUShader *sdlFs = gfx_sdl_gpu_create_shader(fragmentShader);
-
-    if (!sdlVs || !sdlFs) {
-        sys_fatal("Failed to create SDL GPU Shaders: %s", SDL_GetError());
-    }
-
-    SDL_GPUVertexAttribute vertexAttributes[MAX_SHADER_INPUTS];
-    u32 vertexPitch = 0;
-    u32 attributeCount = gfx_sdl_gpu_build_vertex_layout(vertexShader, vertexAttributes, &vertexPitch);
-
-    SDL_GPUVertexBufferDescription vertexBufferDesc = {
-        .slot = 0,
-        .pitch = vertexPitch,
-        .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
-        .instance_step_rate = 0
-    };
-
-    SDL_GPUColorTargetDescription colorTargetDesc = {
-        .format = gfx_sdl_gpu_color_target_format(),
-        .blend_state = { .enable_blend = false }
-    };
-
-    SDL_GPUGraphicsPipelineCreateInfo pipelineInfo = {
-        .vertex_shader = sdlVs,
-        .fragment_shader = sdlFs,
-        .vertex_input_state = {
-            .vertex_buffer_descriptions = &vertexBufferDesc,
-            .num_vertex_buffers = (attributeCount > 0) ? 1 : 0,
-            .vertex_attributes = vertexAttributes,
-            .num_vertex_attributes = attributeCount
-        },
-        .primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
-        .target_info = {
-            .color_target_descriptions = &colorTargetDesc,
-            .num_color_targets = 1,
-            .depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT,
-            .has_depth_stencil_target = true
-        },
-        .rasterizer_state = {
-            .cull_mode = SDL_GPU_CULLMODE_NONE,
-            .front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE
-        }
-    };
-
-    gfx_sdl_gpu_create_pipeline_variants(prg, &pipelineInfo);
-
-    prg->hash = framePassIndex;
-    prg->numInputs = (u8)attributeCount;
-    prg->usedTextures[0] = false;
-    prg->usedTextures[1] = false;
-    prg->usedFog = false;
-
-    prg->sdlVertexShader = sdlVs;
-    prg->sdlFragmentShader = sdlFs;
-    prg->vertexShader = vertexShader;
-    prg->fragmentShader = fragmentShader;
+    prg->numInputs = (u8)gfx_sdl_gpu_build_program(prg, vertexShader, fragmentShader, false);
 
     sShaderProgram = prg;
     return (struct ShaderProgram *)prg;
 }
 
 static struct ShaderProgram *gfx_sdl_gpu_lookup_shader(struct ColorCombiner *cc) {
-    int framePassIndex = gCurrentFramePassIndex + 1;
+    s32 framePassIndex = gCurrentFramePassIndex + 1;
     if (framePassIndex < 0 || framePassIndex >= MAX_FRAME_PASSES) { return NULL; }
-    for (size_t i = 0; i < sShaderProgramPoolSize[framePassIndex]; i++) {
+    for (s32 i = 0; i < sShaderProgramPoolSize[framePassIndex]; i++) {
         if (sShaderProgramPool[framePassIndex][i].hash == cc->hash) {
             return (struct ShaderProgram *)&sShaderProgramPool[framePassIndex][i];
         }
     }
     return NULL;
-}
-
-static struct ShaderProgram *gfx_sdl_gpu_lookup_shader_using_index(u8 shaderIndex, u8 framePassIndex) {
-    s32 poolIndex = (s32)framePassIndex + 1;
-    if (poolIndex < 0 || poolIndex >= MAX_FRAME_PASSES) { return NULL; }
-    if (shaderIndex >= sShaderProgramPoolSize[poolIndex]) { return NULL; }
-    return (struct ShaderProgram *)&sShaderProgramPool[poolIndex][shaderIndex];
 }
 
 static void gfx_sdl_gpu_shader_get_info(struct ShaderProgram *prg, u8 *numInputs, bool used_textures[2]) {
@@ -582,32 +657,14 @@ static void gfx_sdl_gpu_create_framebuffer(struct FramePass *framePass) {
     u32 viewportHeight;
     gfx_get_frame_pass_viewport_dimensions(framePass, &viewportWidth, &viewportHeight);
 
-    SDL_GPUTextureCreateInfo colorDesc = {
-        .type = SDL_GPU_TEXTURETYPE_2D,
-        .format = gfx_sdl_gpu_color_target_format(),
-        .usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
-        .width = viewportWidth,
-        .height = viewportHeight,
-        .layer_count_or_depth = 1,
-        .num_levels = 1,
-    };
-
-    SDL_GPUTexture *colorTex = SDL_CreateGPUTexture(sGpuDevice, &colorDesc);
+    SDL_GPUTexture *colorTex = gfx_sdl_gpu_create_texture(gfx_sdl_gpu_color_target_format(),
+        SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER, viewportWidth, viewportHeight);
     if (colorTex == NULL) {
         return;
     }
 
-    SDL_GPUTextureCreateInfo depthDesc = {
-        .type = SDL_GPU_TEXTURETYPE_2D,
-        .format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT,
-        .usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET,
-        .width = viewportWidth,
-        .height = viewportHeight,
-        .layer_count_or_depth = 1,
-        .num_levels = 1,
-    };
-
-    SDL_GPUTexture *depthTex = SDL_CreateGPUTexture(sGpuDevice, &depthDesc);
+    SDL_GPUTexture *depthTex = gfx_sdl_gpu_create_texture(SDL_GPU_TEXTUREFORMAT_D32_FLOAT,
+        SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET, viewportWidth, viewportHeight);
     if (depthTex == NULL) {
         SDL_ReleaseGPUTexture(sGpuDevice, colorTex);
         return;
@@ -641,6 +698,29 @@ static void gfx_sdl_gpu_delete_framebuffer(struct FramePass *framePass) {
     framePass->fbo = 0;
 }
 
+static void gfx_sdl_gpu_begin_render_pass(SDL_GPUTexture *colorTex, SDL_GPUTexture *depthTex, const f32 clearColor[4], bool cleared) {
+    SDL_GPULoadOp loadOp = cleared ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_CLEAR;
+
+    SDL_GPUColorTargetInfo colorTargetInfo = {
+        .texture = colorTex,
+        .clear_color = { clearColor[0], clearColor[1], clearColor[2], clearColor[3] },
+        .load_op = loadOp,
+        .store_op = SDL_GPU_STOREOP_STORE,
+    };
+
+    SDL_GPUDepthStencilTargetInfo depthTargetInfo = {
+        .texture = depthTex,
+        .clear_depth = 1.0f,
+        .load_op = loadOp,
+        .store_op = SDL_GPU_STOREOP_STORE,
+    };
+
+    sRenderPass = SDL_BeginGPURenderPass(sCmdBuffer, &colorTargetInfo, 1, (depthTex != NULL) ? &depthTargetInfo : NULL);
+    if (sRenderPass == NULL) { return; }
+
+    gfx_sdl_gpu_reset_state();
+}
+
 static void gfx_sdl_gpu_set_framebuffer(struct FramePass *framePass) {
     if (framePass == NULL || !framePass->fbo) {
         return;
@@ -655,29 +735,14 @@ static void gfx_sdl_gpu_set_framebuffer(struct FramePass *framePass) {
     bool cleared = sFramePassCleared[framePassIndex];
     sFramePassCleared[framePassIndex] = true;
 
-    SDL_GPUColorTargetInfo colorTargetInfo = {
-        .texture = (SDL_GPUTexture *)framePass->d3dRtv,
-        .clear_color = {
-            (f32)framePass->clearColor[0] / 255.0f,
-            (f32)framePass->clearColor[1] / 255.0f,
-            (f32)framePass->clearColor[2] / 255.0f,
-            (f32)framePass->clearColor[3] / 255.0f
-        },
-        .load_op = cleared ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_CLEAR,
-        .store_op = SDL_GPU_STOREOP_STORE,
+    const f32 clearColor[4] = {
+        (f32)framePass->clearColor[0] / 255.0f,
+        (f32)framePass->clearColor[1] / 255.0f,
+        (f32)framePass->clearColor[2] / 255.0f,
+        (f32)framePass->clearColor[3] / 255.0f
     };
 
-    SDL_GPUDepthStencilTargetInfo depthTargetInfo = {
-        .texture = (SDL_GPUTexture *)framePass->d3dDsv,
-        .clear_depth = 1.0f,
-        .load_op = cleared ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_CLEAR,
-        .store_op = SDL_GPU_STOREOP_STORE,
-    };
-
-    sRenderPass = SDL_BeginGPURenderPass(sCmdBuffer, &colorTargetInfo, 1, &depthTargetInfo);
-    if (sRenderPass == NULL) { return; }
-
-    gfx_sdl_gpu_reset_state();
+    gfx_sdl_gpu_begin_render_pass((SDL_GPUTexture *)framePass->d3dRtv, (SDL_GPUTexture *)framePass->d3dDsv, clearColor, cleared);
 }
 
 static void gfx_sdl_gpu_reset_framebuffer(void) {
@@ -698,58 +763,32 @@ static void gfx_sdl_gpu_reset_framebuffer(void) {
     bool cleared = sSwapchainCleared;
     sSwapchainCleared = true;
 
-    SDL_GPUColorTargetInfo colorTargetInfo = {
-        .texture = sSwapchainTex,
-        .load_op = cleared ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_CLEAR,
-        .store_op = SDL_GPU_STOREOP_STORE,
-    };
+    const f32 clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    gfx_sdl_gpu_begin_render_pass(sSwapchainTex, sDepthTexture, clearColor, cleared);
+}
 
-    SDL_GPUDepthStencilTargetInfo depthTargetInfo = {
-        .texture = sDepthTexture,
-        .clear_depth = 1.0f,
-        .load_op = cleared ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_CLEAR,
-        .store_op = SDL_GPU_STOREOP_STORE,
-    };
-
-    sRenderPass = SDL_BeginGPURenderPass(sCmdBuffer, &colorTargetInfo, 1, (sDepthTexture != NULL) ? &depthTargetInfo : NULL);
-    if (sRenderPass == NULL) { return; }
-
-    gfx_sdl_gpu_reset_state();
+// the shader the loaded program uses for this stage, or NULL if there is not one
+static struct Shader *gfx_sdl_gpu_shader_for_stage(enum ShaderStage stage) {
+    if (sShaderProgram == NULL) { return NULL; }
+    if (stage == SHADER_STAGE_VERTEX) { return sShaderProgram->vertexShader; }
+    if (stage == SHADER_STAGE_FRAGMENT) { return sShaderProgram->fragmentShader; }
+    return NULL;
 }
 
 static size_t gfx_sdl_gpu_get_uniform_buffer_size(enum ShaderStage stage, s32 bufferIndex) {
     if (bufferIndex < 0 || bufferIndex >= MAX_UNIFORM_BLOCKS) { return 0; }
 
-    struct Shader *shader = NULL;
-
-    if (stage == SHADER_STAGE_VERTEX) {
-        if (!sShaderProgram || !sShaderProgram->vertexShader) { return 0; }
-        shader = sShaderProgram->vertexShader;
-    } else if (stage == SHADER_STAGE_FRAGMENT) {
-        if (!sShaderProgram || !sShaderProgram->fragmentShader) { return 0; }
-        shader = sShaderProgram->fragmentShader;
-    } else {
-        return 0;
-    }
+    struct Shader *shader = gfx_sdl_gpu_shader_for_stage(stage);
+    if (shader == NULL) { return 0; }
 
     return shader->uniformBlocks[bufferIndex].size;
 }
 
 static void gfx_sdl_gpu_set_uniform_buffer(enum ShaderStage stage, const char *name) {
-    struct Shader *shader = NULL;
-    s32 *destination = NULL;
+    struct Shader *shader = gfx_sdl_gpu_shader_for_stage(stage);
+    if (shader == NULL) { return; }
 
-    if (stage == SHADER_STAGE_VERTEX) {
-        if (!sShaderProgram || !sShaderProgram->vertexShader) { return; }
-        shader = sShaderProgram->vertexShader;
-        destination = &gSelectedVertexUniformBuffer;
-    } else if (stage == SHADER_STAGE_FRAGMENT) {
-        if (!sShaderProgram || !sShaderProgram->fragmentShader) { return; }
-        shader = sShaderProgram->fragmentShader;
-        destination = &gSelectedFragmentUniformBuffer;
-    } else {
-        return;
-    }
+    s32 *destination = (stage == SHADER_STAGE_VERTEX) ? &gSelectedVertexUniformBuffer : &gSelectedFragmentUniformBuffer;
 
     for (s32 i = 0; i < MAX_UNIFORM_BLOCKS; i++) {
         struct ShaderUniformBlock *uniformBlock = &shader->uniformBlocks[i];
@@ -778,10 +817,15 @@ static void gfx_sdl_gpu_set_uniform_for_specific_shader(struct ShaderUniformBloc
                 const u8 *src = (const u8 *)data;
                 u32 count = MIN(numElements, (u32)uniform->arrayLength);
                 for (u32 j = 0; j < count; j++) {
-                    memcpy(dst + j * uniform->arrayStride, src + j * uniform->elementSize, uniform->elementSize);
+                    u8 *elementDst = dst + j * uniform->arrayStride;
+                    const u8 *elementSrc = src + j * uniform->elementSize;
+                    if (memcmp(elementDst, elementSrc, uniform->elementSize) == 0) { continue; }
+                    memcpy(elementDst, elementSrc, uniform->elementSize);
+                    uniformBlock->dirty = true;
                 }
-            } else {
+            } else if (memcmp(dst, data, uniform->size) != 0) {
                 memcpy(dst, data, uniform->size);
+                uniformBlock->dirty = true;
             }
             return;
         }
@@ -875,17 +919,7 @@ static void gfx_sdl_gpu_upload_texture(const u8 *rgba32_buf, s32 width, s32 heig
     struct TextureData *textureData = gfx_sdl_gpu_texture_for_tile(sCurrentTile);
     if (textureData == NULL) { return; }
 
-    SDL_GPUTextureCreateInfo textureCreateInfo = {
-        .type = SDL_GPU_TEXTURETYPE_2D,
-        .format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
-        .usage = SDL_GPU_TEXTUREUSAGE_SAMPLER,
-        .width = (u32)width,
-        .height = (u32)height,
-        .layer_count_or_depth = 1,
-        .num_levels = 1,
-    };
-
-    SDL_GPUTexture *texture = SDL_CreateGPUTexture(sGpuDevice, &textureCreateInfo);
+    SDL_GPUTexture *texture = gfx_sdl_gpu_create_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, (u32)width, (u32)height);
     if (!texture) {
         sys_fatal("Failed to create SDL GPU texture for upload: %s", SDL_GetError());
     }
@@ -945,7 +979,6 @@ static void gfx_sdl_gpu_set_sampler_parameters(s32 tile, bool linear_filter, u32
     struct TextureData *textureData = gfx_sdl_gpu_texture_for_tile(tile);
     if (textureData == NULL) { return; }
 
-    // check if sampler already exists
     if (textureData->sampler != NULL &&
         textureData->linearFilter == linear_filter &&
         textureData->cms == cms &&
@@ -991,9 +1024,8 @@ static void gfx_sdl_gpu_set_viewport(s32 x, s32 y, s32 width, s32 height) {
         return;
     }
 
-    struct FramePass *framePass = gfx_get_current_frame_pass();
     u32 viewportHeight;
-    gfx_get_frame_pass_viewport_dimensions(framePass, NULL, &viewportHeight);
+    gfx_get_frame_pass_viewport_dimensions(gfx_get_current_frame_pass(), NULL, &viewportHeight);
 
     SDL_GPUViewport vp = {
         .x = (f32)x,
@@ -1012,9 +1044,8 @@ static void gfx_sdl_gpu_set_scissor(s32 x, s32 y, s32 width, s32 height) {
         return;
     }
 
-    struct FramePass *framePass = gfx_get_current_frame_pass();
     u32 viewportHeight;
-    gfx_get_frame_pass_viewport_dimensions(framePass, NULL, &viewportHeight);
+    gfx_get_frame_pass_viewport_dimensions(gfx_get_current_frame_pass(), NULL, &viewportHeight);
 
     SDL_Rect r = {
         .x = x,
@@ -1040,28 +1071,56 @@ static void gfx_sdl_gpu_set_vsync(bool enabled) {
         presentMode = SDL_GPU_PRESENTMODE_VSYNC;
     }
 
-    if (sPresentModeValid && presentMode == sPresentMode) { return; }
+    const bool rebuild = sPresentModeValid;
 
-    gfx_sdl_gpu_submit_frame();
+    if (rebuild && presentMode == sPresentMode) { return; }
 
-    if (SDL_SetGPUSwapchainParameters(sGpuDevice, sSdlWindow, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, presentMode)) {
-        sPresentMode = presentMode;
-        sPresentModeValid = true;
+    if (rebuild) {
+        gfx_sdl_gpu_submit_frame();
+        SDL_WaitForGPUIdle(sGpuDevice);
+
+        SDL_ReleaseWindowFromGPUDevice(sGpuDevice, sSdlWindow);
+        if (!SDL_ClaimWindowForGPUDevice(sGpuDevice, sSdlWindow)) {
+            sys_fatal("Failed to reclaim window for gpu device: %s", SDL_GetError());
+        }
+
+        sSwapchainFormat = SDL_GetGPUSwapchainTextureFormat(sGpuDevice, sSdlWindow);
+    }
+
+    sPresentMode = presentMode;
+    sPresentModeValid = true;
+
+    if (presentMode == SDL_GPU_PRESENTMODE_VSYNC) { return; }
+
+    if (!SDL_SetGPUSwapchainParameters(sGpuDevice, sSdlWindow, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, presentMode)) {
+        LOG_ERROR("Couldn't set the swapchain present mode: %s", SDL_GetError());
     }
 }
 
 static void upload_uniform_buffers_for_shader(struct Shader *shader) {
     if (shader == NULL || sRenderPass == NULL) { return; }
 
+    bool isVertex = (shader->stage == SHADER_STAGE_VERTEX);
+    if (!isVertex && shader->stage != SHADER_STAGE_FRAGMENT) { return; }
+
+    struct ShaderUniformBlock **pushed = sPushedUniformBlocks[isVertex ? 0 : 1];
+
     for (s32 i = 0; i < shader->uniformBlockCount; i++) {
         struct ShaderUniformBlock *uniformBlock = &shader->uniformBlocks[i];
         if (uniformBlock->size == 0) { continue; }
 
-        if (shader->stage == SHADER_STAGE_VERTEX) {
-            SDL_PushGPUVertexUniformData(sCmdBuffer, uniformBlock->location, uniformBlock->buffer, uniformBlock->size);
-        } else if (shader->stage == SHADER_STAGE_FRAGMENT) {
-            SDL_PushGPUFragmentUniformData(sCmdBuffer, uniformBlock->location, uniformBlock->buffer, uniformBlock->size);
+        u32 slot = uniformBlock->location;
+        bool tracked = (slot < MAX_UNIFORM_BLOCKS);
+        if (tracked && !uniformBlock->dirty && pushed[slot] == uniformBlock) { continue; }
+
+        if (isVertex) {
+            SDL_PushGPUVertexUniformData(sCmdBuffer, slot, uniformBlock->buffer, uniformBlock->size);
+        } else {
+            SDL_PushGPUFragmentUniformData(sCmdBuffer, slot, uniformBlock->buffer, uniformBlock->size);
         }
+
+        uniformBlock->dirty = false;
+        if (tracked) { pushed[slot] = uniformBlock; }
     }
 }
 
@@ -1078,33 +1137,13 @@ static void gfx_sdl_gpu_draw_triangles(f32 buf_vbo[], size_t buf_vbo_len, size_t
         offset = gfx_sdl_gpu_allocate_to_ring_buffer(&sVertexRingBuffer, vboByteSize);
         memcpy(sVertexRingBuffer.mappedData + offset, buf_vbo, vboByteSize);
 
-        if (sUploadCmdBuffer == NULL) {
-            sUploadCmdBuffer = SDL_AcquireGPUCommandBuffer(sGpuDevice);
-            if (sUploadCmdBuffer == NULL) {
-                sys_fatal("Failed to acquire GPU upload command buffer: %s", SDL_GetError());
-            }
+        if (offset < sVertexDirtyEnd) {
+            gfx_sdl_gpu_flush_vertex_uploads();
         }
-
-        // create a copy pass
-        SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(sUploadCmdBuffer);
-
-        // create the transfer source
-        SDL_GPUTransferBufferLocation transferSrc = {
-            .transfer_buffer = sVertexRingBuffer.transferBuffer,
-            .offset = offset
-        };
-
-        // create the destination
-        SDL_GPUBufferRegion bufferDst = {
-            .buffer = sVertexRingBuffer.gpuBuffer,
-            .offset = offset,
-            .size = vboByteSize
-        };
-
-        // upload data to gpu buffer
-        SDL_UploadToGPUBuffer(copyPass, &transferSrc, &bufferDst, false);
-        // end copy pass
-        SDL_EndGPUCopyPass(copyPass);
+        if (sVertexDirtyEnd == sVertexDirtyBegin) {
+            sVertexDirtyBegin = offset;
+        }
+        sVertexDirtyEnd = sVertexRingBuffer.currentOffset;
     }
 
     if (sLastCachedProgram != sShaderProgram) {
@@ -1115,47 +1154,70 @@ static void gfx_sdl_gpu_draw_triangles(f32 buf_vbo[], size_t buf_vbo_len, size_t
 
     struct Shader *fragmentShader = sShaderProgram->fragmentShader;
 
-    for (s32 i = 0; fragmentShader != NULL && i < MAX_SHADER_BINDINGS; i++) {
+    SDL_GPUTextureSamplerBinding samplerBindings[MAX_SHADER_BINDINGS];
+    bool samplerSlotFilled[MAX_SHADER_BINDINGS] = { false };
+    s32 highestSamplerSlot = -1;
+    bool samplersChanged = false;
+
+    for (s32 i = 0; fragmentShader != NULL && i < sShaderProgram->samplerBindingCount; i++) {
         u8 samplerSlot = fragmentShader->sdlGpuSamplerSlots[i];
-        if (samplerSlot == SAMPLER_SLOT_UNUSED) { continue; }
+        if (samplerSlot == SAMPLER_SLOT_UNUSED || samplerSlot >= MAX_SHADER_BINDINGS) { continue; }
+
+        SDL_GPUTexture *texture = NULL;
+        SDL_GPUSampler *sampler = NULL;
+        u32 textureId = 0;
+
+        struct TextureData *textureData = NULL;
 
         if (i >= MAX_TEXTURES) {
-            if (sRawTextures[i] != NULL && sRawSamplers[i] != NULL && sLastBoundTextures[i] != sRawTextures[i]) {
-                SDL_GPUTextureSamplerBinding binding = {
-                    .texture = sRawTextures[i],
-                    .sampler = sRawSamplers[i]
-                };
-                SDL_BindGPUFragmentSamplers(sRenderPass, samplerSlot, &binding, 1);
-                sLastBoundTextures[i] = sRawTextures[i];
-            }
-            continue;
-        }
-
-        if (sShaderProgram->usedTextures[i]) {
-            struct TextureData *textureData = gfx_sdl_gpu_texture_for_tile(i);
+            texture = sRawTextures[i];
+            sampler = sRawSamplers[i];
+        } else if (sShaderProgram->usedTextures[i]) {
+            textureData = gfx_sdl_gpu_texture_for_tile(i);
 
             if (textureData != NULL && textureData->texture != NULL && textureData->sampler != NULL) {
-                u32 textureId = sCurrentTextureIds[i];
+                texture = textureData->texture;
+                sampler = textureData->sampler;
+                textureId = sCurrentTextureIds[i];
+            }
+        }
 
-                if (sLastBoundTextures[i] != textureData->texture || sLastTextureIds[i] != textureId) {
-                    SDL_GPUTextureSamplerBinding binding = {
-                        .texture = textureData->texture,
-                        .sampler = textureData->sampler
-                    };
-                    SDL_BindGPUFragmentSamplers(sRenderPass, samplerSlot, &binding, 1);
-                    sLastBoundTextures[i] = textureData->texture;
-                    sLastTextureIds[i] = textureId;
-                }
+        if (texture == NULL || sampler == NULL) { continue; }
 
-                char sizeUniformName[MAX_SHADER_VARIABLE_NAME];
-                snprintf(sizeUniformName, sizeof(sizeUniformName), "uTex%dSize", i);
-                f32 texSize[2] = { (f32)textureData->width, (f32)textureData->height };
-                gfx_sdl_gpu_set_uniform((struct ShaderProgram *)sShaderProgram, sizeUniformName, SHADER_UNIFORM_TYPE_VEC2, texSize, 1);
+        bool textureChanged = (sLastBoundTextures[i] != texture || sLastTextureIds[i] != textureId);
 
-                char filterUniformName[MAX_SHADER_VARIABLE_NAME];
-                snprintf(filterUniformName, sizeof(filterUniformName), "uTex%dFilter", i);
-                u32 isLinear = textureData->linearFilter ? 1 : 0;
-                gfx_sdl_gpu_set_uniform((struct ShaderProgram *)sShaderProgram, filterUniformName, SHADER_UNIFORM_TYPE_INT, &isLinear, 1);
+        if (textureChanged && textureData != NULL) {
+            f32 texSize[2] = { (f32)textureData->width, (f32)textureData->height };
+            gfx_sdl_gpu_set_uniform((struct ShaderProgram *)sShaderProgram, sTexSizeUniformNames[i], SHADER_UNIFORM_TYPE_VEC2, texSize, 1);
+
+            u32 isLinear = textureData->linearFilter ? 1 : 0;
+            gfx_sdl_gpu_set_uniform((struct ShaderProgram *)sShaderProgram, sTexFilterUniformNames[i], SHADER_UNIFORM_TYPE_INT, &isLinear, 1);
+        }
+
+        samplerBindings[samplerSlot].texture = texture;
+        samplerBindings[samplerSlot].sampler = sampler;
+        samplerSlotFilled[samplerSlot] = true;
+        if (samplerSlot > highestSamplerSlot) { highestSamplerSlot = samplerSlot; }
+
+        if (textureChanged) {
+            samplersChanged = true;
+            sLastBoundTextures[i] = texture;
+            sLastTextureIds[i] = textureId;
+        }
+    }
+
+    if (samplersChanged) {
+        bool contiguous = true;
+        for (s32 slot = 0; slot <= highestSamplerSlot; slot++) {
+            if (!samplerSlotFilled[slot]) { contiguous = false; break; }
+        }
+
+        if (contiguous) {
+            SDL_BindGPUFragmentSamplers(sRenderPass, 0, samplerBindings, (u32)(highestSamplerSlot + 1));
+        } else {
+            for (s32 slot = 0; slot <= highestSamplerSlot; slot++) {
+                if (!samplerSlotFilled[slot]) { continue; }
+                SDL_BindGPUFragmentSamplers(sRenderPass, (u32)slot, &samplerBindings[slot], 1);
             }
         }
     }
@@ -1194,10 +1256,24 @@ static void gfx_sdl_gpu_draw_triangles(f32 buf_vbo[], size_t buf_vbo_len, size_t
 static void gfx_sdl_gpu_init(void) {
     sSdlWindow = gfx_wm_get_window();
 
+    enum GfxWindowBackend backend = gfx_wm_get_backend();
+    const char *driver = gfx_sdl_gpu_driver_for_backend(backend);
+    sShaderFormat = gfx_sdl_gpu_shader_format_for_backend(backend);
+
+#if defined(_WIN32)
+    if (sShaderFormat == SDL_GPU_SHADERFORMAT_DXBC && !gfx_sdl_gpu_load_d3d_compiler()) {
+        sys_fatal("Couldn't load the HLSL compiler needed by the DirectX 12 renderer.");
+    }
+#endif
+
     // get and claim gpu device
-    sGpuDevice = SDL_CreateGPUDevice(sShaderFormats, false, NULL);
+    sGpuDevice = SDL_CreateGPUDevice(sShaderFormat, false, driver);
     if (sGpuDevice == NULL) {
         sys_fatal("Couldn't create GPU device: %s", SDL_GetError());
+    }
+
+    if (!SDL_SetGPUAllowedFramesInFlight(sGpuDevice, MAX_FRAMES_IN_FLIGHT)) {
+        LOG_ERROR("Couldn't allow %d frames in flight: %s", MAX_FRAMES_IN_FLIGHT, SDL_GetError());
     }
 
     if (!SDL_ClaimWindowForGPUDevice(sGpuDevice, sSdlWindow)) {
@@ -1276,6 +1352,8 @@ static void gfx_sdl_gpu_start_frame(void) {
 static void gfx_sdl_gpu_submit_frame(void) {
     gfx_sdl_gpu_end_render_pass();
 
+    gfx_sdl_gpu_flush_vertex_uploads();
+
     if (sUploadCmdBuffer != NULL) {
         SDL_SubmitGPUCommandBuffer(sUploadCmdBuffer);
         sUploadCmdBuffer = NULL;
@@ -1288,6 +1366,8 @@ static void gfx_sdl_gpu_submit_frame(void) {
 
     sSwapchainTex = NULL;
     sStartedFrame = false;
+    sVertexDirtyBegin = sVertexRingBuffer.currentOffset;
+    sVertexDirtyEnd = sVertexDirtyBegin;
     gfx_sdl_gpu_reset_state();
 
     sSwapchainCleared = false;
@@ -1296,7 +1376,7 @@ static void gfx_sdl_gpu_submit_frame(void) {
 }
 
 static void gfx_sdl_gpu_end_frame(void) {
-    gfx_sdl_gpu_submit_frame();
+    gfx_sdl_gpu_end_render_pass();
 }
 
 static void gfx_sdl_gpu_finish_render(void) {
@@ -1304,7 +1384,7 @@ static void gfx_sdl_gpu_finish_render(void) {
 }
 
 static const char *gfx_sdl_gpu_get_name(void) {
-    return "SDL_GPU";
+    return gfx_wm_get_backend_name(gfx_wm_get_backend());
 }
 
 static bool gfx_sdl_gpu_is_legacy(void) {
@@ -1385,14 +1465,12 @@ static void gfx_sdl_gpu_shutdown(void) {
 }
 
 struct GfxRenderingAPI gfx_sdl_gpu_api = {
-    gfx_sdl_gpu_z_is_from_0_to_1,
     gfx_sdl_gpu_unload_shader,
     gfx_sdl_gpu_load_shader,
     gfx_sdl_gpu_remove_shaders,
     gfx_sdl_gpu_create_and_load_new_shader,
     gfx_sdl_gpu_create_or_load_post_process_shader,
     gfx_sdl_gpu_lookup_shader,
-    gfx_sdl_gpu_lookup_shader_using_index,
     gfx_sdl_gpu_shader_get_info,
     gfx_sdl_gpu_create_framebuffer,
     gfx_sdl_gpu_delete_framebuffer,

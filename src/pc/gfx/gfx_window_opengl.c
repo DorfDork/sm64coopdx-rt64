@@ -131,9 +131,14 @@ bool gfx_window_opengl_check_compatibility(void) {
     return validVersion;
 }
 
-static void gfx_window_opengl_handle_events(UNUSED SDL_Event event) {
+static void gfx_window_opengl_handle_events(SDL_Event event) {
     if (configWindow.settings_changed) {
         gfx_window_opengl_reset_dimension_and_pos();
+        gfx_opengl_api.on_resize();
+    }
+
+    if (event.type == SDL_EVENT_WINDOW_RESIZED) {
+        gfx_opengl_api.on_resize();
     }
 }
 
@@ -146,10 +151,6 @@ static void gfx_window_opengl_swap_buffers_begin(void) {
 }
 
 static void gfx_window_opengl_swap_buffers_end(void) {
-}
-
-static double gfx_window_opengl_get_time(void) {
-    return 0.0;
 }
 
 static int gfx_window_opengl_get_max_msaa(void) {
@@ -171,7 +172,6 @@ struct GfxWindowBackendAPI gfx_window_opengl = {
     gfx_window_opengl_start_frame,
     gfx_window_opengl_swap_buffers_begin,
     gfx_window_opengl_swap_buffers_end,
-    gfx_window_opengl_get_time,
     gfx_window_opengl_get_max_msaa,
     gfx_window_opengl_shutdown,
 };

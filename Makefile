@@ -718,10 +718,6 @@ ifeq ($(TARGET_N64),1)
   INCLUDE_DIRS += include/libc
 else
   INCLUDE_DIRS += sound lib/lua/include lib/coopnet/include $(EXTRA_INCLUDES)
-
-  ifeq ($(OSX_BUILD),1)
-    INCLUDE_DIRS += include/metal-cpp
-  endif
 endif
 
 # Configure backend flags
@@ -730,10 +726,10 @@ BACKEND_CFLAGS += -DHAVE_SDL3=1
 BACKEND_CFLAGS += $(shell pkg-config sdl3 --cflags)
 BACKEND_LDFLAGS := $(shell pkg-config sdl3 --static --libs)
 
-# D3D11/D3D12 flags
+# D3D11 flags
 ifeq ($(WINDOWS_BUILD),1)
   DXBITS := `cat $(ENDIAN_BITWIDTH) | tr ' ' '\n' | tail -1`
-  BACKEND_LDFLAGS += -ld3d12 -ld3dcompiler -ldxgi -ldxguid
+  BACKEND_LDFLAGS += -ld3dcompiler -ldxgi -ldxguid
   BACKEND_LDFLAGS += -lsetupapi -ldinput8 -luser32 -lgdi32 -limm32 -lole32 -loleaut32 -lshell32 -lwinmm -lversion -luuid -static
 endif
 

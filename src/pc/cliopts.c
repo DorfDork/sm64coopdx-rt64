@@ -37,9 +37,11 @@ static void print_help(void) {
     log_to_terminal("--enable-mod MODNAME      Enables a mod.\n");
     log_to_terminal("--headless                Enable Headless mode.\n");
 #if defined(_WIN32)
-    log_to_terminal("--backend                 Sets the backend to 'opengl', 'directx11', 'directx12', or 'rt64'.");
-#elif defined(OSX_BUILD)
-    log_to_terminal("--backend                 Sets the backend to either 'opengl' or 'metal'.");
+    log_to_terminal("--backend                 Sets the renderer to 'directx11', 'directx12', 'vulkan', 'rt64', or 'opengl'.\n");
+#elif defined(__APPLE__)
+    log_to_terminal("--backend                 Sets the renderer to either 'metal' or 'opengl'.\n");
+#else
+    log_to_terminal("--backend                 Sets the renderer to either 'vulkan' or 'opengl'.\n");
 #endif
 }
 
@@ -63,9 +65,7 @@ bool parse_cli_opts(int argc, char* argv[]) {
     // initialize options with false values
     memset(&gCLIOpts, 0, sizeof(gCLIOpts));
     gCLIOpts.enableMods = NULL;
-#if defined(_WIN32) || defined(OSX_BUILD)
     gCLIOpts.backend = GFX_WINDOW_BACKEND_COUNT;
-#endif
 
     for (int i = 1; i < argc; i++) {
 #if defined(_WIN32)
@@ -123,25 +123,11 @@ bool parse_cli_opts(int argc, char* argv[]) {
             gCLIOpts.enableMods[gCLIOpts.enabledModsCount - 1] = strdup(argv[++i]);
         } else if (!strcmp(argv[i], "--headless")) {
             gCLIOpts.headless = true;
-#if defined(_WIN32) || defined(OSX_BUILD)
         } else if (!strcmp(argv[i], "--backend") && (i + 1) < argc) {
-            if (!strcmp(argv[i + 1], "opengl")) {
-                gCLIOpts.backend = GFX_WINDOW_BACKEND_OPENGL;
-#if defined(_WIN32)
-            } else if (!strcmp(argv[i + 1], "directx") || !strcmp(argv[i + 1], "directx11")) {
-                gCLIOpts.backend = GFX_WINDOW_BACKEND_DIRECTX11;
-            } else if (!strcmp(argv[i + 1], "directx12")) {
-                gCLIOpts.backend = GFX_WINDOW_BACKEND_DIRECTX12;
-            } else if (!strcmp(argv[i + 1], "rt64")) {
-                gCLIOpts.backend = GFX_WINDOW_BACKEND_RT64;
-#else
-            } else if (!strcmp(argv[i + 1], "metal")) {
-                gCLIOpts.backend = GFX_WINDOW_BACKEND_METAL;
-#endif
-            } else if (!strcmp(argv[i + 1], "sdlgpu")) {
-                gCLIOpts.backend = GFX_WINDOW_BACKEND_SDL_GPU;
+            gCLIOpts.backend = gfx_wm_get_backend_from_name(argv[++i]);
+            if (gCLIOpts.backend >= GFX_WINDOW_BACKEND_COUNT) {
+                fprintf(stderr, "Unknown backend `%s`, using the configured one instead.\n", argv[i]);
             }
-#endif
         } else if (!strcmp(argv[i], "--help")) {
             print_help();
             return false;

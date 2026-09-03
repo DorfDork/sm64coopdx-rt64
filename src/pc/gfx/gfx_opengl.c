@@ -65,10 +65,6 @@ static int opengl_curtex = 0;
 
 static bool gfx_opengl_is_legacy(void);
 
-static bool gfx_opengl_z_is_from_0_to_1(void) {
-    return !gfx_opengl_is_legacy();
-}
-
 static void gfx_opengl_vertex_array_set_attribs(struct ShaderProgram *prg) {
     size_t num_floats = prg->num_floats;
     size_t pos = 0;
@@ -408,12 +404,6 @@ static struct ShaderProgram *gfx_opengl_lookup_shader(struct ColorCombiner *cc) 
         }
     }
     return NULL;
-}
-
-static struct ShaderProgram* gfx_opengl_lookup_shader_using_index(uint8_t shaderIndex, uint8_t framePassIndex) {
-    framePassIndex++;
-    if (shaderIndex >= shader_program_pool_size[framePassIndex]) return NULL;
-    return &shader_program_pool[framePassIndex][shaderIndex];
 }
 
 static void gfx_opengl_shader_get_info(struct ShaderProgram *prg, uint8_t *num_inputs, bool used_textures[2]) {
@@ -842,14 +832,12 @@ static void gfx_opengl_shutdown(void) {
 }
 
 struct GfxRenderingAPI gfx_opengl_api = {
-    gfx_opengl_z_is_from_0_to_1,
     gfx_opengl_unload_shader,
     gfx_opengl_load_shader,
     gfx_opengl_remove_shaders,
     gfx_opengl_create_and_load_new_shader,
     gfx_opengl_create_or_load_post_process_shader,
     gfx_opengl_lookup_shader,
-    gfx_opengl_lookup_shader_using_index,
     gfx_opengl_shader_get_info,
     gfx_opengl_create_framebuffer,
     gfx_opengl_delete_framebuffer,

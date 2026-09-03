@@ -144,7 +144,7 @@ static void gfx_rt64_update_post_process_shader(void) {
 
     char *hlslFs = nullptr;
     if (gfx_generate_post_process_vertex_and_fragment_shader(vertexShader, fragmentShader, nullptr, nullptr)) {
-        gfx_convert_spirv_to_hlsl(&hlslFs, fragmentShader);
+        gfx_convert_spirv_to_hlsl(&hlslFs, fragmentShader, 50);
     }
 
     {
@@ -247,11 +247,9 @@ static void gfx_rt64_set_uniform_for_specific_shader(struct ShaderUniformBlock *
                     const u8 *elementSrc = src + j * uniform->elementSize;
                     if (memcmp(elementDst, elementSrc, uniform->elementSize) == 0) { continue; }
                     memcpy(elementDst, elementSrc, uniform->elementSize);
-                    uniformBlock->dirty = true;
                 }
             } else if (memcmp(dst, data, uniform->size) != 0) {
                 memcpy(dst, data, uniform->size);
-                uniformBlock->dirty = true;
             }
 
             return;
@@ -266,10 +264,6 @@ static void gfx_rt64_request_pick(bool *pick) {
     RT64.pickCursorX = cursorPos.x;
     RT64.pickCursorY = cursorPos.y;
     *pick = true;
-}
-
-static bool gfx_rt64_rapi_z_is_from_0_to_1(void) {
-    return true;
 }
 
 static void gfx_rt64_rapi_unload_shader(struct ShaderProgram *oldPrg) {
@@ -334,8 +328,8 @@ static struct ShaderProgram *gfx_rt64_rapi_create_and_load_new_shader(struct Col
 
             char *hlslVs = nullptr;
             char *hlslFs = nullptr;
-            gfx_convert_spirv_to_hlsl(&hlslVs, vertexShader);
-            gfx_convert_spirv_to_hlsl(&hlslFs, fragmentShader);
+            gfx_convert_spirv_to_hlsl(&hlslVs, vertexShader, 50);
+            gfx_convert_spirv_to_hlsl(&hlslFs, fragmentShader, 50);
 
             if ((hlslVs != nullptr) && (hlslFs != nullptr)) {
                 shaderProgram->hasCustomShader = true;
@@ -389,10 +383,6 @@ static struct ShaderProgram *gfx_rt64_rapi_lookup_shader(struct ColorCombiner *c
     const std::lock_guard<std::mutex> lock(RT64.shaderProgramsMutex);
     auto it = RT64.shaderPrograms.find(rt64Hash);
     return (it != RT64.shaderPrograms.end()) ? (struct ShaderProgram *)(it->second) : nullptr;
-}
-
-static struct ShaderProgram *gfx_rt64_rapi_lookup_shader_using_index(u8 shaderIndex, u8 framePassIndex) {
-    return nullptr;
 }
 
 static void gfx_rt64_rapi_shader_get_info(struct ShaderProgram *prg, u8 *numInputs, bool usedTextures[2]) {
@@ -1853,14 +1843,12 @@ void gfx_rt64_main_loop_iter(void (*runOneGameIter)(void)) {
 }
 
 struct GfxRenderingAPI gfx_rt64_api = {
-    gfx_rt64_rapi_z_is_from_0_to_1,
     gfx_rt64_rapi_unload_shader,
     gfx_rt64_rapi_load_shader,
     gfx_rt64_rapi_remove_shaders,
     gfx_rt64_rapi_create_and_load_new_shader,
     gfx_rt64_rapi_create_or_load_post_process_shader,
     gfx_rt64_rapi_lookup_shader,
-    gfx_rt64_rapi_lookup_shader_using_index,
     gfx_rt64_rapi_shader_get_info,
     gfx_rt64_rapi_create_framebuffer,
     gfx_rt64_rapi_delete_framebuffer,

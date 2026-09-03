@@ -837,7 +837,7 @@ NEXT_OPTION:
 
     fs_close(file);
 
-    if (configGraphicsBackend < 0 || configGraphicsBackend > GFX_WINDOW_BACKEND_MAX) { configGraphicsBackend = 0; } // 0 is always the default backend
+    if (configGraphicsBackend < 0 || configGraphicsBackend >= GFX_WINDOW_BACKEND_MAX) { configGraphicsBackend = 0; } // 0 is always the default backend
 
     if (configFramerateMode < 0 || configFramerateMode > RRM_MAX) { configFramerateMode = 0; }
     if (configFrameLimit < 30)   { configFrameLimit = 30; }

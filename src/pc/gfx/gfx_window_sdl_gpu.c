@@ -64,10 +64,6 @@ static void gfx_window_sdl_gpu_swap_buffers_begin(void) {
 static void gfx_window_sdl_gpu_swap_buffers_end(void) {
 }
 
-static double gfx_window_sdl_gpu_get_time(void) {
-    return 0.0;
-}
-
 static int gfx_window_sdl_gpu_get_max_msaa(void) {
     return 0;
 }
@@ -83,7 +79,6 @@ struct GfxWindowBackendAPI gfx_window_sdl_gpu = {
     gfx_window_sdl_gpu_start_frame,
     gfx_window_sdl_gpu_swap_buffers_begin,
     gfx_window_sdl_gpu_swap_buffers_end,
-    gfx_window_sdl_gpu_get_time,
     gfx_window_sdl_gpu_get_max_msaa,
     gfx_window_sdl_gpu_shutdown,
 };

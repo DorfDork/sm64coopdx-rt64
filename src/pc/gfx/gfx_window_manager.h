@@ -20,15 +20,16 @@ extern "C" {
 typedef bool (*kb_callback_t)(int code);
 
 enum GfxWindowBackend {
-    #ifdef _WIN32
+    #if defined(_WIN32)
         GFX_WINDOW_BACKEND_DIRECTX11,
         GFX_WINDOW_BACKEND_DIRECTX12,
         GFX_WINDOW_BACKEND_RT64,
-    #endif
-    #ifdef __APPLE__
+        GFX_WINDOW_BACKEND_VULKAN,
+    #elif defined(__APPLE__)
         GFX_WINDOW_BACKEND_METAL,
+    #else
+        GFX_WINDOW_BACKEND_VULKAN,
     #endif
-    GFX_WINDOW_BACKEND_SDL_GPU,
     GFX_WINDOW_BACKEND_OPENGL,
     GFX_WINDOW_BACKEND_DUMMY,
     GFX_WINDOW_BACKEND_COUNT,
@@ -42,7 +43,6 @@ struct GfxWindowBackendAPI {
     bool (*start_frame)(void);
     void (*swap_buffers_begin)(void);
     void (*swap_buffers_end)(void);
-    double (*get_time)(void); // For debug
     int  (*get_max_msaa)(void);
     void (*shutdown)(void);
 };
@@ -52,6 +52,9 @@ SDL_Window *gfx_wm_get_window(void);
 
 void gfx_wm_init(const char *window_title);
 enum GfxWindowBackend gfx_wm_get_backend(void);
+const char *gfx_wm_get_backend_name(enum GfxWindowBackend backend);
+enum GfxWindowBackend gfx_wm_get_backend_from_name(const char *name);
+bool gfx_wm_is_backend_supported(enum GfxWindowBackend backend);
 u32 gfx_wm_window_visibility_flag(void);
 void gfx_wm_switch_backend(enum GfxWindowBackend backend);
 bool gfx_wm_switch_backend_pending(void);
@@ -65,7 +68,6 @@ void gfx_wm_handle_events(void);
 bool gfx_wm_start_frame(void);
 void gfx_wm_swap_buffers_begin(void);
 void gfx_wm_swap_buffers_end(void);
-double gfx_wm_get_time(void); // For debug
 void gfx_wm_shutdown(void);
 void gfx_wm_start_text_input(void);
 void gfx_wm_stop_text_input(void);

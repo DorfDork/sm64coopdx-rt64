@@ -61,16 +61,10 @@ struct FramePass {
     u32 depthBuffer;
     u64 passTexture;
 
-    // d3d/metal specific stuff
+    //d3d specific stuff
     void *d3dSrv;
-    union {
-        void *d3dRtv;
-        void *mtlColorTex;
-    };
-    union {
-        void *d3dDsv;
-        void *mtlDepthTex;
-    };
+    void *d3dRtv;
+    void *d3dDsv;
 
     // global
     u32 width;
@@ -124,7 +118,6 @@ struct FramePass *gfx_get_current_frame_pass(void);
 void gfx_run(Gfx *commands);
 void gfx_end_frame_render(void);
 void gfx_display_frame(void);
-void gfx_end_frame(void);
 void gfx_run_one_game_iter(void (*runOneGameIter)(void));
 void gfx_shutdown(void);
 void gfx_update_fog_uniforms(void);

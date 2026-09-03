@@ -5,16 +5,18 @@
 #endif
 
 #include <stdio.h>
+#include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
 #include "gfx_window_manager.h"
 #include "gfx_window_opengl.h"
-#include "gfx_window_metal.h"
 #include "gfx_window_sdl_gpu.h"
 #include "gfx_window_dxgi.h"
 #include "gfx_screen_config.h"
 #include "gfx_pc.h"
 #include "gfx_rt64.h"
+#include "gfx_sdl_gpu.h"
 
 #include "pc/pc_main.h"
 #include "pc/configfile.h"
@@ -30,15 +32,36 @@
 static struct GfxWindowBackendAPI *sBackends[GFX_WINDOW_BACKEND_COUNT] = {
     #if defined(_WIN32)
         [GFX_WINDOW_BACKEND_DIRECTX11] = &gfx_window_dxgi,
-        [GFX_WINDOW_BACKEND_DIRECTX12] = &gfx_window_dxgi,
         [GFX_WINDOW_BACKEND_RT64] = &gfx_window_dxgi,
+        [GFX_WINDOW_BACKEND_DIRECTX12] = &gfx_window_sdl_gpu,
+        [GFX_WINDOW_BACKEND_VULKAN] = &gfx_window_sdl_gpu,
+    #elif defined(__APPLE__)
+        [GFX_WINDOW_BACKEND_METAL] = &gfx_window_sdl_gpu,
+    #else
+        [GFX_WINDOW_BACKEND_VULKAN] = &gfx_window_sdl_gpu,
     #endif
-    #if defined(__APPLE__)
-        [GFX_WINDOW_BACKEND_METAL] = &gfx_window_metal,
-    #endif
-    [GFX_WINDOW_BACKEND_SDL_GPU] = &gfx_window_sdl_gpu,
     [GFX_WINDOW_BACKEND_OPENGL] = &gfx_window_opengl,
     [GFX_WINDOW_BACKEND_DUMMY] = &gfx_window_dummy,
+};
+
+struct GfxWindowBackendInfo {
+    const char *displayName;
+    const char *cliName;
+};
+
+static const struct GfxWindowBackendInfo sBackendInfo[GFX_WINDOW_BACKEND_COUNT] = {
+    #if defined(_WIN32)
+        [GFX_WINDOW_BACKEND_DIRECTX11] = { "DirectX 11", "directx11" },
+        [GFX_WINDOW_BACKEND_DIRECTX12] = { "DirectX 12", "directx12" },
+        [GFX_WINDOW_BACKEND_RT64] = { "RT64", "rt64" },
+        [GFX_WINDOW_BACKEND_VULKAN] = { "Vulkan", "vulkan" },
+    #elif defined(__APPLE__)
+        [GFX_WINDOW_BACKEND_METAL] = { "Metal", "metal" },
+    #else
+        [GFX_WINDOW_BACKEND_VULKAN] = { "Vulkan", "vulkan" },
+    #endif
+    [GFX_WINDOW_BACKEND_OPENGL] = { "OpenGL", "opengl" },
+    [GFX_WINDOW_BACKEND_DUMMY] = { "Headless", "headless" },
 };
 
 static enum GfxWindowBackend sCurrBackend = GFX_WINDOW_BACKEND_DUMMY;
@@ -86,6 +109,9 @@ static void gfx_wm_set_fullscreen(void) {
         SDL_ShowCursor();
         configWindow.exiting_fullscreen = true;
     }
+
+    SDL_SyncWindow(sSdlWindow);
+
     sBackends[sCurrBackend]->set_fullscreen();
 }
 
@@ -102,6 +128,10 @@ static void gfx_wm_reset_dimension_and_pos(void) {
         configWindow.h = DESIRED_SCREEN_HEIGHT;
         configWindow.reset = false;
     } else if (!configWindow.settings_changed) {
+        return;
+    }
+
+    if (IS_FULLSCREEN()) {
         return;
     }
 
@@ -184,11 +214,7 @@ void gfx_wm_init(const char *window_title) {
 
     snprintf(sWindowTitle, sizeof(sWindowTitle), "%s", window_title);
 
-#if defined(_WIN32) || defined(__APPLE__)
     sCurrBackend = gCLIOpts.backend < GFX_WINDOW_BACKEND_COUNT ? gCLIOpts.backend : configGraphicsBackend;
-#else
-    sCurrBackend = configGraphicsBackend;
-#endif
     gfx_wm_open_window();
 
     SDL_StopTextInput(sSdlWindow);
@@ -202,6 +228,40 @@ void gfx_wm_init(const char *window_title) {
 
 enum GfxWindowBackend gfx_wm_get_backend(void) {
     return sCurrBackend;
+}
+
+const char *gfx_wm_get_backend_name(enum GfxWindowBackend backend) {
+    if (backend >= GFX_WINDOW_BACKEND_COUNT) { return "Unknown"; }
+    return sBackendInfo[backend].displayName;
+}
+
+enum GfxWindowBackend gfx_wm_get_backend_from_name(const char *name) {
+#if defined(_WIN32)
+    if (!strcasecmp(name, "directx")) { return GFX_WINDOW_BACKEND_DIRECTX11; }
+#endif
+    for (s32 i = 0; i < GFX_WINDOW_BACKEND_COUNT; i++) {
+        if (i == GFX_WINDOW_BACKEND_DUMMY) { continue; }
+        if (!strcasecmp(name, sBackendInfo[i].cliName)) { return (enum GfxWindowBackend)i; }
+    }
+    return GFX_WINDOW_BACKEND_COUNT;
+}
+
+bool gfx_wm_is_backend_supported(enum GfxWindowBackend backend) {
+    switch (backend) {
+#if defined(_WIN32)
+        case GFX_WINDOW_BACKEND_OPENGL:
+            return gfx_window_opengl_check_compatibility();
+        case GFX_WINDOW_BACKEND_DIRECTX12:
+        case GFX_WINDOW_BACKEND_VULKAN:
+#elif defined(__APPLE__)
+        case GFX_WINDOW_BACKEND_METAL:
+#else
+        case GFX_WINDOW_BACKEND_VULKAN:
+#endif
+            return gfx_sdl_gpu_is_backend_supported(backend);
+        default:
+            return backend < GFX_WINDOW_BACKEND_COUNT;
+    }
 }
 
 void gfx_wm_switch_backend(enum GfxWindowBackend backend) {
@@ -413,10 +473,6 @@ void gfx_wm_swap_buffers_begin(void) {
 
 void gfx_wm_swap_buffers_end(void) {
     sBackends[sCurrBackend]->swap_buffers_end();
-}
-
-double gfx_wm_get_time(void) {
-    return sBackends[sCurrBackend]->get_time();
 }
 
 void gfx_wm_delay(u32 ms) {

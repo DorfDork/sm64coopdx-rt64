@@ -237,20 +237,29 @@ static struct GfxRenderingAPI *get_rendering_api_for_backend(enum GfxWindowBacke
 #if defined(_WIN32)
         case GFX_WINDOW_BACKEND_DIRECTX11:
             return &gfx_direct3d11_api;
-        case GFX_WINDOW_BACKEND_DIRECTX12:
-            return &gfx_direct3d12_api;
         case GFX_WINDOW_BACKEND_RT64:
             return &gfx_rt64_api;
-#endif
-#ifdef OSX_BUILD
+        case GFX_WINDOW_BACKEND_DIRECTX12:
+        case GFX_WINDOW_BACKEND_VULKAN:
+#elif defined(__APPLE__)
         case GFX_WINDOW_BACKEND_METAL:
-            return &gfx_metal_api;
+#else
+        case GFX_WINDOW_BACKEND_VULKAN:
 #endif
-        case GFX_WINDOW_BACKEND_SDL_GPU:
             return &gfx_sdl_gpu_api;
         default:
             return &gfx_dummy_renderer_api;
     }
+}
+
+static enum GfxWindowBackend get_supported_graphics_backend(enum GfxWindowBackend backend) {
+    if (backend < GFX_WINDOW_BACKEND_COUNT && gfx_wm_is_backend_supported(backend)) { return backend; }
+
+    for (enum GfxWindowBackend i = 0; i < GFX_WINDOW_BACKEND_MAX; i++) {
+        if (gfx_wm_is_backend_supported(i)) { return i; }
+    }
+
+    return GFX_WINDOW_BACKEND_DUMMY;
 }
 
 static void select_graphics_backend(void) {
@@ -258,15 +267,12 @@ static void select_graphics_backend(void) {
         return;
     }
 
-#if defined(_WIN32)
-    if (configGraphicsBackend == GFX_WINDOW_BACKEND_OPENGL && !gfx_window_opengl_check_compatibility()) {
-        configGraphicsBackend = GFX_WINDOW_BACKEND_DIRECTX11;
+    configGraphicsBackend = get_supported_graphics_backend(configGraphicsBackend);
+    if (gCLIOpts.backend < GFX_WINDOW_BACKEND_COUNT) {
+        gCLIOpts.backend = get_supported_graphics_backend(gCLIOpts.backend);
     }
-#endif
-    enum GfxWindowBackend backend = configGraphicsBackend;
-#if defined(_WIN32) || defined(OSX_BUILD)
-    if (gCLIOpts.backend < GFX_WINDOW_BACKEND_COUNT) { backend = gCLIOpts.backend; }
-#endif
+
+    enum GfxWindowBackend backend = (gCLIOpts.backend < GFX_WINDOW_BACKEND_COUNT) ? gCLIOpts.backend : configGraphicsBackend;
 
     gRenderApi = get_rendering_api_for_backend(backend);
     gAudioApi  = (gRenderApi == &gfx_dummy_renderer_api) ? &audio_null : &audio_sdl;
@@ -301,12 +307,10 @@ static void apply_graphics_backend_change(void) {
     if (backend >= GFX_WINDOW_BACKEND_COUNT || backend == GFX_WINDOW_BACKEND_DUMMY) { return; }
     if (backend == gfx_wm_get_backend()) { return; }
 
-#if defined(_WIN32)
-    if (backend == GFX_WINDOW_BACKEND_OPENGL && !gfx_window_opengl_check_compatibility()) {
+    if (!gfx_wm_is_backend_supported(backend)) {
         configGraphicsBackend = gfx_wm_get_backend();
         return;
     }
-#endif
 
     gfx_shutdown_rendering_api();
     gfx_wm_switch_backend(backend);

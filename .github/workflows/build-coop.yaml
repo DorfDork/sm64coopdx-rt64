@@ -18,13 +18,13 @@ jobs:
                 os: windows-latest
                 make: make -j$(nproc)
                 exe: .exe
-                zip: dynos lang mods palettes coop.map discord_game_sdk.dll sm64coopdx.exe coopdx_updater.exe
+                zip: dynos lang mods palettes coop.map discord_game_sdk.dll rt64lib.dll dxcompiler.dll dxil.dll nvngx_dlss.dll libxess.dll amd_fidelityfx_loader_dx12.dll amd_fidelityfx_upscaler_dx12.dll sm64coopdx.exe coopdx_updater.exe
 
               - name: Linux
                 os: ubuntu-26.04
                 deps: |
                   sudo apt update
-                  sudo apt install -y build-essential git python3 libsdl3-dev libglew-dev libz-dev libcurl4-openssl-dev libspirv-cross-c-shared-dev glslang-dev zip
+                  sudo apt install -y build-essential git python3 libsdl3-dev libglew-dev libz-dev libcurl4-openssl-dev libspirv-cross-c-shared-dev glslang-dev spirv-tools zip
                 make: make -j$(nproc)
                 zip: dynos lang mods palettes libdiscord_game_sdk.so sm64coopdx coopdx_updater
 
@@ -32,7 +32,7 @@ jobs:
                 os: ubuntu-26.04
                 deps: |
                   sudo apt update
-                  sudo apt install -y build-essential git python3 libsdl3-dev libglew-dev libz-dev libcurl4-openssl-dev libspirv-cross-c-shared-dev glslang-dev zip
+                  sudo apt install -y build-essential git python3 libsdl3-dev libglew-dev libz-dev libcurl4-openssl-dev libspirv-cross-c-shared-dev glslang-dev spirv-tools zip
                 make: make -j$(nproc)
                 zip: dynos lang mods palettes libdiscord_game_sdk.so sm64coopdx coopdx_updater
 
@@ -81,8 +81,12 @@ jobs:
                     python3
                     zip
 
+            - name: Install dependencies
+              if: ${{ matrix.platform.name != 'Windows' }}
+              run: ${{ matrix.platform.deps }}
+
             - name: Build the game
-              run: make -j$(nproc)
+              run: ${{ matrix.platform.make }}
 
             - name: Generate hash
               run: |
@@ -93,13 +97,13 @@ jobs:
             - name: Zip the game
               run: |
                 cd ./build/us_pc
-                zip -r sm64coopdx_Windows.zip dynos lang mods palettes coop.map discord_game_sdk.dll sm64coopdx.exe coopdx_updater.exe
+                zip -r sm64coopdx_${{ matrix.platform.name }}.zip ${{ matrix.platform.zip }}
 
             - name: Upload artifact
               uses: actions/upload-artifact@v4
               with:
-                name: sm64coopdx-windows
-                path: ./build/us_pc/sm64coopdx_Windows.zip
+                name: sm64coopdx-${{ matrix.platform.name }}
+                path: ./build/us_pc/sm64coopdx_${{ matrix.platform.name }}.zip
 
     build-macos-arm:
         if: ${{ (github.event_name != 'push' || contains(github.event.head_commit.message, '[build]')) && github.event.pull_request.draft == false }}

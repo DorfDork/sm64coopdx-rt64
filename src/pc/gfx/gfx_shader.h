@@ -84,8 +84,6 @@ struct ShaderUniformBlock {
     bool dirty; // skip re-uploading a block which was not touched since the last draw.
 #ifdef _WIN32
     ID3D11Buffer *dxConstantBuffer; // dx11 doesn't use buffer, it uses a d3d11buffer
-    u64 d3d12GpuAddr;
-    u64 d3d12Generation;
 #endif
     unsigned int glBufferId; // opengl uses a buffer id
 };
@@ -127,10 +125,9 @@ extern bool gUseSdlGpuBindings;
 char *gfx_get_default_vertex_shader_from_cc(UNUSED struct ColorCombiner *cc);
 char *gfx_get_default_fragment_shader_from_cc(struct ColorCombiner *cc);
 void gfx_init_shaders();
-struct Shader *gfx_create_shader(const char *shaderCode);
 bool gfx_compile_shader_to_spirv(glslang_stage_t stage, const char *shaderCode, struct Shader *shader);
 void gfx_convert_spirv_to_glsl_410(char **shaderCode, struct Shader *shader);
-void gfx_convert_spirv_to_hlsl(char **shaderCode, struct Shader *shader);
+void gfx_convert_spirv_to_hlsl(char **shaderCode, struct Shader *shader, u32 shaderModel);
 void gfx_convert_spirv_to_msl(char **shaderCode, struct Shader *shader);
 void gfx_reflect_spirv(struct Shader *shader);
 bool gfx_generate_vertex_and_fragment_shader_from_cc(struct Shader *vertexShader, struct Shader *fragmentShader, struct ColorCombiner *cc, char **outVertShader, char **outFragShader);

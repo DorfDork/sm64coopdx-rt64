@@ -193,25 +193,29 @@ static void create_render_target_views(bool is_resize) {
 
 static void gfx_d3d11_init(void) {
     // Load d3d11.dll
-    d3d.d3d11_module = LoadLibraryW(L"d3d11.dll");
     if (d3d.d3d11_module == nullptr) {
-        ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()), gfx_window_dxgi_get_h_wnd(), "d3d11.dll could not be loaded");
+        d3d.d3d11_module = LoadLibraryW(L"d3d11.dll");
+        if (d3d.d3d11_module == nullptr) {
+            ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()), gfx_window_dxgi_get_h_wnd(), "d3d11.dll could not be loaded");
+        }
+        d3d.D3D11CreateDevice = (PFN_D3D11_CREATE_DEVICE)GetProcAddress(d3d.d3d11_module, "D3D11CreateDevice");
     }
-    d3d.D3D11CreateDevice = (PFN_D3D11_CREATE_DEVICE)GetProcAddress(d3d.d3d11_module, "D3D11CreateDevice");
 
     // Load D3DCompiler_47.dll or D3DCompiler_43.dll
-    d3d.d3dcompiler_module = LoadLibraryW(L"D3DCompiler_47.dll");
     if (d3d.d3dcompiler_module == nullptr) {
-        d3d.d3dcompiler_module = LoadLibraryW(L"D3DCompiler_43.dll");
+        d3d.d3dcompiler_module = LoadLibraryW(L"D3DCompiler_47.dll");
         if (d3d.d3dcompiler_module == nullptr) {
-            ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()), gfx_window_dxgi_get_h_wnd(), "D3DCompiler_47.dll or D3DCompiler_43.dll could not be loaded");
+            d3d.d3dcompiler_module = LoadLibraryW(L"D3DCompiler_43.dll");
+            if (d3d.d3dcompiler_module == nullptr) {
+                ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()), gfx_window_dxgi_get_h_wnd(), "D3DCompiler_47.dll or D3DCompiler_43.dll could not be loaded");
+            }
         }
+        d3d.D3DCompile = (pD3DCompile)GetProcAddress(d3d.d3dcompiler_module, "D3DCompile");
     }
-    d3d.D3DCompile = (pD3DCompile)GetProcAddress(d3d.d3dcompiler_module, "D3DCompile");
 
     // Create D3D11 device
 
-    gfx_window_dxgi_create_factory_and_device(DEBUG_D3D, 11, [](IDXGIAdapter1 *adapter, bool test_only) {
+    gfx_window_dxgi_create_factory_and_device(DEBUG_D3D, [](IDXGIAdapter1 *adapter, bool required) {
 #if DEBUG_D3D
         UINT device_creation_flags = D3D11_CREATE_DEVICE_DEBUG;
 #else
@@ -234,16 +238,16 @@ static void gfx_d3d11_init(void) {
             FeatureLevels,
             ARRAYSIZE(FeatureLevels),
             D3D11_SDK_VERSION,
-            test_only ? nullptr : d3d.device.GetAddressOf(),
+            d3d.device.ReleaseAndGetAddressOf(),
             &d3d.feature_level,
-            test_only ? nullptr : d3d.context.GetAddressOf());
+            d3d.context.ReleaseAndGetAddressOf());
 
-        if (test_only) {
-            return SUCCEEDED(res);
-        } else {
+        if (required) {
             ThrowIfFailed(res, gfx_window_dxgi_get_h_wnd(), "Failed to create D3D11 device.");
             return true;
         }
+
+        return SUCCEEDED(res);
     });
 
     // Sample description to be used in back buffer and depth buffer
@@ -280,10 +284,6 @@ static void gfx_d3d11_init(void) {
                   gfx_window_dxgi_get_h_wnd(), "Failed to create vertex buffer.");
 
     controller_bind_init();
-}
-
-static bool gfx_d3d11_z_is_from_0_to_1(void) {
-    return true;
 }
 
 static void gfx_d3d11_unload_shader(struct ShaderProgram *old_prg) {
@@ -326,8 +326,8 @@ static struct ShaderProgram *gfx_d3d11_create_and_load_new_shader(struct ColorCo
     char *vs_hlsl = nullptr;
     char *ps_hlsl = nullptr;
 
-    gfx_convert_spirv_to_hlsl(&vs_hlsl, vertexShader);
-    gfx_convert_spirv_to_hlsl(&ps_hlsl, fragmentShader);
+    gfx_convert_spirv_to_hlsl(&vs_hlsl, vertexShader, 50);
+    gfx_convert_spirv_to_hlsl(&ps_hlsl, fragmentShader, 50);
 
     ComPtr<ID3DBlob> vs, ps;
     ComPtr<ID3DBlob> error_blob;
@@ -480,8 +480,8 @@ static struct ShaderProgram *gfx_d3d11_create_or_load_post_process_shader(void) 
     // get hlsl shader from spirv
     char *vs_hlsl = nullptr;
     char *ps_hlsl = nullptr;
-    gfx_convert_spirv_to_hlsl(&vs_hlsl, vertexShader);
-    gfx_convert_spirv_to_hlsl(&ps_hlsl, fragmentShader);
+    gfx_convert_spirv_to_hlsl(&vs_hlsl, vertexShader, 50);
+    gfx_convert_spirv_to_hlsl(&ps_hlsl, fragmentShader, 50);
 
     ComPtr<ID3DBlob> vs, ps;
     ComPtr<ID3DBlob> error_blob;
@@ -585,12 +585,6 @@ static struct ShaderProgram *gfx_d3d11_lookup_shader(struct ColorCombiner* cc) {
         }
     }
     return nullptr;
-}
-
-static struct ShaderProgram *gfx_d3d11_lookup_shader_using_index(u8 shaderIndex, u8 framePassIndex) {
-    framePassIndex++;
-    if (shaderIndex >= d3d.shader_program_pool_size[framePassIndex]) { return nullptr; }
-    return (struct ShaderProgram *)&d3d.shader_program_pool[framePassIndex][shaderIndex];
 }
 
 static void gfx_d3d11_shader_get_info(struct ShaderProgram *prg, uint8_t *num_inputs, bool used_textures[2]) {
@@ -1230,29 +1224,17 @@ static void gfx_d3d11_shutdown(void) {
 #endif
     d3d.device.Reset();
 
-    if (d3d.d3dcompiler_module != nullptr) {
-        FreeLibrary(d3d.d3dcompiler_module);
-        d3d.d3dcompiler_module = nullptr;
-        d3d.D3DCompile = nullptr;
-    }
-    if (d3d.d3d11_module != nullptr) {
-        FreeLibrary(d3d.d3d11_module);
-        d3d.d3d11_module = nullptr;
-        d3d.D3D11CreateDevice = nullptr;
-    }
 }
 
 } // namespace
 
 struct GfxRenderingAPI gfx_direct3d11_api = {
-    gfx_d3d11_z_is_from_0_to_1,
     gfx_d3d11_unload_shader,
     gfx_d3d11_load_shader,
     gfx_d3d11_remove_shaders,
     gfx_d3d11_create_and_load_new_shader,
     gfx_d3d11_create_or_load_post_process_shader,
     gfx_d3d11_lookup_shader,
-    gfx_d3d11_lookup_shader_using_index,
     gfx_d3d11_shader_get_info,
     gfx_d3d11_create_framebuffer,
     gfx_d3d11_delete_framebuffer,
