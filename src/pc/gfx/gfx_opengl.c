@@ -562,7 +562,7 @@ static void gfx_opengl_select_texture(int tile, GLuint texture_id) {
     gfx_opengl_set_texture_uniforms(opengl_prg, tile);
 }
 
-static void gfx_opengl_bind_texture_raw(int tile, uint64_t texture_id) {
+static void gfx_opengl_bind_texture_raw(int tile, u64 texture_id) {
     if (tile >= opengl_max_texture_units) { return; }
     glActiveTexture(GL_TEXTURE0 + tile);
     glBindTexture(GL_TEXTURE_2D, (GLuint)texture_id);

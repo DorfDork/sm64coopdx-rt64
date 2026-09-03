@@ -104,39 +104,3 @@ jobs:
               with:
                 name: sm64coopdx-${{ matrix.platform.name }}
                 path: ./build/us_pc/sm64coopdx_${{ matrix.platform.name }}.zip
-
-    build-macos-arm:
-        if: ${{ (github.event_name != 'push' || contains(github.event.head_commit.message, '[build]')) && github.event.pull_request.draft == false }}
-        runs-on: macos-26
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v4
-
-            - name: Install dependencies
-              if: ${{ matrix.platform.name != 'Windows' }}
-              run: ${{ matrix.platform.deps }}
-
-            - name: Build the game
-              run: ${{ matrix.platform.make }} ${{ case(matrix.platform.name == 'SteamOS', 'HANDHELD=1', '') }}
-
-            - name: Codesign Ad-Hoc (macOS)
-              if: ${{ contains(matrix.platform.name, 'macOS') }}
-              run: |
-                codesign --force --deep --sign - ./build/us_pc/sm64coopdx.app
-
-            - name: Generate hash
-              run: |
-                cd tools
-                g++ -std=c++17 -o hash_file${{ matrix.platform.exe }} hash_file.cpp
-                echo "::notice ::$(./hash_file${{ matrix.platform.exe }} ../build/us_pc/sm64coopdx${{ matrix.platform.exe }}${{ matrix.platform.internal }})"
-
-            - name: Zip the game
-              run: |
-                cd ./build/us_pc
-                zip -r sm64coopdx_${{ matrix.platform.name }}.zip ${{ matrix.platform.zip }}
-
-            - name: Upload artifact
-              uses: actions/upload-artifact@v7
-              with:
-                path: ./build/us_pc/sm64coopdx_${{ matrix.platform.name }}.zip
-                archive: false
