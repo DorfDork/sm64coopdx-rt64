@@ -118,7 +118,7 @@ s32 dynos_goddard_get_size(void) {
 }
 
 void dynos_goddard_add_head(const char* filePath, const char* headName) {
-    DynOS_Goddard_AddHead(SysPath(filePath), headName);
+    DynOS_Goddard_AddHead(headName, filePath, false);
 }
 
 void dynos_goddard_set_head(const char* headName) {

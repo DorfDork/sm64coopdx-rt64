@@ -31,7 +31,7 @@
 /// Total number of dynamic `GdObj`s that can be created
 #define DYNOBJ_LIST_SIZE 20000
 /// Maximum number of verticies supported when adding vertices node to an `ObjShape`
-#define VTX_BUF_SIZE 20000
+#define VTX_BUF_SIZE 200000
 
 // types
 /// Information about a dynamically created `GdObj`
@@ -1007,9 +1007,8 @@ void chk_shapegen(struct ObjShape *shape) {
                 fatal_printf("shapegen() no vertices");
             }
 
-            // Avoid fixed-size vertex staging buffer; allocate based on vertex count.
             // Keep a sanity cap to prevent pathological allocations.
-            if (vtxdata->count > 200000) {
+            if (vtxdata->count > VTX_BUF_SIZE) {
                 fatal_printf("shapegen() too many vertices");
             }
 

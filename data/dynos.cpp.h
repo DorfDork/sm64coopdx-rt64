@@ -662,6 +662,15 @@ struct AudioOverrideEntry {
     u8* buffer;
 };
 
+struct GoddardHeadEntry {
+    bool enabled;
+    bool loaded;
+    char* headName;
+    char* filename;
+    u64 length;
+    u8* buffer;
+};
+
 struct PackData {
     s32 mIndex;
     bool mEnabled;
@@ -669,7 +678,7 @@ struct PackData {
     String mDisplayName;
     std::vector<std::pair<std::string, GfxData *>> mGfxData;
     std::vector<DataNode<TexData>*> mTextures;
-    std::map<std::string, SysPath> mGoddardHeads;
+    std::vector<struct GoddardHeadEntry *> mGoddardHeads;
     std::vector<struct AudioOverrideEntry *> mAudioOverrides;
     bool mLoaded;
 };
@@ -917,12 +926,11 @@ DataNode<TexData>* DynOS_Pack_GetTex(PackData* aPackData, const char* aTexName);
 void DynOS_Pack_AddTex(PackData* aPackData, DataNode<TexData>* aTexData);
 const u8 *DynOS_Goddard_GetData();
 s32 DynOS_Goddard_GetSize();
-void DynOS_Goddard_SetHead(const char *aHeadName);
-void DynOS_Goddard_AddHead(const SysPath &aFilename, const char *aHeadName);
-void DynOS_Goddard_ScanPack(struct PackData *aPack);
-void DynOS_Goddard_Update();
+void DynOS_Goddard_SetHead(const char* aHeadName);
+void DynOS_Goddard_ActivatePackHead(GoddardHeadEntry* aHead);
+void DynOS_Goddard_DeactivatePackHead(GoddardHeadEntry* aHead);
+GoddardHeadEntry* DynOS_Goddard_AddHead(const char* aHeadName, const char* aFilepath, bool aIsPack);
 void DynOS_Goddard_ModShutdown();
-std::deque<PackData>& DynosPacks();
 
 //
 // Audio Manager

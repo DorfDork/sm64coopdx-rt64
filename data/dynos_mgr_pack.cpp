@@ -1,5 +1,4 @@
 #include <deque>
-#include <stdio.h>
 #include <regex>
 #include <charconv>
 #include "dynos.cpp.h"
@@ -7,7 +6,7 @@ extern "C" {
 #include "engine/graph_node.h"
 }
 
-std::deque<PackData>& DynosPacks() {
+static std::deque<PackData>& DynosPacks() {
     static std::deque<PackData> sDynosPacks;
     return sDynosPacks;
 }
@@ -86,9 +85,19 @@ static void ScanPackBins(struct PackData* aPack) {
                 );
             }
         }
+
+        // check for goddard heads
+        if (length > 3 && !strncmp(&_PackEnt->d_name[length - 3], ".gd", 3)) {
+            String _HeadName = _PackEnt->d_name;
+            _HeadName[length - 3] = '\0';
+            GoddardHeadEntry* goddardHead = DynOS_Goddard_AddHead(_HeadName.begin(), _FileName.c_str(), true);
+            if (goddardHead) {
+                aPack->mGoddardHeads.push_back(goddardHead);
+            }
+        }
     }
 
-    DynOS_Goddard_ScanPack(aPack);
+    closedir(_PackDir);
 }
 
 static void DynOS_Pack_ActivateActor(s32 aPackIndex, std::pair<std::string, GfxData *> &pair) {
@@ -159,6 +168,9 @@ void DynOS_Pack_SetEnabled(PackData* aPack, bool aEnabled) {
         for (auto& _Tex : aPack->mTextures) {
             DynOS_Tex_Activate(_Tex, false);
         }
+        for (auto& goddardHead : aPack->mGoddardHeads) {
+            DynOS_Goddard_ActivatePackHead(goddardHead);
+        }
         for (auto& audioOverride : aPack->mAudioOverrides) {
             DynOS_Audio_ActivatePackOverride(audioOverride);
         }
@@ -168,6 +180,9 @@ void DynOS_Pack_SetEnabled(PackData* aPack, bool aEnabled) {
         }
         for (auto& _Tex : aPack->mTextures) {
             DynOS_Tex_Deactivate(_Tex);
+        }
+        for (auto& goddardHead : aPack->mGoddardHeads) {
+            DynOS_Goddard_DeactivatePackHead(goddardHead);
         }
         for (auto& audioOverride : aPack->mAudioOverrides) {
             DynOS_Audio_DeactivatePackOverride(audioOverride);

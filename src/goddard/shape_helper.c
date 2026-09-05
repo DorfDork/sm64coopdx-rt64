@@ -120,7 +120,7 @@ static s16 gd_read_s16_le(const u8* p) {
 }
 
 static u32 gd_read_u32_le(const u8* p) {
-    return (u32) (p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24));
+    return ((u32)p[0]) | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24);
 }
 
 static void gd_goddard_capture_originals(void) {
@@ -330,7 +330,7 @@ static bool gd_goddard_read_skin_weights(const u8** io_ptr, const u8* end) {
             p += 2;
             u32 weight_raw = gd_read_u32_le(p);
             p += 4;
-            joints[i].weights[w].weight = *(f32*)&weight_raw;
+            memcpy(&joints[i].weights[w].weight, &weight_raw, sizeof(f32));
         }
     }
     
@@ -450,7 +450,7 @@ static void gd_apply_gdb2_skin_weights(void) {
         
         // Build the joint object name (format: "N<id>l")
         char joint_name[16];
-        sprintf(joint_name, "N%dl", joint_id);
+        snprintf(joint_name, sizeof(joint_name), "N%ul", joint_id);
         
         // Try to find the joint object
         struct GdObj *obj = d_use_obj(joint_name);
@@ -462,14 +462,6 @@ static void gd_apply_gdb2_skin_weights(void) {
         
         // Clear existing weights on this joint
         if (joint->weightGrp != NULL) {
-            // Free all existing weight objects in the group
-            struct ListNode *node = joint->weightGrp->firstMember;
-            while (node != NULL) {
-                struct ListNode *next = node->next;
-                // Note: We don't free the weight objects themselves as they may be
-                // managed by the memory system, just clear the group
-                node = next;
-            }
             joint->weightGrp->firstMember = NULL;
             joint->weightGrp->lastMember = NULL;
             joint->weightGrp->memberCount = 0;
@@ -1087,8 +1079,8 @@ void get_3DG1_shape(struct ObjShape *shape) {
     shape->mtlGroup = make_group(0);
     imin("get_3DG1_shape");
 
-    vtxPtrArr = gd_malloc_perm(72000 * sizeof(struct ObjVertex *)); // 288,000 = 72,000 * 4
-    facePtrArr = gd_malloc_perm(76000 * sizeof(struct ObjFace *));  // 304,000 = 76,000 * 4
+    vtxPtrArr = gd_malloc_perm(GD_CFG_MAX_SHAPE_VERTICES * sizeof(struct ObjVertex *));
+    facePtrArr = gd_malloc_perm(GD_CFG_MAX_SHAPE_FACES * sizeof(struct ObjFace *));
 
     tempNormal.x = 0.0f;
     tempNormal.y = 0.0f;
@@ -1277,6 +1269,9 @@ void get_OBJ_shape(struct ObjShape *shape) {
 
     shape->vtxGroup = make_group_of_type(OBJ_TYPE_VERTICES, (struct GdObj *) vtxArr[0], NULL);
     shape->faceGroup = make_group_of_type(OBJ_TYPE_FACES, (struct GdObj *) faceArr[0], NULL);
+
+    gd_free(vtxArr);
+    gd_free(faceArr);
 }
 
 /* @ 247760 for 0x124; orig name: func_80198F90 */

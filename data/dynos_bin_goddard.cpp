@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <array>
 #include "dynos.cpp.h"
 
@@ -16,124 +15,165 @@ static constexpr std::array<const char *, CT_MAX> sCharacterHeadNames = {
 
 static_assert(sCharacterHeadNames.back() != nullptr, "sCharacterHeadNames needs an entry for every character up to CT_MAX");
 
-static SysPath sHeadPath = "";
-static u8 *sHeadData = NULL;
-static s32 sHeadSize = 0;
+static std::vector<GoddardHeadEntry*> sGoddardPackHeads;
+static std::vector<GoddardHeadEntry*> sGoddardModHeads;
 
-// Heads found in activated mod folders, keyed by file name. DynOS packs are 
-// searched first, so a pack the user explicitly enabled wins over a mod's head.
-static std::map<std::string, SysPath> sModHeads;
+// Head requested through goddard_set_head(), and is prioritized
+// over the head belonging to the character the local player is using.
+static std::string sGoddardHeadOverride = "";
 
-static std::string sHeadOverride = "";
-
-const u8 *DynOS_Goddard_GetData() {
-    return sHeadData;
+static GoddardHeadEntry* DynOS_Goddard_GetActiveHeadFrom(std::vector<GoddardHeadEntry*> &aHeads, const char* aHeadName) {
+    for (auto it = aHeads.rbegin(); it != aHeads.rend(); ++it) {
+        if ((*it)->enabled && !strcmp((*it)->headName, aHeadName)) {
+            return *it;
+        }
+    }
+    return NULL;
 }
 
-s32 DynOS_Goddard_GetSize() {
-    return sHeadSize;
+static GoddardHeadEntry* DynOS_Goddard_GetActiveHead(const char* aHeadName) {
+    if (aHeadName == NULL || *aHeadName == '\0') { return NULL; }
+    GoddardHeadEntry* _Head = DynOS_Goddard_GetActiveHeadFrom(sGoddardModHeads, aHeadName);
+    if (_Head != NULL) { return _Head; }
+    return DynOS_Goddard_GetActiveHeadFrom(sGoddardPackHeads, aHeadName);
 }
 
-static SysPath DynOS_Goddard_FindHead(const std::string &aHeadName) {
-    if (aHeadName.empty()) { return ""; }
+static GoddardHeadEntry* DynOS_Goddard_GetActiveCharacterHead() {
+    u8 _CharacterIndex = gNetworkPlayers[0].overrideModelIndex;
+    if (_CharacterIndex >= CT_MAX) { _CharacterIndex = CT_MARIO; }
 
-    for (auto &_Pack : DynosPacks()) {
-        if (!_Pack.mEnabled) { continue; }
-        auto _PackIt = _Pack.mGoddardHeads.find(aHeadName);
-        if (_PackIt != _Pack.mGoddardHeads.end()) { return _PackIt->second; }
+    GoddardHeadEntry* _Head = DynOS_Goddard_GetActiveHead(sGoddardHeadOverride.c_str());
+    if (_Head == NULL) { _Head = DynOS_Goddard_GetActiveHead(sCharacterHeadNames[_CharacterIndex]); }
+    if (_Head == NULL) { _Head = DynOS_Goddard_GetActiveHead(sCharacterHeadNames[CT_MARIO]); }
+    return _Head;
+}
+
+static void DynOS_Goddard_ResetModEntry(GoddardHeadEntry* aHead) {
+    if (aHead == NULL) { return; }
+
+    aHead->enabled = false;
+    aHead->loaded = false;
+
+    if (aHead->headName) {
+        free(aHead->headName);
+        aHead->headName = NULL;
     }
 
-    auto _ModIt = sModHeads.find(aHeadName);
-    if (_ModIt != sModHeads.end()) { return _ModIt->second; }
+    if (aHead->filename) {
+        free(aHead->filename);
+        aHead->filename = NULL;
+    }
 
-    return "";
+    aHead->length = 0;
+
+    if (aHead->buffer != NULL) {
+        free(aHead->buffer);
+        aHead->buffer = NULL;
+    }
 }
 
-static void DynOS_Goddard_LoadHead() {
-    if (sHeadData != NULL) {
-        free(sHeadData);
-        sHeadData = NULL;
+void DynOS_Goddard_ModShutdown() {
+    for (auto& _Head : sGoddardModHeads) {
+        DynOS_Goddard_ResetModEntry(_Head);
+        free(_Head);
     }
-    sHeadSize = 0;
+    sGoddardModHeads.clear();
+    sGoddardHeadOverride = "";
+}
 
-    if (sHeadPath.empty()) { return; }
+static bool DynOS_Goddard_LoadEntry(GoddardHeadEntry* aHead) {
+    if (aHead == NULL || !aHead->enabled) { return false; }
+    if (aHead->loaded) { return true; }
 
-    BinFile *_File = BinFile::OpenR(sHeadPath.c_str());
+    BinFile* _File = BinFile::OpenR(aHead->filename);
     if (_File == NULL) {
-        Print("[DynOS] Goddard: failed to open %s", sHeadPath.c_str());
-        return;
+        PrintError("  ERROR: Unable to open file \"%s\": Goddard head '%s' will not be enabled", aHead->filename, aHead->headName);
+        return false;
     }
+
+    PrintInfo("Loading goddard head '%s' from file: %s", aHead->headName, aHead->filename);
 
     s32 _Size = _File->Size();
     if (_Size <= 0) {
         BinFile::Close(_File);
-        Print("[DynOS] Goddard: %s is empty", sHeadPath.c_str());
-        return;
+        PrintError("  ERROR: File \"%s\" is empty: Goddard head '%s' will not be enabled", aHead->filename, aHead->headName);
+        return false;
     }
 
-    u8 *_Data = (u8 *) malloc(_Size);
+    u8* _Data = (u8*) malloc(_Size);
     if (_Data == NULL) {
         BinFile::Close(_File);
-        Print("[DynOS] Goddard: failed to allocate %d bytes for %s", _Size, sHeadPath.c_str());
-        return;
+        PrintError("  ERROR: Unable to allocate %d bytes for file \"%s\"", _Size, aHead->filename);
+        return false;
     }
 
     _File->Read<u8>(_Data, _Size);
     BinFile::Close(_File);
 
-    sHeadData = _Data;
-    sHeadSize = _Size;
+    aHead->loaded = true;
+    aHead->buffer = _Data;
+    aHead->length = _Size;
 
-    Print("[DynOS] Goddard: loaded %s (%d bytes)", sHeadPath.c_str(), _Size);
+    return true;
 }
 
-void DynOS_Goddard_SetHead(const char *aHeadName) {
-    sHeadOverride = (aHeadName != NULL) ? aHeadName : "";
+const u8* DynOS_Goddard_GetData() {
+    GoddardHeadEntry* _Head = DynOS_Goddard_GetActiveCharacterHead();
+    if (!DynOS_Goddard_LoadEntry(_Head)) { return NULL; }
+    return _Head->buffer;
 }
 
-void DynOS_Goddard_Update() {
-    u8 _CharacterIndex = gNetworkPlayers[0].overrideModelIndex;
-    if (_CharacterIndex >= CT_MAX) { _CharacterIndex = CT_MARIO; }
-
-    SysPath _HeadPath = DynOS_Goddard_FindHead(sHeadOverride);
-    if (_HeadPath.empty()) { _HeadPath = DynOS_Goddard_FindHead(sCharacterHeadNames[_CharacterIndex]); }
-    if (_HeadPath.empty()) { _HeadPath = DynOS_Goddard_FindHead(sCharacterHeadNames[CT_MARIO]); }
-    if (_HeadPath == sHeadPath) { return; }
-
-    sHeadPath = _HeadPath;
-    DynOS_Goddard_LoadHead();
+s32 DynOS_Goddard_GetSize() {
+    GoddardHeadEntry* _Head = DynOS_Goddard_GetActiveCharacterHead();
+    if (!DynOS_Goddard_LoadEntry(_Head)) { return 0; }
+    return (s32) _Head->length;
 }
 
-void DynOS_Goddard_ModShutdown() {
-    sModHeads.clear();
-    sHeadPath = "";
-
-    if (sHeadData != NULL) {
-        free(sHeadData);
-        sHeadData = NULL;
-    }
-    sHeadSize = 0;
+void DynOS_Goddard_SetHead(const char* aHeadName) {
+    sGoddardHeadOverride = (aHeadName != NULL) ? aHeadName : "";
 }
 
-void DynOS_Goddard_ScanPack(struct PackData *aPack) {
-    SysPath _GoddardFolder = fstring("%s/goddard", aPack->mPath.c_str());
-    DIR *_GoddardDir = opendir(_GoddardFolder.c_str());
-    if (!_GoddardDir) { return; }
+void DynOS_Goddard_ActivatePackHead(GoddardHeadEntry* aHead) {
+    if (aHead == NULL) { return; }
+    aHead->enabled = true;
+}
 
-    struct dirent *_GoddardEnt = NULL;
-    while ((_GoddardEnt = readdir(_GoddardDir)) != NULL) {
-        s32 length = strlen(_GoddardEnt->d_name);
+void DynOS_Goddard_DeactivatePackHead(GoddardHeadEntry* aHead) {
+    if (aHead == NULL) { return; }
+    aHead->enabled = false;
+}
 
-        // check for goddard heads
-        if (length > 3 && !strncmp(&_GoddardEnt->d_name[length - 3], ".gd", 3)) {
-            std::string _HeadName(_GoddardEnt->d_name, length - 3);
-            aPack->mGoddardHeads[_HeadName] = fstring("%s/%s", _GoddardFolder.c_str(), _GoddardEnt->d_name);
-        }
+GoddardHeadEntry* DynOS_Goddard_AddHead(const char* aHeadName, const char* aFilepath, bool aIsPack) {
+    if (aHeadName == NULL || *aHeadName == '\0') {
+        PrintError("  ERROR: Missing head name for file \"%s\"", aFilepath);
+        return NULL;
     }
 
-    closedir(_GoddardDir);
-}
+    GoddardHeadEntry* _Head = (GoddardHeadEntry*) malloc(sizeof(GoddardHeadEntry));
+    if (_Head == NULL) {
+        PrintError("  ERROR: Unable to allocate entry: Goddard head '%s' will not be enabled", aHeadName);
+        return NULL;
+    }
 
-void DynOS_Goddard_AddHead(const SysPath &aFilename, const char *aHeadName) {
-    sModHeads[aHeadName] = aFilename;
+    _Head->headName = strdup(aHeadName);
+    _Head->filename = strdup(aFilepath);
+    if (_Head->headName == NULL || _Head->filename == NULL) {
+        PrintError("  ERROR: Unable to allocate name: Goddard head '%s' will not be enabled", aHeadName);
+        free(_Head->headName);
+        free(_Head->filename);
+        free(_Head);
+        return NULL;
+    }
+    _Head->enabled = !aIsPack;
+    _Head->loaded = false;
+    _Head->length = 0;
+    _Head->buffer = NULL;
+
+    if (aIsPack) {
+        sGoddardPackHeads.push_back(_Head);
+    } else {
+        sGoddardModHeads.push_back(_Head);
+    }
+
+    return _Head;
 }
