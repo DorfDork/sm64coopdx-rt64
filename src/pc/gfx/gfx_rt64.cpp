@@ -578,6 +578,7 @@ static void gfx_rt64_rapi_set_sampler_parameters(int tile, bool linear_filter, u
 }
 
 static void gfx_rt64_rapi_set_depth_test(bool depth_test) {
+    RT64.depthTest = depth_test;
 }
 
 static void gfx_rt64_rapi_set_depth_mask(bool depth_mask) {
@@ -1019,6 +1020,11 @@ static void gfx_rt64_draw_triangles_common(const Mat4 &transform, float buf_vbo[
     // coplanar stuff above other meshes on the anyhit sorting.
     instDesc.material.depthBias += RT64.instancesDrawn * 0.001f;
 
+    // For hit blending to reproduce depth rejection.
+    instDesc.material.depthWrite = RT64.xluDepthWrite ? 1 : 0;
+    instDesc.material.depthTest = RT64.depthTest ? 1 : 0;
+    instDesc.material.zmodeXlu = RT64.zmodeXlu ? 1 : 0;
+
     auto &shader = displayListInstance.shader;
     shader.program = RT64.shaderProgram;
     shader.raytrace = raytrace;
@@ -1044,6 +1050,11 @@ static void gfx_rt64_draw_triangles_common(const Mat4 &transform, float buf_vbo[
     // Increase the counters.
     displayList.drawCount++;
     RT64.instancesDrawn++;
+}
+
+void gfx_rt64_set_xlu_depth_state(bool xluDepthWrite, bool zmodeXlu) {
+    RT64.xluDepthWrite = xluDepthWrite;
+    RT64.zmodeXlu = zmodeXlu;
 }
 
 void gfx_rt64_set_fog(u8 fog_r, u8 fog_g, u8 fog_b, s16 fog_mul, s16 fog_offset) {
@@ -1227,6 +1238,9 @@ static void gfx_rt64_rapi_init(void) {
     RT64.defaultMaterial.shadowAlphaMultiplier = 1.0f;
     memset(RT64.defaultMaterial.diffuseColorMix, 0, sizeof(Vec4f));
     RT64.defaultMaterial.depthBias = 0.0f;
+    RT64.defaultMaterial.depthWrite = 0;
+    RT64.defaultMaterial.depthTest = 0;
+    RT64.defaultMaterial.zmodeXlu = 0;
     RT64.defaultMaterial.shadowRayBias = 1.0f;
     vec3f_zero(RT64.defaultMaterial.selfLightColor);
     RT64.defaultMaterial.selfLightIntensity = 1.0f;

@@ -92,6 +92,8 @@ static struct RenderingState {
     bool depth_test;
     bool depth_mask;
     bool decal_mode;
+    bool xlu_depth_write;
+    bool zmode_xlu;
     bool alpha_blend;
     bool fog_enabled;
     f32 depth_z_sub;
@@ -1293,6 +1295,17 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
         gfx_flush();
         gfx_rapi->set_zmode_decal(zmode_decal);
         sRenderingState.decal_mode = zmode_decal;
+    }
+
+    // RT64 hack for alpha modes that write depth.
+    bool zmode_xlu = ((rdp.other_mode_l & ZMODE_DEC) == ZMODE_XLU);
+    bool xlu_depth_write = z_upd && zmode_xlu;
+    if (isRt64Active && ((xlu_depth_write != sRenderingState.xlu_depth_write) ||
+                         (zmode_xlu != sRenderingState.zmode_xlu))) {
+        gfx_flush();
+        gfx_rt64_set_xlu_depth_state(xlu_depth_write, zmode_xlu);
+        sRenderingState.xlu_depth_write = xlu_depth_write;
+        sRenderingState.zmode_xlu = zmode_xlu;
     }
 
     bool fog_enabled = (rsp.geometry_mode & G_FOG) == G_FOG;

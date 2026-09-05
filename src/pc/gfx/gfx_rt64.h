@@ -71,6 +71,7 @@ struct Rt64AreaLighting *gfx_rt64_lua_get_area_lighting(s32 levelNum, s32 areaIn
 
 #if defined(_WIN32)
 
+void gfx_rt64_set_xlu_depth_state(bool xluDepthWrite, bool zmodeXlu);
 void gfx_rt64_set_fog(u8 fogR, u8 fogG, u8 fogB, s16 fogMul, s16 fogOffset);
 void gfx_rt64_set_camera_perspective(f32 fovDegrees, f32 nearDist, f32 farDist, bool canInterpolate);
 void gfx_rt64_set_camera_matrix(f32 matrix[4][4]);
@@ -95,6 +96,7 @@ void gfx_rt64_acquire_cpu_frame(void);
 
 #else
 
+static inline void gfx_rt64_set_xlu_depth_state(bool xluDepthWrite, bool zmodeXlu) { (void)(xluDepthWrite); (void)(zmodeXlu); }
 static inline void gfx_rt64_set_fog(u8 fogR, u8 fogG, u8 fogB, s16 fogMul, s16 fogOffset) { (void)(fogR); (void)(fogG); (void)(fogB); (void)(fogMul); (void)(fogOffset); }
 static inline void gfx_rt64_set_camera_perspective(f32 fovDegrees, f32 nearDist, f32 farDist, bool canInterpolate) { (void)(fovDegrees); (void)(nearDist); (void)(farDist); (void)(canInterpolate); }
 static inline void gfx_rt64_set_camera_matrix(f32 matrix[4][4]) { (void)(matrix); }

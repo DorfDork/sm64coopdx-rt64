@@ -351,6 +351,9 @@ struct RT64Context {
     u32 currentTextureIds[2] = { 0, 0 };
     ShaderProgramRT64 *shaderProgram = nullptr;
     bool background = false;
+    bool xluDepthWrite = false;
+    bool zmodeXlu = false;
+    bool depthTest = false;
     bool frameEnded = false;
     Vec3f fogColor;
     Recti scissorRect;
