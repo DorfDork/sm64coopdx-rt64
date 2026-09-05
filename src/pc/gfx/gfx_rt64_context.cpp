@@ -501,7 +501,7 @@ static void gfx_rt64_render_thread_draw_frame(GameFrame *curFrame, GameFrame *pr
             dl.idleFrames++;
         }
 
-        if (dl.idleFrames >= CACHED_MESH_EVICT_FRAMES) {
+        if (dl.idleFrames >= RT64_CACHED_MESH_EVICT_FRAMES) {
             gpuDlIt = RT64.gpuDisplayLists.erase(gpuDlIt);
         } else {
             gpuDlIt++;
@@ -552,7 +552,7 @@ static void gfx_rt64_render_thread_draw_frame(GameFrame *curFrame, GameFrame *pr
     RT64.lib.DrawDevice(RT64.device, gfx_rt64_use_vsync() ? 1 : 0, deltaTimeMs);
 
     for (auto *pool : { &RT64.gpuDynamicRasterMeshes, &RT64.gpuDynamicRtMeshes }) {
-        gfx_rt64_render_thread_evict_meshes(*pool, CACHED_MESH_EVICT_FRAMES);
+        gfx_rt64_render_thread_evict_meshes(*pool, RT64_CACHED_MESH_EVICT_FRAMES);
     }
 }
 
@@ -578,7 +578,7 @@ static void gfx_rt64_render_thread_preprocess_frames(GameFrame *curFrame, GameFr
         }
     }
 
-    int remainingStaticMeshesForCache = CACHED_MESH_MAX_PER_FRAME;
+    int remainingStaticMeshesForCache = RT64_CACHED_MESH_MAX_PER_FRAME;
     for (auto &dlPair : curFrame->displayLists) {
         auto &gpuDl = RT64.gpuDisplayLists[dlPair.first];
         const auto &curDisplayList = dlPair.second;
@@ -627,7 +627,7 @@ static void gfx_rt64_render_thread_preprocess_frames(GameFrame *curFrame, GameFr
                 continue;
             }
 
-            if (staticMesh.staticFrames < CACHED_MESH_REQUIRED_FRAMES) {
+            if (staticMesh.staticFrames < RT64_CACHED_MESH_REQUIRED_FRAMES) {
                 staticMesh.staticFrames++;
                 continue;
             }
@@ -652,7 +652,7 @@ static void gfx_rt64_render_thread_preprocess_frames(GameFrame *curFrame, GameFr
         if (pickSearchTexture) { RT64.pickTextureHash = 0; }
     }
 
-    gfx_rt64_render_thread_evict_meshes(RT64.gpuStaticMeshes, CACHED_MESH_EVICT_FRAMES);
+    gfx_rt64_render_thread_evict_meshes(RT64.gpuStaticMeshes, RT64_CACHED_MESH_EVICT_FRAMES);
 }
 
 static void gfx_rt64_render_thread_handle_messages(void) {
@@ -773,11 +773,16 @@ void gfx_rt64_render_thread(void) {
 
         {
             std::unique_lock<std::mutex> lock(RT64.renderFrameIndexMutex);
-            RT64.renderFrameCV.wait(lock, [] { return !RT64.renderThreadRunning || (RT64.gpuFrameIndex >= 0); });
-            curFrameIndex = RT64.gpuFrameIndex;
-            prevFrameIndex = (curFrameIndex == 0) ? (MAX_RENDER_FRAMES - 1) : (curFrameIndex - 1);
-            RT64.barrierFrameIndex = prevFrameIndex;
-            RT64.gpuFrameIndex = -1;
+            RT64.renderFrameCV.wait(lock, [] { return !RT64.renderThreadRunning || !RT64.pendingFrameIndices.empty(); });
+
+            curFrameIndex = -1;
+            if (!RT64.pendingFrameIndices.empty()) {
+                curFrameIndex = RT64.pendingFrameIndices.front();
+                RT64.pendingFrameIndices.pop_front();
+                prevFrameIndex = (curFrameIndex == 0) ? (RT64_MAX_RENDER_FRAMES - 1) : (curFrameIndex - 1);
+                RT64.gpuFrameIndex = curFrameIndex;
+                RT64.barrierFrameIndex = prevFrameIndex;
+            }
         }
         RT64.renderFrameCV.notify_all();
 
@@ -814,7 +819,7 @@ void gfx_rt64_render_thread(void) {
                 RT64.lib.SetSceneInspector(RT64.renderInspector, &areaLighting.sceneDesc);
 
                 // Inspect the current level's lights.
-                RT64.lib.SetLightsInspector(RT64.renderInspector, areaLighting.lights, &areaLighting.lightCount, MAX_LEVEL_LIGHTS);
+                RT64.lib.SetLightsInspector(RT64.renderInspector, areaLighting.lights, &areaLighting.lightCount, RT64_MAX_LEVEL_LIGHTS);
 
                 // Inspect the current picked material.
                 if (RT64.pickTextureHash > 0) {
@@ -873,6 +878,7 @@ void gfx_rt64_render_thread(void) {
             // Clear the barrier.
             {
                 const std::lock_guard<std::mutex> lock(RT64.renderFrameIndexMutex);
+                RT64.gpuFrameIndex = -1;
                 RT64.barrierFrameIndex = -1;
             }
             RT64.renderFrameCV.notify_all();

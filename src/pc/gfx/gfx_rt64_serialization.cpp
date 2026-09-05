@@ -226,12 +226,12 @@ void gfx_rt64_load_level_lights(void) {
 
     for (int i = 0; i < gRT64DefaultLevelLightCount; i++) {
         const RT64DefaultArea &defaultArea = gRT64DefaultLevelLights[i];
-        if ((defaultArea.levelNum >= (u32)(MAX_LEVELS)) || (defaultArea.areaIndex >= (u32)(MAX_AREAS))) { continue; }
+        if ((defaultArea.levelNum >= (u32)(RT64_MAX_LEVELS)) || (defaultArea.areaIndex >= (u32)(MAX_AREAS))) { continue; }
 
         AreaLighting &areaLighting = gfx_rt64_get_or_add_area_lighting(defaultArea.levelNum, defaultArea.areaIndex);
         gfx_rt64_read_default_scene(defaultArea.scene, &areaLighting.sceneDesc);
         areaLighting.lightCount = 0;
-        for (int j = 0; (j < defaultArea.lightCount) && (areaLighting.lightCount < MAX_LEVEL_LIGHTS); j++) {
+        for (int j = 0; (j < defaultArea.lightCount) && (areaLighting.lightCount < RT64_MAX_LEVEL_LIGHTS); j++) {
             gfx_rt64_read_default_light(defaultArea.lights[j], &areaLighting.lights[areaLighting.lightCount++]);
         }
 
@@ -240,14 +240,14 @@ void gfx_rt64_load_level_lights(void) {
 }
 
 void gfx_gfx_rt64_set_level_lights(u32 levelIndex, u32 areaIndex, const std::vector<RT64_LIGHT> *lights, const RT64_SCENE_DESC *sceneDesc) {
-    if ((levelIndex >= (u32)(MAX_LEVELS)) || (areaIndex >= (u32)(MAX_AREAS))) { return; }
+    if ((levelIndex >= (u32)(RT64_MAX_LEVELS)) || (areaIndex >= (u32)(MAX_AREAS))) { return; }
 
     const std::lock_guard<std::mutex> lightingLock(RT64.levelAreaLightingMutex);
     AreaLighting &areaLighting = gfx_rt64_get_or_add_area_lighting(levelIndex, areaIndex);
 
     if (lights != nullptr) {
         int lightCount = (int)(lights->size());
-        if (lightCount > MAX_LEVEL_LIGHTS) { lightCount = MAX_LEVEL_LIGHTS; }
+        if (lightCount > RT64_MAX_LEVEL_LIGHTS) { lightCount = RT64_MAX_LEVEL_LIGHTS; }
         if (lightCount > 0) {
             memcpy(areaLighting.lights, lights->data(), sizeof(RT64_LIGHT) * lightCount);
         }
@@ -799,7 +799,7 @@ static void gfx_rt64_lua_read_recorded_mod(lua_State *L, int index, RT64_MATERIA
 void gfx_rt64_lua_register_level_lights(lua_State *L, int levelNum, int areaIndex, int tableIndex) {
     static const char *const context = "gfx_rt64_set_level_lights";
 
-    if ((levelNum < 0) || (levelNum >= MAX_LEVELS)) {
+    if ((levelNum < 0) || (levelNum >= RT64_MAX_LEVELS)) {
         LOG_LUA_LINE("%s: Level %d is out of range", context, levelNum);
         return;
     }
@@ -834,12 +834,12 @@ void gfx_rt64_lua_register_level_lights(lua_State *L, int levelNum, int areaInde
         hasLights = true;
         const int lightsTable = lua_gettop(L);
         const int lightCount = (int)(lua_rawlen(L, lightsTable));
-        if (lightCount > MAX_LEVEL_LIGHTS) {
-            LOG_LUA_LINE("%s: Level %d area %d has %d lights, only the first %d are used", context, levelNum, areaIndex, lightCount, MAX_LEVEL_LIGHTS);
+        if (lightCount > RT64_MAX_LEVEL_LIGHTS) {
+            LOG_LUA_LINE("%s: Level %d area %d has %d lights, only the first %d are used", context, levelNum, areaIndex, lightCount, RT64_MAX_LEVEL_LIGHTS);
         }
 
         for (int i = 1; i <= lightCount; i++) {
-            if ((int)(lights.size()) >= MAX_LEVEL_LIGHTS) { break; }
+            if ((int)(lights.size()) >= RT64_MAX_LEVEL_LIGHTS) { break; }
 
             lua_rawgeti(L, lightsTable, i);
             if (lua_istable(L, -1)) {

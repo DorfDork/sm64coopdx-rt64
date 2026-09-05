@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <deque>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -32,14 +33,15 @@ extern "C" {
 #define RT64_INSPECTOR_ENABLED 1
 #endif
 
-#define MAX_GEO_LAYOUT_STACK_SIZE       32
-#define CACHED_MESH_REQUIRED_FRAMES     5
-#define CACHED_MESH_MAX_PER_FRAME       1
-#define CACHED_MESH_EVICT_FRAMES        300 // Idle frames before geometry is released
+#define RT64_MAX_GEO_LAYOUT_STACK_SIZE  32
+#define RT64_CACHED_MESH_REQUIRED_FRAMES 5
+#define RT64_CACHED_MESH_MAX_PER_FRAME  1
+#define RT64_CACHED_MESH_EVICT_FRAMES   300 // Idle frames before geometry is released
 #define RT64_MAX_LIGHTS                 512
-#define MAX_LEVEL_LIGHTS                128
-#define MAX_LEVELS                      0x8000
-#define MAX_RENDER_FRAMES               4
+#define RT64_MAX_LEVEL_LIGHTS           128
+#define RT64_MAX_LEVELS                 0x8000
+#define RT64_MAX_FRAMES_IN_FLIGHT       3
+#define RT64_MAX_RENDER_FRAMES          (RT64_MAX_FRAMES_IN_FLIGHT + 3)
 
 static const unsigned int sMinResolutionScale = 1;
 static const unsigned int sMaxResolutionScale = 100;
@@ -83,7 +85,7 @@ struct RecordedMod {
 
 struct AreaLighting {
     RT64_SCENE_DESC sceneDesc;
-    RT64_LIGHT lights[MAX_LEVEL_LIGHTS];
+    RT64_LIGHT lights[RT64_MAX_LEVEL_LIGHTS];
     int lightCount = 0;
 };
 
@@ -120,6 +122,7 @@ struct GameInstance {
 
 struct GameMesh {
     float *vertexBuffer = nullptr;
+    u64 rawVertexBufferHash = 0;
     u64 vertexBufferHash = 0;
     u64 positionHash = 0; // Hash of vertex positions only.
     u32 vertexCount = 0;
@@ -146,7 +149,7 @@ struct GameFrame {
     bool canReprojectView = true;
     std::unordered_map<u32, GameDisplayList> displayLists;
     RT64_SCENE_DESC sceneDesc;
-    RT64_LIGHT areaLights[MAX_LEVEL_LIGHTS];
+    RT64_LIGHT areaLights[RT64_MAX_LEVEL_LIGHTS];
     unsigned int areaLightCount = 0;
     u32 skyTextureKey = 0;
 };
@@ -280,8 +283,10 @@ struct RT64Context {
     std::mutex renderInspectorMutex;
     std::queue<InspectorMessage> inspectorMessageQueue;
     std::mutex inspectorMessageQueueMutex;
-    GameFrame frames[MAX_RENDER_FRAMES];
+    GameFrame frames[RT64_MAX_RENDER_FRAMES];
     int cpuFrameIndex = 0;
+    bool cpuFrameAcquired = false;
+    std::deque<int> pendingFrameIndices;
     int gpuFrameIndex = -1;
     int barrierFrameIndex = -1;
     std::unordered_map<u32, GPUDisplayList> gpuDisplayLists;
@@ -369,6 +374,18 @@ struct RT64Context {
 };
 
 extern RT64Context RT64;
+
+static inline bool gfx_rt64_frame_slot_is_busy(int frameIndex) {
+    if ((frameIndex == RT64.gpuFrameIndex) || (frameIndex == RT64.barrierFrameIndex)) {
+        return true;
+    }
+
+    for (int pendingIndex : RT64.pendingFrameIndices) {
+        if (pendingIndex == frameIndex) { return true; }
+    }
+
+    return false;
+}
 
 static inline u32 gfx_rt64_area_lighting_key(unsigned int levelNum, unsigned int areaIndex) {
     return (levelNum * MAX_AREAS) + areaIndex;

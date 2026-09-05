@@ -128,7 +128,7 @@ static const Gfx *sMaterialDisplayList = NULL;
 struct GfxDimensions gfx_current_dimensions = { 0 };
 
 static bool sDroppedFrame = false;
-
+static bool sRt64Active = false;
 static float buf_vbo[VERTEX_STRIDE_MAX] = { 0.0f };
 static size_t buf_vbo_len = 0;
 static size_t buf_vbo_num_tris = 0;
@@ -236,14 +236,14 @@ static bool gfx_matrix_is_identity(Mat4 mat) {
 
 static void gfx_update_model_matrix(void) {
     mtxf_mul(rsp.M_matrix, rsp.modelview_matrix_stack[rsp.modelview_matrix_stack_size - 1], gInverseCameraMatrix.m);
-    if (gfx_rt64_is_active()) {
+    if (sRt64Active) {
         mtxf_mul(rsp.M_matrix, rsp.M_matrix, sSceneState.extraModelMatrix);
     }
 }
 
 static void gfx_flush(void) {
     if (buf_vbo_len > 0) {
-        if (gfx_rt64_is_active()) {
+        if (sRt64Active) {
             if (sSceneState.isOrtho) {
                 gfx_rt64_draw_triangles_ortho(buf_vbo, buf_vbo_len, buf_vbo_num_tris, sSceneState.doubleSided, sSceneState.currentUid);
             } else {
@@ -759,7 +759,7 @@ static void OPTIMIZE_O3 gfx_sp_matrix(uint8_t parameters, const int32_t *addr) {
             mtxf_identity(sSceneState.extraModelMatrix);
             sSceneState.isOrtho = (matrix[3][3] != 0.0f);
         } else {
-            if (gfx_rt64_is_active() && !sSceneState.isOrtho &&
+            if (sRt64Active && !sSceneState.isOrtho &&
                 gfx_matrix_is_affine(matrix) && !gfx_matrix_is_identity(matrix)) {
                 if (sSceneState.cameraActive && !sSceneState.perspTrianglesDrawn) {
                     Mat4 modifiedCamera;
@@ -861,6 +861,16 @@ static OPTIMIZE_O3 void gfx_align_cached_vertex(struct GfxVertex *d, Mat4 offset
     d->nz = nz;
 }
 
+static u64 sLoadedVertexMask = 0;
+
+static u64 gfx_loaded_vertex_range_mask(size_t dest_index, size_t n_vertices) {
+    if ((n_vertices == 0) || (dest_index >= MAX_VERTICES)) { return 0; }
+
+    const size_t end = MIN(dest_index + n_vertices, (size_t)MAX_VERTICES);
+    const size_t len = end - dest_index;
+    return ((len >= 64) ? ~0ull : ((1ull << len) - 1)) << dest_index;
+}
+
 static OPTIMIZE_O3 void gfx_align_cached_vertices_to_matrix(size_t dest_index, size_t n_vertices) {
     if (memcmp(sSceneState.alignedModelMatrix, rsp.M_matrix, sizeof(Mat4)) == 0) {
         return;
@@ -872,15 +882,17 @@ static OPTIMIZE_O3 void gfx_align_cached_vertices_to_matrix(size_t dest_index, s
             + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
     bool invertible = (fabsf(det) > 1e-12f);
 
-    if (invertible && (dest_index > 0 || (dest_index + n_vertices) < MAX_VERTICES)) {
+    // Everything that's loaded and isn't about to be overwritten by this batch.
+    u64 staleMask = sLoadedVertexMask & ~gfx_loaded_vertex_range_mask(dest_index, n_vertices);
+
+    if (invertible && staleMask != 0) {
         Mat4 invModel, offset;
         mtxf_inverse(invModel, rsp.M_matrix);
         mtxf_mul(offset, sSceneState.alignedModelMatrix, invModel);
 
-        for (size_t i = 0; i < dest_index; i++) {
-            gfx_align_cached_vertex(&rsp.loaded_vertices[i], offset);
-        }
-        for (size_t i = dest_index + n_vertices; i < MAX_VERTICES; i++) {
+        while (staleMask != 0) {
+            const s32 i = __builtin_ctzll(staleMask);
+            staleMask &= staleMask - 1;
             gfx_align_cached_vertex(&rsp.loaded_vertices[i], offset);
         }
     }
@@ -893,10 +905,11 @@ static OPTIMIZE_O3 void gfx_align_cached_vertices_to_matrix(size_t dest_index, s
 static void OPTIMIZE_O3 gfx_sp_vertex(size_t n_vertices, size_t dest_index, const Vtx *vertices, bool worldGeometry) {
     if (!vertices) { return; }
 
-    const bool isRt64Active = gfx_rt64_is_active();
+    const bool isRt64Active = sRt64Active;
 
     if (isRt64Active) {
         gfx_align_cached_vertices_to_matrix(dest_index, n_vertices);
+        sLoadedVertexMask |= gfx_loaded_vertex_range_mask(dest_index, n_vertices);
     }
 
     Vec3f globalLightCached[2] = { { 1.f, 1.f, 1.f }, { 1.f, 1.f, 1.f } };
@@ -1215,7 +1228,7 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
     struct GfxVertex *v3 = &rsp.loaded_vertices[vtx3_idx];
     struct GfxVertex *v_arr[3] = { v1, v2, v3 };
 
-    const bool isRt64Active = gfx_rt64_is_active();
+    const bool isRt64Active = sRt64Active;
 
     if (!isRt64Active && (v1->clip_rej & v2->clip_rej & v3->clip_rej) && gCullingEnabled) {
         // The whole triangle lies outside the visible area
@@ -1351,7 +1364,7 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
         sRenderingState.rdp_fog_color_g = rdp.fog_color.g;
         sRenderingState.rdp_fog_color_b = rdp.fog_color.b;
 
-        if (gfx_rt64_is_active()) {
+        if (isRt64Active) {
             gfx_rt64_set_fog(rdp.fog_color.r, rdp.fog_color.g, rdp.fog_color.b, (s16)(rsp.fog_mul * gFogIntensity), rsp.fog_offset);
         }
     }
@@ -1421,7 +1434,7 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
         sRenderingState.alpha_blend = cm->use_alpha;
     }
 
-    if (gfx_rt64_is_active() && sMaterialDisplayList != sRenderingState.materialDisplayList) {
+    if (isRt64Active && sMaterialDisplayList != sRenderingState.materialDisplayList) {
         gfx_flush();
         gfx_rt64_set_material_display_list(sMaterialDisplayList);
         sRenderingState.materialDisplayList = sMaterialDisplayList;
@@ -1429,7 +1442,7 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
     uint8_t num_inputs;
     bool used_textures[2];
     gfx_rapi->shader_get_info(prg, &num_inputs, used_textures);
-    const bool fullVertexLayout = gfx_rt64_is_active() &&
+    const bool fullVertexLayout = isRt64Active &&
                                     gfx_rt64_shader_uses_full_vertex_layout(prg);
 
     for (int32_t i = 0; i < 2; i++) {
@@ -2319,7 +2332,7 @@ static void OPTIMIZE_O3 gfx_run_dl(Gfx* cmd) {
                 }
                 break;
             case (uint8_t)G_ENDDL:
-                if (gfx_rt64_is_active()) {
+                if (sRt64Active) {
                     gfx_flush();
                 }
                 sCurrentDisplayList = callerDisplayList;
@@ -2366,7 +2379,7 @@ static void OPTIMIZE_O3 gfx_run_dl(Gfx* cmd) {
 #endif
                 break;
             case (uint8_t)G_NOOP:
-                if (gfx_rt64_is_active()) {
+                if (sRt64Active) {
                     struct DisplayListNode *listNode = (struct DisplayListNode *)cmd->words.w1;
                     u32 uid = (listNode != NULL) ? listNode->uid : 0;
                     void *graphNodeMod = (listNode != NULL) ? listNode->graphNodeMod : NULL;
@@ -2536,6 +2549,9 @@ static void gfx_sp_reset(void) {
     sSceneState.perspTrianglesDrawn = false;
 
     sMatrixCacheValid = false;
+    sLoadedVertexMask = 0;
+
+    sRt64Active = gfx_rt64_is_active();
 }
 
 void gfx_get_dimensions(u32 *width, u32 *height) {
@@ -2618,6 +2634,10 @@ void *gfx_build_graph_node_mod(void *graphNode, float modelviewMatrix[4][4], u32
 }
 
 void gfx_start_frame(void) {
+    sRt64Active = gfx_rt64_is_active();
+
+    if (sRt64Active) { gfx_rt64_acquire_cpu_frame(); }
+
     if (sSceneState.cameraTimestamp != gGlobalTimer) {
         sSceneState.cameraTimestamp = gGlobalTimer;
         sSceneState.cameraActive = sSceneState.cameraReported;

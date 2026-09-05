@@ -74,7 +74,7 @@ RT64_LUA_ASSERT_FIELD(struct Rt64SceneDesc, RT64_SCENE_DESC, giDiffuseStrength, 
 RT64_LUA_ASSERT_FIELD(struct Rt64SceneDesc, RT64_SCENE_DESC, giSkyStrength, giSkyStrength);
 
 static_assert(sizeof(struct Rt64AreaLighting) == sizeof(AreaLighting), "struct Rt64AreaLighting must be byte-identical to AreaLighting");
-static_assert(RT64_LUA_MAX_AREA_LIGHTS == MAX_LEVEL_LIGHTS, "RT64_LUA_MAX_AREA_LIGHTS must match MAX_LEVEL_LIGHTS");
+static_assert(RT64_LUA_MAX_AREA_LIGHTS == RT64_MAX_LEVEL_LIGHTS, "RT64_LUA_MAX_AREA_LIGHTS must match RT64_MAX_LEVEL_LIGHTS");
 RT64_LUA_ASSERT_FIELD(struct Rt64AreaLighting, AreaLighting, scene, sceneDesc);
 RT64_LUA_ASSERT_FIELD(struct Rt64AreaLighting, AreaLighting, lights, lights);
 RT64_LUA_ASSERT_FIELD(struct Rt64AreaLighting, AreaLighting, lightCount, lightCount);
@@ -93,7 +93,7 @@ extern "C" {
 int gfx_rt64_get_level_index(void) {
     int levelIndex = (gPlayerSpawnInfos[0].areaIndex >= 0) ? gCurrLevelNum : 0;
 
-    return (levelIndex >= 0 && levelIndex < MAX_LEVELS) ? levelIndex : 0;
+    return (levelIndex >= 0 && levelIndex < RT64_MAX_LEVELS) ? levelIndex : 0;
 }
 
 int gfx_rt64_get_area_index(void) {
@@ -734,10 +734,6 @@ static void gfx_rt64_process_mesh(float buf_vbo[], size_t buf_vbo_len, size_t bu
     vertexCount = (unsigned int)((buf_vbo_len * 4) / vertexStride);
     assert(buf_vbo_num_tris == (vertexCount / 3));
 
-    if (raytrace) {
-        gfx_rt64_smooth_zero_normals(buf_vbo, vertexCount, vertexStride / sizeof(float));
-    }
-
     size_t vertexBufferSize = buf_vbo_len * sizeof(float);
 
     // Make the vector large enough to fit the required meshes.
@@ -749,6 +745,21 @@ static void gfx_rt64_process_mesh(float buf_vbo[], size_t buf_vbo_len, size_t bu
     auto &dynMesh = displayList.meshes[displayList.drawCount];
     dynMesh.useTexture = useTexture;
     dynMesh.raytrace = raytrace;
+
+    if (raytrace) {
+        XXHash64 rawHashStream(((u64)(vertexCount) << 32) | vertexStride);
+        rawHashStream.add(buf_vbo, vertexBufferSize);
+        const u64 rawHash = rawHashStream.hash();
+        if (rawHash == dynMesh.rawVertexBufferHash) {
+            return;
+        }
+
+        dynMesh.rawVertexBufferHash = rawHash;
+
+        gfx_rt64_smooth_zero_normals(buf_vbo, vertexCount, vertexStride / sizeof(float));
+    } else {
+        dynMesh.rawVertexBufferHash = 0;
+    }
 
     XXHash64 hashStream(0);
     hashStream.add(buf_vbo, vertexBufferSize);
@@ -1068,7 +1079,7 @@ bool gfx_rt64_is_ready(void) {
 
 struct Rt64AreaLighting *gfx_rt64_lua_get_area_lighting(s32 levelNum, s32 areaIndex) {
     if (!gfx_rt64_is_active()) { return nullptr; }
-    if ((levelNum < 0) || (levelNum >= MAX_LEVELS) || (areaIndex < 0) || (areaIndex >= MAX_AREAS)) { return nullptr; }
+    if ((levelNum < 0) || (levelNum >= RT64_MAX_LEVELS) || (areaIndex < 0) || (areaIndex >= MAX_AREAS)) { return nullptr; }
 
     const std::lock_guard<std::mutex> lightingLock(RT64.levelAreaLightingMutex);
     AreaLighting &areaLighting = gfx_rt64_get_or_add_area_lighting((u32)(levelNum), (u32)(areaIndex));
@@ -1170,7 +1181,7 @@ static void gfx_rt64_rapi_init(void) {
     RT64.lib = RT64_LoadLibrary();
     if (RT64.lib.handle == 0) {
         sys_fatal("RT64: failed to load the library.\n\n"
-            "Please make sure rt64lib.dll and dxil.dll are placed next to the game's executable and are up to date.");
+            "Please make sure rt64lib.dll, dxil.dll and NRD.dll are placed next to the game's executable and are up to date.");
     }
 
     // Start timers.
@@ -1346,7 +1357,7 @@ static void gfx_rt64_rapi_shutdown(void) {
         RT64.device = nullptr;
     }
 
-    for (int i = 0; i < MAX_RENDER_FRAMES; i++) {
+    for (int i = 0; i < RT64_MAX_RENDER_FRAMES; i++) {
         GameFrame &frame = RT64.frames[i];
         for (auto &dlPair : frame.displayLists) {
             for (auto &mesh : dlPair.second.meshes) { free(mesh.vertexBuffer); }
@@ -1357,6 +1368,8 @@ static void gfx_rt64_rapi_shutdown(void) {
     }
 
     RT64.cpuFrameIndex = 0;
+    RT64.cpuFrameAcquired = false;
+    RT64.pendingFrameIndices.clear();
     RT64.gpuFrameIndex = -1;
     RT64.barrierFrameIndex = -1;
 
@@ -1379,7 +1392,30 @@ static void gfx_rt64_rapi_shutdown(void) {
     RT64.inspectorMessageQueue = {};
 }
 
+void gfx_rt64_acquire_cpu_frame(void) {
+    if (RT64.cpuFrameAcquired) { return; }
+
+    {
+        std::unique_lock<std::mutex> lock(RT64.renderFrameIndexMutex);
+        RT64.renderFrameCV.wait(lock, [] {
+            return !RT64.renderThreadRunning ||
+                ((RT64.pendingFrameIndices.size() < (size_t)(RT64_MAX_FRAMES_IN_FLIGHT)) && !gfx_rt64_frame_slot_is_busy(RT64.cpuFrameIndex));
+        });
+    }
+
+    // Reset the display lists on the frame we're about to write.
+    GameFrame *cpuFrame = &RT64.frames[RT64.cpuFrameIndex];
+    for (auto &dlPair : cpuFrame->displayLists) {
+        dlPair.second.light.groupBits = 0;
+        dlPair.second.drawCount = 0;
+    }
+
+    RT64.cpuFrameAcquired = true;
+}
+
 static void gfx_rt64_rapi_start_frame(void) {
+    gfx_rt64_acquire_cpu_frame();
+
     gfx_rt64_sync_post_process_size();
 
     if (RT64.geoLayoutOriginsTimestamp != gGlobalTimer) {
@@ -1497,33 +1533,14 @@ static void gfx_rt64_rapi_end_frame(void) {
         }
     }
 
-    {
-        std::unique_lock<std::mutex> lock(RT64.renderFrameIndexMutex);
-        RT64.renderFrameCV.wait(lock, [] { return !RT64.renderThreadRunning || (RT64.gpuFrameIndex < 0); });
-    }
-
     // Submit the current CPU frame as the next frame to draw and start writing on the next CPU frame.
-    bool waitForBarrier = false;
     {
         const std::lock_guard<std::mutex> lock(RT64.renderFrameIndexMutex);
-        RT64.gpuFrameIndex = RT64.cpuFrameIndex;
-        RT64.cpuFrameIndex = (RT64.cpuFrameIndex + 1) % MAX_RENDER_FRAMES;
-        waitForBarrier = (RT64.cpuFrameIndex == RT64.barrierFrameIndex);
+        RT64.pendingFrameIndices.push_back(RT64.cpuFrameIndex);
+        RT64.cpuFrameIndex = (RT64.cpuFrameIndex + 1) % RT64_MAX_RENDER_FRAMES;
     }
+    RT64.cpuFrameAcquired = false;
     RT64.renderFrameCV.notify_all();
-
-    // Stall the thread until the barrier is lifted if we're trying to write on a frame being used by the GPU.
-    if (waitForBarrier) {
-        std::unique_lock<std::mutex> lock(RT64.renderFrameIndexMutex);
-        RT64.renderFrameCV.wait(lock, [] { return !RT64.renderThreadRunning || (RT64.cpuFrameIndex != RT64.barrierFrameIndex); });
-    }
-
-    // Reset display lists for the next CPU frame.
-    cpuFrame = &RT64.frames[RT64.cpuFrameIndex];
-    for (auto &dlPair : cpuFrame->displayLists) {
-        dlPair.second.light.groupBits = 0;
-        dlPair.second.drawCount = 0;
-    }
 
     // Clear variables for next frame.
     RT64.cachedDisplayList = nullptr;

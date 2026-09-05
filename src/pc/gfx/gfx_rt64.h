@@ -91,6 +91,7 @@ void gfx_rt64_toggle_inspector(void);
 bool gfx_rt64_inspector_active(void);
 bool gfx_rt64_handle_window_message(void *hWnd, u32 message, uintptr_t wParam, intptr_t lParam);
 void gfx_rt64_main_loop_iter(void (*runOneGameIter)(void));
+void gfx_rt64_acquire_cpu_frame(void);
 
 #else
 
@@ -114,6 +115,7 @@ static inline void gfx_rt64_toggle_inspector(void) { }
 static inline bool gfx_rt64_inspector_active(void) { return false; }
 static inline bool gfx_rt64_handle_window_message(void *hWnd, u32 message, uintptr_t wParam, intptr_t lParam) { (void)(hWnd); (void)(message); (void)(wParam); (void)(lParam); return false; }
 static inline void gfx_rt64_main_loop_iter(void (*runOneGameIter)(void)) { (void)(runOneGameIter); }
+static inline void gfx_rt64_acquire_cpu_frame(void) { }
 
 #endif
 
