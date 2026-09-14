@@ -22,6 +22,11 @@
 #define MAX_FRAMES_IN_FLIGHT 3
 #define MAX_STORAGE_BUFFER_SIZE 32 * 1024 * 1024
 
+#if SDL_VERSION_ATLEAST(3, 4, 0)
+#define VULKAN_API_VERSION_1_3 ((1u << 22) | (3u << 12))
+static SDL_GPUVulkanOptions sVulkanOptions = { .vulkan_api_version = VULKAN_API_VERSION_1_3 };
+#endif
+
 static SDL_GPUShaderFormat sShaderFormat = SDL_GPU_SHADERFORMAT_SPIRV;
 static SDL_GPUDevice *sGpuDevice = NULL;
 static SDL_Window *sSdlWindow = NULL;
@@ -172,6 +177,23 @@ static SDL_GPUShaderFormat gfx_sdl_gpu_shader_format_for_backend(enum GfxWindowB
     }
 }
 
+static SDL_PropertiesID gfx_sdl_gpu_create_device_properties(enum GfxWindowBackend backend) {
+    SDL_GPUShaderFormat format = gfx_sdl_gpu_shader_format_for_backend(backend);
+    SDL_PropertiesID props = SDL_CreateProperties();
+
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, format == SDL_GPU_SHADERFORMAT_SPIRV);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_DXBC_BOOLEAN, format == SDL_GPU_SHADERFORMAT_DXBC);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_MSL_BOOLEAN, format == SDL_GPU_SHADERFORMAT_MSL);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN, false);
+    SDL_SetStringProperty(props, SDL_PROP_GPU_DEVICE_CREATE_NAME_STRING, gfx_sdl_gpu_driver_for_backend(backend));
+
+#if SDL_VERSION_ATLEAST(3, 4, 0)
+    SDL_SetPointerProperty(props, SDL_PROP_GPU_DEVICE_CREATE_VULKAN_OPTIONS_POINTER, &sVulkanOptions);
+#endif
+
+    return props;
+}
+
 bool gfx_sdl_gpu_is_backend_supported(enum GfxWindowBackend backend) {
     const char *driver = gfx_sdl_gpu_driver_for_backend(backend);
     if (driver == NULL) { return false; }
@@ -182,7 +204,11 @@ bool gfx_sdl_gpu_is_backend_supported(enum GfxWindowBackend backend) {
 
     if (!SDL_WasInit(SDL_INIT_VIDEO) && !SDL_InitSubSystem(SDL_INIT_VIDEO)) { return false; }
 
-    return SDL_GPUSupportsShaderFormats(gfx_sdl_gpu_shader_format_for_backend(backend), driver);
+    SDL_PropertiesID props = gfx_sdl_gpu_create_device_properties(backend);
+    bool supported = SDL_GPUSupportsProperties(props);
+    SDL_DestroyProperties(props);
+
+    return supported;
 }
 
 static void gfx_sdl_gpu_create_ring_buffer(struct GpuRingBuffer *ringBuffer, u32 size, SDL_GPUBufferUsageFlags usage) {
@@ -206,12 +232,25 @@ static void gfx_sdl_gpu_create_ring_buffer(struct GpuRingBuffer *ringBuffer, u32
     if (!ringBuffer->gpuBuffer || !ringBuffer->transferBuffer) {
         sys_fatal("Failed to allocate ring buffer!");
     }
+}
+
+static u8 *gfx_sdl_gpu_map_ring_buffer(struct GpuRingBuffer *ringBuffer, bool cycle) {
+    if (ringBuffer->mappedData != NULL) { return ringBuffer->mappedData; }
 
     // map transfer buffer to gpu device
-    ringBuffer->mappedData = (u8 *)SDL_MapGPUTransferBuffer(sGpuDevice, ringBuffer->transferBuffer, false);
+    ringBuffer->mappedData = (u8 *)SDL_MapGPUTransferBuffer(sGpuDevice, ringBuffer->transferBuffer, cycle);
     if (!ringBuffer->mappedData) {
-        sys_fatal("Failed to map ring buffer!");
+        sys_fatal("Failed to map ring buffer: %s", SDL_GetError());
     }
+
+    return ringBuffer->mappedData;
+}
+
+static void gfx_sdl_gpu_unmap_ring_buffer(struct GpuRingBuffer *ringBuffer) {
+    if (ringBuffer->mappedData == NULL) { return; }
+
+    SDL_UnmapGPUTransferBuffer(sGpuDevice, ringBuffer->transferBuffer);
+    ringBuffer->mappedData = NULL;
 }
 
 static u32 gfx_sdl_gpu_allocate_to_ring_buffer(struct GpuRingBuffer *ringBuffer, u32 bytesNeeded) {
@@ -229,6 +268,8 @@ static u32 gfx_sdl_gpu_allocate_to_ring_buffer(struct GpuRingBuffer *ringBuffer,
 }
 
 static void gfx_sdl_gpu_flush_vertex_uploads(void) {
+    gfx_sdl_gpu_unmap_ring_buffer(&sVertexRingBuffer);
+
     if (sVertexDirtyEnd <= sVertexDirtyBegin) { return; }
 
     if (sUploadCmdBuffer == NULL) {
@@ -962,6 +1003,8 @@ static void gfx_sdl_gpu_upload_texture(const u8 *rgba32_buf, s32 width, s32 heig
 
     SDL_UploadToGPUTexture(copyPass, &source, &destination, false);
     SDL_EndGPUCopyPass(copyPass);
+
+    gfx_sdl_gpu_flush_vertex_uploads();
     SDL_SubmitGPUCommandBuffer(uploadCmdBuffer);
 
     SDL_ReleaseGPUTransferBuffer(sGpuDevice, transferBuffer);
@@ -1135,11 +1178,14 @@ static void gfx_sdl_gpu_draw_triangles(f32 buf_vbo[], size_t buf_vbo_len, size_t
     if (buf_vbo_len > 0) {
         // allocate new data to vertex ring buffer
         offset = gfx_sdl_gpu_allocate_to_ring_buffer(&sVertexRingBuffer, vboByteSize);
-        memcpy(sVertexRingBuffer.mappedData + offset, buf_vbo, vboByteSize);
 
-        if (offset < sVertexDirtyEnd) {
+        bool wrapped = (offset < sVertexDirtyEnd);
+        if (wrapped) {
             gfx_sdl_gpu_flush_vertex_uploads();
         }
+
+        memcpy(gfx_sdl_gpu_map_ring_buffer(&sVertexRingBuffer, wrapped) + offset, buf_vbo, vboByteSize);
+
         if (sVertexDirtyEnd == sVertexDirtyBegin) {
             sVertexDirtyBegin = offset;
         }
@@ -1257,7 +1303,6 @@ static void gfx_sdl_gpu_init(void) {
     sSdlWindow = gfx_wm_get_window();
 
     enum GfxWindowBackend backend = gfx_wm_get_backend();
-    const char *driver = gfx_sdl_gpu_driver_for_backend(backend);
     sShaderFormat = gfx_sdl_gpu_shader_format_for_backend(backend);
 
 #if defined(_WIN32)
@@ -1267,7 +1312,9 @@ static void gfx_sdl_gpu_init(void) {
 #endif
 
     // get and claim gpu device
-    sGpuDevice = SDL_CreateGPUDevice(sShaderFormat, false, driver);
+    SDL_PropertiesID props = gfx_sdl_gpu_create_device_properties(backend);
+    sGpuDevice = SDL_CreateGPUDeviceWithProperties(props);
+    SDL_DestroyProperties(props);
     if (sGpuDevice == NULL) {
         sys_fatal("Couldn't create GPU device: %s", SDL_GetError());
     }
@@ -1393,9 +1440,7 @@ static bool gfx_sdl_gpu_is_legacy(void) {
 
 static void gfx_sdl_gpu_release_ring_buffer(struct GpuRingBuffer *ringBuffer) {
     if (ringBuffer->transferBuffer != NULL) {
-        if (ringBuffer->mappedData != NULL) {
-            SDL_UnmapGPUTransferBuffer(sGpuDevice, ringBuffer->transferBuffer);
-        }
+        gfx_sdl_gpu_unmap_ring_buffer(ringBuffer);
         SDL_ReleaseGPUTransferBuffer(sGpuDevice, ringBuffer->transferBuffer);
     }
 
