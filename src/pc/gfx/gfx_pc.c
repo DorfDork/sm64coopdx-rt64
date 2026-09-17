@@ -44,6 +44,7 @@
 #include "pc/gfx/gfx_window_manager.h"
 
 #include "pc/lua/smlua.h"
+#include "pc/utils/misc.h"
 
 #include "pc/debuglog.h"
 
@@ -397,6 +398,17 @@ static struct ColorCombiner *gfx_lookup_or_create_color_combiner(struct CombineM
 
 void gfx_texture_cache_clear(void) {
     memset(&gfx_texture_cache, 0, sizeof(gfx_texture_cache));
+}
+
+static u32 sTextureShaderHashOverride = 0;
+
+void gfx_texture_set_shader_hash_override(u32 hash) {
+    sTextureShaderHashOverride = hash;
+}
+
+u32 gfx_texture_shader_hash(const u8 *rgba32Buf, u32 width, u32 height) {
+    if (sTextureShaderHashOverride != 0) { return sTextureShaderHashOverride; }
+    return fnv1a_hash(rgba32Buf, (size_t)width * height * 4);
 }
 
 static bool gfx_texture_cache_lookup(int tile, struct TextureHashmapNode **n, const uint8_t *orig_addr, uint32_t fmt, uint32_t siz) {

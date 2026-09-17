@@ -897,7 +897,7 @@ static void gfx_d3d11_upload_texture(const uint8_t *rgba32_buf, int width, int h
     TextureData *texture_data = &d3d.textures[d3d.current_texture_ids[d3d.current_tile]];
     texture_data->width = width;
     texture_data->height = height;
-    texture_data->hash = fnv1a_hash(rgba32_buf, width * height * 4);
+    texture_data->hash = gfx_texture_shader_hash(rgba32_buf, width, height);
 
     if (texture_data->resource_view.Get() != nullptr) {
         // Free the previous texture in this slot

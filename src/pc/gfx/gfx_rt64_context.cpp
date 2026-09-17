@@ -1200,7 +1200,7 @@ void gfx_rt64_upload_texture(u32 textureKey, const u8 *rgba32Buf, s32 width, s32
     const u64 contentHash = hashStream.hash();
 
     RecordedTexture &recorded = RT64.textures[textureKey];
-    recorded.shaderHash = fnv1a_hash(rgba32Buf, (size_t)(width) * (size_t)(height) * 4);
+    recorded.shaderHash = gfx_texture_shader_hash(rgba32Buf, width, height);
     gfx_rt64_filter_texture_id(recorded, textureKey, recorded.pendingName, contentHash);
 
     const size_t byteCount = (size_t)(width) * (size_t)(height) * 4;

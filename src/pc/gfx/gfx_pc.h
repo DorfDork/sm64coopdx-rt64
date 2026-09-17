@@ -128,6 +128,8 @@ void gfx_set_camera_perspective(float fovDegrees, float nearDist, float farDist,
 void gfx_set_camera_matrix(float mat[4][4]);
 bool gfx_set_skybox(const Texture *const *tiles, float diffuseColor[3]);
 void gfx_pc_precomp_shader(uint32_t rgb1, uint32_t alpha1, uint32_t rgb2, uint32_t alpha2, uint32_t flags);
+void gfx_texture_set_shader_hash_override(u32 hash);
+u32 gfx_texture_shader_hash(const u8 *rgba32Buf, u32 width, u32 height);
 
 #ifdef __cplusplus
 }

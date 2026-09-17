@@ -6,6 +6,7 @@
 #include "dynos.cpp.h"
 extern "C" {
 #include "pc/gfx/gfx.h"
+#include "pc/gfx/gfx_pc.h"
 #include "pc/gfx/gfx_rendering_api.h"
 #include "pc/mods/mod_fs.h"
 #include "pc/utils/misc.h"
@@ -261,9 +262,11 @@ static bool DynOS_Tex_Validate(const DataNode<TexData> *aNode) {
 }
 
 typedef struct GfxRenderingAPI GRAPI;
-static void DynOS_Tex_Upload(DataNode<TexData> *aNode, GRAPI *aGfxRApi, s32 aTile, s32 aTexId) {
+static void DynOS_Tex_Upload(DataNode<TexData> *aNode, GRAPI *aGfxRApi, s32 aTile, s32 aTexId, const Texture *aTexPtr) {
     aGfxRApi->select_texture(aTile, aTexId);
+    gfx_texture_set_shader_hash_override(DynOS_Tex_Calculate_Hash(aTexPtr));
     aGfxRApi->upload_texture(aNode->mData->mRawData.begin(), aNode->mData->mRawWidth, aNode->mData->mRawHeight);
+    gfx_texture_set_shader_hash_override(0);
     aNode->mData->mUploaded = true;
 }
 
@@ -273,7 +276,7 @@ static void DynOS_Tex_Upload(DataNode<TexData> *aNode, GRAPI *aGfxRApi, s32 aTil
 
 typedef struct TextureHashmapNode THN;
 
-static bool DynOS_Tex_Cache(THN **aOutput, DataNode<TexData> *aNode, s32 aTile, GRAPI *aGfxRApi, THN **aHashMap, THN *aPool, u32 *aPoolPos, u32 aPoolSize) {
+static bool DynOS_Tex_Cache(THN **aOutput, DataNode<TexData> *aNode, s32 aTile, GRAPI *aGfxRApi, THN **aHashMap, THN *aPool, u32 *aPoolPos, u32 aPoolSize, const Texture *aTexPtr) {
 
     // Find texture in cache
     uintptr_t _Hash = ((uintptr_t) aNode) & ((aPoolSize * 2) - 1);
@@ -282,7 +285,7 @@ static bool DynOS_Tex_Cache(THN **aOutput, DataNode<TexData> *aNode, s32 aTile, 
         if ((*_Node)->texture_addr == (const void *) aNode) {
             aGfxRApi->select_texture(aTile, (*_Node)->texture_id);
             if (!aNode->mData->mUploaded) {
-                DynOS_Tex_Upload(aNode, aGfxRApi, aTile, (*_Node)->texture_id);
+                DynOS_Tex_Upload(aNode, aGfxRApi, aTile, (*_Node)->texture_id, aTexPtr);
             }
             (*aOutput) = (*_Node);
             return true;
@@ -391,8 +394,9 @@ static DataNode<TexData> *DynOS_Tex_RetrieveNode(void *aPtr) {
 static bool DynOS_Tex_Import_Typed(THN **aOutput, void *aPtr, s32 aTile, GRAPI *aGfxRApi, THN **aHashMap, THN *aPool, u32 *aPoolPos, u32 aPoolSize) {
     DataNode<TexData> *_Node = DynOS_Tex_RetrieveNode(aPtr);
     if (_Node) {
-        if (DynOS_Tex_Validate(_Node) && !DynOS_Tex_Cache(aOutput, _Node, aTile, aGfxRApi, aHashMap, aPool, aPoolPos, aPoolSize)) {
-            DynOS_Tex_Upload(_Node, aGfxRApi, aTile, (*aOutput)->texture_id);
+        const Texture *_TexPtr = (const Texture *)aPtr;
+        if (DynOS_Tex_Validate(_Node) && !DynOS_Tex_Cache(aOutput, _Node, aTile, aGfxRApi, aHashMap, aPool, aPoolPos, aPoolSize, _TexPtr)) {
+            DynOS_Tex_Upload(_Node, aGfxRApi, aTile, (*aOutput)->texture_id, _TexPtr);
         }
         return true;
     }
@@ -657,17 +661,8 @@ void DynOS_Tex_Override_Reset(const char* aTexName) {
 }
 
 u32 DynOS_Tex_Calculate_Hash(const Texture *aTex) {
-    DataNode<TexData> *node = DynOS_Tex_RetrieveNode((void *) aTex);
-    if (node) {
-        u8 *buffer = DynOS_Tex_ConvertToRGBA32(node->mData->mRawData.begin(), node->mData->mRawData.Count(), node->mData->mRawFormat, node->mData->mRawSize, NULL);
-        if (!buffer) { return 0; }
-        u32 hash = fnv1a_hash(buffer, node->mData->mRawWidth * node->mData->mRawHeight * 4);
-        free(buffer);
-        return hash;
-    }
-
     // check builtin textures
-    const struct TextureInfo* info = DynOS_Builtin_Tex_GetInfoFromData(aTex);
+    const struct TextureInfo *info = DynOS_Builtin_Tex_GetInfoFromData(aTex);
     if (info) {
         u8 *buffer = NULL;
         switch (info->size) {
@@ -678,6 +673,15 @@ u32 DynOS_Tex_Calculate_Hash(const Texture *aTex) {
         }
         if (!buffer) { return 0; }
         u32 hash = fnv1a_hash(buffer, info->width * info->height * 4);
+        free(buffer);
+        return hash;
+    }
+
+    DataNode<TexData> *node = DynOS_Tex_RetrieveNode((void *) aTex);
+    if (node) {
+        u8 *buffer = DynOS_Tex_ConvertToRGBA32(node->mData->mRawData.begin(), node->mData->mRawData.Count(), node->mData->mRawFormat, node->mData->mRawSize, NULL);
+        if (!buffer) { return 0; }
+        u32 hash = fnv1a_hash(buffer, node->mData->mRawWidth * node->mData->mRawHeight * 4);
         free(buffer);
         return hash;
     }

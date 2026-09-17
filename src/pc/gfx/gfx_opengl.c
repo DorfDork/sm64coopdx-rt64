@@ -568,7 +568,7 @@ static void gfx_opengl_upload_texture(const uint8_t *rgba32_buf, int width, int 
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba32_buf);
     opengl_tex[opengl_curtex]->size[0] = width;
     opengl_tex[opengl_curtex]->size[1] = height;
-    opengl_tex[opengl_curtex]->hash = fnv1a_hash(rgba32_buf, width * height * 4);
+    opengl_tex[opengl_curtex]->hash = gfx_texture_shader_hash(rgba32_buf, width, height);
 }
 
 static uint32_t gfx_cm_to_opengl(uint32_t val) {

@@ -1014,7 +1014,7 @@ static void gfx_sdl_gpu_upload_texture(const u8 *rgba32_buf, s32 width, s32 heig
 
     textureData->width = (u32)width;
     textureData->height = (u32)height;
-    textureData->hash = fnv1a_hash(rgba32_buf, (size_t)width * height * 4);
+    textureData->hash = gfx_texture_shader_hash(rgba32_buf, width, height);
 
     if (textureData->texture != NULL) {
         SDL_ReleaseGPUTexture(sGpuDevice, textureData->texture);
