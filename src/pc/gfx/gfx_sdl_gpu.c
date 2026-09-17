@@ -64,6 +64,7 @@ struct TextureData {
     u32 width;
     u32 height;
     u32 hash;
+    u32 customHash;
     bool linearFilter;
     u32 cms;
     u32 cmt;
@@ -99,6 +100,7 @@ static u32 sTexturesCount = 0;
 
 static const char *const sTexSizeUniformNames[MAX_TEXTURES] = { "uTex0Size", "uTex1Size" };
 static const char *const sTexHashUniformNames[MAX_TEXTURES] = { "uTex0Hash", "uTex1Hash" };
+static const char *const sTexCustomHashUniformNames[MAX_TEXTURES] = { "uTex0CustomHash", "uTex1CustomHash" };
 static const char *const sTexFilterUniformNames[MAX_TEXTURES] = { "uTex0Filter", "uTex1Filter" };
 
 static s32 sCurrentTile = 0;
@@ -1014,7 +1016,8 @@ static void gfx_sdl_gpu_upload_texture(const u8 *rgba32_buf, s32 width, s32 heig
 
     textureData->width = (u32)width;
     textureData->height = (u32)height;
-    textureData->hash = gfx_texture_shader_hash(rgba32_buf, width, height);
+    textureData->customHash = fnv1a_hash(rgba32_buf, (size_t)width * height * 4);
+    textureData->hash = gfx_texture_shader_hash(textureData->customHash);
 
     if (textureData->texture != NULL) {
         SDL_ReleaseGPUTexture(sGpuDevice, textureData->texture);
@@ -1241,6 +1244,7 @@ static void gfx_sdl_gpu_draw_triangles(f32 buf_vbo[], size_t buf_vbo_len, size_t
             gfx_sdl_gpu_set_uniform((struct ShaderProgram *)sShaderProgram, sTexSizeUniformNames[i], SHADER_UNIFORM_TYPE_VEC2, texSize, 1);
 
             gfx_sdl_gpu_set_uniform((struct ShaderProgram *)sShaderProgram, sTexHashUniformNames[i], SHADER_UNIFORM_TYPE_INT, &textureData->hash, 1);
+            gfx_sdl_gpu_set_uniform((struct ShaderProgram *)sShaderProgram, sTexCustomHashUniformNames[i], SHADER_UNIFORM_TYPE_INT, &textureData->customHash, 1);
 
             u32 isLinear = textureData->linearFilter ? 1 : 0;
             gfx_sdl_gpu_set_uniform((struct ShaderProgram *)sShaderProgram, sTexFilterUniformNames[i], SHADER_UNIFORM_TYPE_INT, &isLinear, 1);

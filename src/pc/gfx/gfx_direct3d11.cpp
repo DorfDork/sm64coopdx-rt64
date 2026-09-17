@@ -55,6 +55,7 @@ struct TextureData {
     uint32_t width;
     uint32_t height;
     uint32_t hash;
+    uint32_t customHash;
     bool linear_filtering;
 };
 
@@ -897,7 +898,8 @@ static void gfx_d3d11_upload_texture(const uint8_t *rgba32_buf, int width, int h
     TextureData *texture_data = &d3d.textures[d3d.current_texture_ids[d3d.current_tile]];
     texture_data->width = width;
     texture_data->height = height;
-    texture_data->hash = gfx_texture_shader_hash(rgba32_buf, width, height);
+    texture_data->customHash = fnv1a_hash(rgba32_buf, width * height * 4);
+    texture_data->hash = gfx_texture_shader_hash(texture_data->customHash);
 
     if (texture_data->resource_view.Get() != nullptr) {
         // Free the previous texture in this slot
@@ -1065,6 +1067,10 @@ static void gfx_d3d11_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_t
                 char hashUniformName[MAX_SHADER_VARIABLE_NAME];
                 snprintf(hashUniformName, sizeof(hashUniformName), "uTex%dHash", i);
                 gfx_d3d11_set_uniform(NULL, hashUniformName, SHADER_UNIFORM_TYPE_INT, &texture_data.hash, 1);
+
+                char customHashUniformName[MAX_SHADER_VARIABLE_NAME];
+                snprintf(customHashUniformName, sizeof(customHashUniformName), "uTex%dCustomHash", i);
+                gfx_d3d11_set_uniform(NULL, customHashUniformName, SHADER_UNIFORM_TYPE_INT, &texture_data.customHash, 1);
 
                 char filterUniformName[MAX_SHADER_VARIABLE_NAME];
                 snprintf(filterUniformName, sizeof(filterUniformName), "uTex%dFilter", i);

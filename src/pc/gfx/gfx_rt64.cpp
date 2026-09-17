@@ -271,6 +271,7 @@ static void gfx_rt64_set_uniform_for_specific_shader(struct ShaderUniformBlock *
 
 static void gfx_rt64_set_texture_hash_uniforms(ShaderProgramRT64 *prg) {
     static const char *const sTexHashUniformNames[2] = { "uTex0Hash", "uTex1Hash" };
+    static const char *const sTexCustomHashUniformNames[2] = { "uTex0CustomHash", "uTex1CustomHash" };
 
     struct Shader *const stages[2] = { prg->vertexShader, prg->fragmentShader };
     for (int t = 0; t < 2; t++) {
@@ -283,6 +284,7 @@ static void gfx_rt64_set_texture_hash_uniforms(ShaderProgramRT64 *prg) {
             if (shader == nullptr) { continue; }
             for (int i = 0; i < shader->uniformBlockCount; i++) {
                 gfx_rt64_set_uniform_for_specific_shader(&shader->uniformBlocks[i], sTexHashUniformNames[t], &recordedIt->second.shaderHash, 1);
+                gfx_rt64_set_uniform_for_specific_shader(&shader->uniformBlocks[i], sTexCustomHashUniformNames[t], &recordedIt->second.shaderCustomHash, 1);
             }
         }
     }

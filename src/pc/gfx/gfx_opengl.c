@@ -44,6 +44,7 @@ struct GLTexture {
     GLuint gltex;
     GLfloat size[2];
     uint32_t hash;
+    uint32_t customHash;
     bool filter;
 };
 
@@ -568,7 +569,8 @@ static void gfx_opengl_upload_texture(const uint8_t *rgba32_buf, int width, int 
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba32_buf);
     opengl_tex[opengl_curtex]->size[0] = width;
     opengl_tex[opengl_curtex]->size[1] = height;
-    opengl_tex[opengl_curtex]->hash = gfx_texture_shader_hash(rgba32_buf, width, height);
+    opengl_tex[opengl_curtex]->customHash = fnv1a_hash(rgba32_buf, width * height * 4);
+    opengl_tex[opengl_curtex]->hash = gfx_texture_shader_hash(opengl_tex[opengl_curtex]->customHash);
 }
 
 static uint32_t gfx_cm_to_opengl(uint32_t val) {
@@ -673,6 +675,10 @@ static void gfx_opengl_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_
             char hashUniformName[MAX_SHADER_VARIABLE_NAME];
             snprintf(hashUniformName, sizeof(hashUniformName), "uTex%dHash", i);
             gfx_opengl_set_uniform(NULL, hashUniformName, SHADER_UNIFORM_TYPE_INT, &opengl_tex[i]->hash, 1);
+
+            char customHashUniformName[MAX_SHADER_VARIABLE_NAME];
+            snprintf(customHashUniformName, sizeof(customHashUniformName), "uTex%dCustomHash", i);
+            gfx_opengl_set_uniform(NULL, customHashUniformName, SHADER_UNIFORM_TYPE_INT, &opengl_tex[i]->customHash, 1);
 
             char filterUniformName[MAX_SHADER_VARIABLE_NAME];
             snprintf(filterUniformName, sizeof(filterUniformName), "uTex%dFilter", i);
