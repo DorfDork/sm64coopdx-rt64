@@ -1993,8 +1993,8 @@
    - [get_global_shader_flags_enabled](functions-7.md#get_global_shader_flags_enabled)
    - [set_global_shader_flags_enabled](functions-7.md#set_global_shader_flags_enabled)
    - [clear_all_shader_flags](functions-7.md#clear_all_shader_flags)
-   - [get_shading_fullbright_enabled](functions-7.md#get_shading_fullbright_enabled)
-   - [set_shading_fullbright_enabled](functions-7.md#set_shading_fullbright_enabled)
+   - [gfx_get_shading_fullbright_enabled](functions-7.md#gfx_get_shading_fullbright_enabled)
+   - [gfx_set_shading_fullbright_enabled](functions-7.md#gfx_set_shading_fullbright_enabled)
    - [set_override_fov](functions-7.md#set_override_fov)
    - [set_override_near](functions-7.md#set_override_near)
    - [set_override_far](functions-7.md#set_override_far)
@@ -2182,6 +2182,7 @@
    - [geo_skip_interpolation](functions-7.md#geo_skip_interpolation)
    - [texture_to_lua_table](functions-7.md#texture_to_lua_table)
    - [get_texture_name](functions-7.md#get_texture_name)
+   - [calculate_texture_hash](functions-7.md#calculate_texture_hash)
 
 <br />
 

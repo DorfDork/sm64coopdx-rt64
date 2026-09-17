@@ -61,6 +61,7 @@ u32 dynos_texture_get_generation(void);
 void dynos_texture_override_set(const char* textureName, struct TextureInfo* overrideTextureInfo);
 void dynos_texture_override_reset(const char* textureName);
 u8 *dynos_texture_convert_to_rgba32(const Texture *tex, u32 width, u32 height, u8 fmt, u8 siz);
+u32 dynos_texture_calculate_hash(const Texture *tex);
 
 // -- movtexqcs -- //
 void dynos_movtexqc_register(const char* name, s16 level, s16 area, s16 type);

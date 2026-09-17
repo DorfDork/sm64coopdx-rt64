@@ -285,5 +285,10 @@ void geo_skip_interpolation(struct GraphNode *node, struct GraphNodeObject *obj)
 LuaTable texture_to_lua_table(const Texture *tex);
 /* |description|Gets the name of the provided texture pointer `tex`|descriptionEnd|*/
 const char *get_texture_name(const Texture *tex);
+/* |description|
+Calculates a 24-bit hash for the provided texture pointer `tex`
+Useful for comparing against the texture hash inputs in custom shaders
+|descriptionEnd| */
+u32 calculate_texture_hash(const Texture *tex);
 
 #endif

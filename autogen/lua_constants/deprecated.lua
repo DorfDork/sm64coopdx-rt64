@@ -25,6 +25,8 @@ reset_rumble_timers_2 = reset_rumble_timers_vibrate
 cur_obj_play_sound_1 = cur_obj_play_sound_if_visible
 cur_obj_play_sound_2 = cur_obj_play_sound_and_rumble_if_visible
 bit_shift_left = function (shift) return math.u8(1 << shift) end
+get_shading_fullbright_enabled = gfx_get_shading_fullbright_enabled
+set_shading_fullbright_enabled = gfx_set_shading_fullbright_enabled
 
 --------------------
 -- Math functions --

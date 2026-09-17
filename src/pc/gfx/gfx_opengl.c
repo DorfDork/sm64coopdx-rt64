@@ -36,12 +36,14 @@
 #include "gfx_opengl.h"
 #include "pc/lua/smlua.h"
 #include "game/rendering_graph_node.h"
+#include "pc/utils/misc.h"
 
 #define TEX_CACHE_STEP 512
 
 struct GLTexture {
     GLuint gltex;
     GLfloat size[2];
+    uint32_t hash;
     bool filter;
 };
 
@@ -80,14 +82,6 @@ static void gfx_opengl_vertex_array_set_attribs(struct ShaderProgram *prg) {
     }
 }
 
-static inline void gfx_opengl_set_texture_uniforms(struct ShaderProgram *prg, const int tile) {
-    if (!prg) return;
-    if (opengl_tex[tile]) {
-        glUniform2f(prg->uniform_locations[tile * 2 + 0], opengl_tex[tile]->size[0], opengl_tex[tile]->size[1]);
-        glUniform1i(prg->uniform_locations[tile * 2 + 1], opengl_tex[tile]->filter);
-    }
-}
-
 static void gfx_opengl_unload_shader(struct ShaderProgram *old_prg) {
     if (old_prg != NULL) {
         for (int i = 0; i < old_prg->num_attribs; i++) {
@@ -106,8 +100,6 @@ static void gfx_opengl_load_shader(struct ShaderProgram *new_prg) {
     opengl_prg = new_prg;
     glUseProgram(new_prg->opengl_program_id);
     gfx_opengl_vertex_array_set_attribs(new_prg);
-    gfx_opengl_set_texture_uniforms(new_prg, 0);
-    gfx_opengl_set_texture_uniforms(new_prg, 1);
 }
 
 static void gfx_opengl_remove_shaders(void) {
@@ -235,9 +227,11 @@ static struct ShaderProgram *gfx_opengl_create_and_load_new_shader(struct ColorC
         sprintf(name, "uTex%d", t);
         GLint sampler_location = glGetUniformLocation(shader_program, name);
         sprintf(name, "uTex%dSize", t);
-        prg->uniform_locations[t * 2] = glGetUniformLocation(shader_program, name);
+        prg->uniform_locations[t * 3] = glGetUniformLocation(shader_program, name);
+        sprintf(name, "uTex%dHash", t);
+        prg->uniform_locations[t * 3 + 1] = glGetUniformLocation(shader_program, name);
         sprintf(name, "uTex%dFilter", t);
-        prg->uniform_locations[t * 2 + 1] = glGetUniformLocation(shader_program, name);
+        prg->uniform_locations[t * 3 + 2] = glGetUniformLocation(shader_program, name);
         glUniform1i(sampler_location, t);
     }
 
@@ -367,9 +361,11 @@ static struct ShaderProgram *gfx_opengl_create_or_load_post_process_shader(void)
         sprintf(name, "uTex%d", t);
         GLint sampler_location = glGetUniformLocation(shader_program, name);
         sprintf(name, "uTex%dSize", t);
-        prg->uniform_locations[t * 2] = glGetUniformLocation(shader_program, name);
+        prg->uniform_locations[t * 3] = glGetUniformLocation(shader_program, name);
+        sprintf(name, "uTex%dHash", t);
+        prg->uniform_locations[t * 3 + 1] = glGetUniformLocation(shader_program, name);
         sprintf(name, "uTex%dFilter", t);
-        prg->uniform_locations[t * 2 + 1] = glGetUniformLocation(shader_program, name);
+        prg->uniform_locations[t * 3 + 2] = glGetUniformLocation(shader_program, name);
         glUniform1i(sampler_location, t);
     }
 
@@ -559,7 +555,6 @@ static void gfx_opengl_select_texture(int tile, GLuint texture_id) {
     opengl_curtex = tile;
     glActiveTexture(GL_TEXTURE0 + tile);
     glBindTexture(GL_TEXTURE_2D, opengl_tex[tile]->gltex);
-    gfx_opengl_set_texture_uniforms(opengl_prg, tile);
 }
 
 static void gfx_opengl_bind_texture_raw(int tile, u64 texture_id) {
@@ -573,6 +568,7 @@ static void gfx_opengl_upload_texture(const uint8_t *rgba32_buf, int width, int 
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba32_buf);
     opengl_tex[opengl_curtex]->size[0] = width;
     opengl_tex[opengl_curtex]->size[1] = height;
+    opengl_tex[opengl_curtex]->hash = fnv1a_hash(rgba32_buf, width * height * 4);
 }
 
 static uint32_t gfx_cm_to_opengl(uint32_t val) {
@@ -592,7 +588,6 @@ static void gfx_opengl_set_sampler_parameters(int tile, bool linear_filter, uint
     opengl_curtex = tile;
     if (opengl_tex[tile]) {
         opengl_tex[tile]->filter = linear_filter;
-        gfx_opengl_set_texture_uniforms(opengl_prg, tile);
     }
 }
 
@@ -669,6 +664,14 @@ static void upload_opengl_uniform_buffers(struct Shader *shader) {
 
 static void gfx_opengl_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris) {
     //printf("flushing %d tris\n", buf_vbo_num_tris);
+    for (int i = 0; i < MAX_TEXTURES; i++) {
+        if (opengl_tex[i]) {
+            glUniform2f(opengl_prg->uniform_locations[i * 3 + 0], opengl_tex[i]->size[0], opengl_tex[i]->size[1]);
+            glUniform1ui(opengl_prg->uniform_locations[i * 3 + 1], opengl_tex[i]->hash);
+            glUniform1i(opengl_prg->uniform_locations[i * 3 + 2], opengl_tex[i]->filter);
+        }
+    }
+
     gfx_update_matrices();
     if (opengl_prg->used_fog) {
         gfx_update_fog_uniforms();

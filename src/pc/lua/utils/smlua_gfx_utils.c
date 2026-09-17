@@ -43,11 +43,11 @@ AT_STARTUP void clear_all_shader_flags(void) {
 
 ///
 
-bool get_shading_fullbright_enabled(void) {
+bool gfx_get_shading_fullbright_enabled(void) {
     return gFullbright;
 }
 
-void set_shading_fullbright_enabled(bool enabled) {
+void gfx_set_shading_fullbright_enabled(bool enabled) {
     gFullbright = enabled;
 }
 

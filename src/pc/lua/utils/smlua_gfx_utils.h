@@ -33,7 +33,7 @@ void set_global_shader_flags_enabled(bool enabled);
 void clear_all_shader_flags(void);
 
 /* |description|Gets if fullbright mode is enabled for shaded materials (`G_LIGHTING`)|descriptionEnd| */
-bool get_shading_fullbright_enabled(void);
+bool gfx_get_shading_fullbright_enabled(void);
 /* |description|
 Enables fullbright mode for shaded materials (`G_LIGHTING`.)
 If a light color is completely black, the rendered color will default to the shade color.
@@ -42,7 +42,7 @@ This visually corrects rendering on materials such as Mario's emblem.
 Useful for using the lighting engine and having entirely your own shading without the game's own systems
 and compatibility with most models, not having to used specialized env/prim color approaches for example
 |descriptionEnd| */
-void set_shading_fullbright_enabled(bool enabled);
+void gfx_set_shading_fullbright_enabled(bool enabled);
 
 /* |description|Sets the override FOV|descriptionEnd| */
 void set_override_fov(f32 fov);

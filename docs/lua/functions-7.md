@@ -538,13 +538,13 @@ Clears all custom shader flags (`SHADER_FLAG_*`) for the renderer
 
 <br />
 
-## [get_shading_fullbright_enabled](#get_shading_fullbright_enabled)
+## [gfx_get_shading_fullbright_enabled](#gfx_get_shading_fullbright_enabled)
 
 ### Description
 Gets if fullbright mode is enabled for shaded materials (`G_LIGHTING`)
 
 ### Lua Example
-`local booleanValue = get_shading_fullbright_enabled()`
+`local booleanValue = gfx_get_shading_fullbright_enabled()`
 
 ### Parameters
 - None
@@ -553,13 +553,13 @@ Gets if fullbright mode is enabled for shaded materials (`G_LIGHTING`)
 - `boolean`
 
 ### C Prototype
-`bool get_shading_fullbright_enabled(void);`
+`bool gfx_get_shading_fullbright_enabled(void);`
 
 [:arrow_up_small:](#)
 
 <br />
 
-## [set_shading_fullbright_enabled](#set_shading_fullbright_enabled)
+## [gfx_set_shading_fullbright_enabled](#gfx_set_shading_fullbright_enabled)
 
 ### Description
 Enables fullbright mode for shaded materials (`G_LIGHTING`.)
@@ -570,7 +570,7 @@ Useful for using the lighting engine and having entirely your own shading withou
 and compatibility with most models, not having to used specialized env/prim color approaches for example
 
 ### Lua Example
-`set_shading_fullbright_enabled(enabled)`
+`gfx_set_shading_fullbright_enabled(enabled)`
 
 ### Parameters
 | Field | Type |
@@ -581,7 +581,7 @@ and compatibility with most models, not having to used specialized env/prim colo
 - None
 
 ### C Prototype
-`void set_shading_fullbright_enabled(bool enabled);`
+`void gfx_set_shading_fullbright_enabled(bool enabled);`
 
 [:arrow_up_small:](#)
 
@@ -4692,6 +4692,30 @@ Gets the name of the provided texture pointer `tex`
 
 ### C Prototype
 `const char *get_texture_name(const Texture *tex);`
+
+[:arrow_up_small:](#)
+
+<br />
+
+## [calculate_texture_hash](#calculate_texture_hash)
+
+### Description
+Calculates a 24-bit hash for the provided texture pointer `tex`
+Useful for comparing against the texture hash inputs in custom shaders
+
+### Lua Example
+`local integerValue = calculate_texture_hash(tex)`
+
+### Parameters
+| Field | Type |
+| ----- | ---- |
+| tex | `Pointer` <`Texture`> |
+
+### Returns
+- `integer`
+
+### C Prototype
+`u32 calculate_texture_hash(const Texture *tex);`
 
 [:arrow_up_small:](#)
 

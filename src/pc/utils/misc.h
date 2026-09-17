@@ -46,4 +46,6 @@ const char *strstr_lowercased(const char *haystack, const char *needle);
 bool can_update_game(void);
 void update_game(void);
 
+uint32_t fnv1a_hash(const void *data, size_t size);
+
 #endif

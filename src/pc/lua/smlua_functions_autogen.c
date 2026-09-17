@@ -21605,6 +21605,27 @@ int smlua_func_delta_interpolate_vec3s(lua_State* L) {
     return 0;
 }
 
+/*
+int smlua_func_fnv1a_hash(lua_State* L) {
+    if (L == NULL) { return 0; }
+
+    int top = lua_gettop(L);
+    if (top != 2) {
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "fnv1a_hash", 2, top);
+        return 0;
+    }
+
+//  void * data = (void *)smlua_to_cobject(L, 1, LOT_???); <--- UNIMPLEMENTED
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "fnv1a_hash"); return 0; }
+    size_t size = (size_t)smlua_to_cobject(L, 2, LOT_NONE);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 2, "fnv1a_hash"); return 0; }
+
+    UNIMPLEMENTED -->(L, fnv1a_hash(data, size));
+
+    return 1;
+}
+*/
+
   //////////////
  // mod_fs.h //
 //////////////
@@ -31564,33 +31585,34 @@ int smlua_func_clear_all_shader_flags(lua_State* L) {
     return 0;
 }
 
-int smlua_func_get_shading_fullbright_enabled(lua_State* L) {
+int smlua_func_gfx_get_shading_fullbright_enabled(lua_State* L) {
     if (L == NULL) { return 0; }
 
     int top = lua_gettop(L);
     if (top != 0) {
-        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "get_shading_fullbright_enabled", 0, top);
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "gfx_get_shading_fullbright_enabled", 0, top);
         return 0;
     }
 
-    lua_pushboolean(L, get_shading_fullbright_enabled());
+
+    lua_pushboolean(L, gfx_get_shading_fullbright_enabled());
 
     return 1;
 }
 
-int smlua_func_set_shading_fullbright_enabled(lua_State* L) {
+int smlua_func_gfx_set_shading_fullbright_enabled(lua_State* L) {
     if (L == NULL) { return 0; }
 
     int top = lua_gettop(L);
     if (top != 1) {
-        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "set_shading_fullbright_enabled", 1, top);
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "gfx_set_shading_fullbright_enabled", 1, top);
         return 0;
     }
 
     bool enabled = smlua_to_boolean(L, 1);
-    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "set_shading_fullbright_enabled"); return 0; }
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "gfx_set_shading_fullbright_enabled"); return 0; }
 
-    set_shading_fullbright_enabled(enabled);
+    gfx_set_shading_fullbright_enabled(enabled);
 
     return 0;
 }
@@ -34654,6 +34676,23 @@ int smlua_func_get_texture_name(lua_State* L) {
     if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "get_texture_name"); return 0; }
 
     lua_pushstring(L, get_texture_name(tex));
+
+    return 1;
+}
+
+int smlua_func_calculate_texture_hash(lua_State* L) {
+    if (L == NULL) { return 0; }
+
+    int top = lua_gettop(L);
+    if (top != 1) {
+        LOG_LUA_LINE("Improper param count for '%s': Expected %u, Received %u", "calculate_texture_hash", 1, top);
+        return 0;
+    }
+
+    Texture * tex = (Texture *)smlua_to_cpointer(L, 1, LVT_TEXTURE_P);
+    if (!gSmLuaConvertSuccess) { LOG_LUA("Failed to convert parameter %u for function '%s'", 1, "calculate_texture_hash"); return 0; }
+
+    lua_pushinteger(L, calculate_texture_hash(tex));
 
     return 1;
 }
@@ -38263,6 +38302,7 @@ void smlua_bind_functions_autogen(void) {
     smlua_bind_function(L, "delta_interpolate_angle", smlua_func_delta_interpolate_angle);
     smlua_bind_function(L, "delta_interpolate_vec3f", smlua_func_delta_interpolate_vec3f);
     smlua_bind_function(L, "delta_interpolate_vec3s", smlua_func_delta_interpolate_vec3s);
+    //smlua_bind_function(L, "fnv1a_hash", smlua_func_fnv1a_hash); <--- UNIMPLEMENTED
 
     // mod_fs.h
     smlua_bind_function(L, "mod_fs_exists", smlua_func_mod_fs_exists);
@@ -38827,8 +38867,8 @@ void smlua_bind_functions_autogen(void) {
     smlua_bind_function(L, "get_global_shader_flags_enabled", smlua_func_get_global_shader_flags_enabled);
     smlua_bind_function(L, "set_global_shader_flags_enabled", smlua_func_set_global_shader_flags_enabled);
     smlua_bind_function(L, "clear_all_shader_flags", smlua_func_clear_all_shader_flags);
-    smlua_bind_function(L, "get_shading_fullbright_enabled", smlua_func_get_shading_fullbright_enabled);
-    smlua_bind_function(L, "set_shading_fullbright_enabled", smlua_func_set_shading_fullbright_enabled);
+    smlua_bind_function(L, "gfx_get_shading_fullbright_enabled", smlua_func_gfx_get_shading_fullbright_enabled);
+    smlua_bind_function(L, "gfx_set_shading_fullbright_enabled", smlua_func_gfx_set_shading_fullbright_enabled);
     smlua_bind_function(L, "set_override_fov", smlua_func_set_override_fov);
     smlua_bind_function(L, "set_override_near", smlua_func_set_override_near);
     smlua_bind_function(L, "set_override_far", smlua_func_set_override_far);
@@ -39012,6 +39052,7 @@ void smlua_bind_functions_autogen(void) {
     smlua_bind_function(L, "geo_skip_interpolation", smlua_func_geo_skip_interpolation);
     smlua_bind_function(L, "texture_to_lua_table", smlua_func_texture_to_lua_table);
     smlua_bind_function(L, "get_texture_name", smlua_func_get_texture_name);
+    smlua_bind_function(L, "calculate_texture_hash", smlua_func_calculate_texture_hash);
 
     // smlua_model_utils.h
     smlua_bind_function(L, "smlua_model_util_get_id", smlua_func_smlua_model_util_get_id);

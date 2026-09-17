@@ -33,6 +33,7 @@ extern "C" {
 #include "pc/lua/smlua.h"
 #include "pc/mods/mods_utils.h"
 #include "pc/controller/controller_bind_mapping.h"
+#include "pc/utils/misc.h"
 #include "engine/math_util.h"
 extern Color gVertexColor;
 }
@@ -53,6 +54,7 @@ struct TextureData {
     ComPtr<ID3D11SamplerState> sampler_state;
     uint32_t width;
     uint32_t height;
+    uint32_t hash;
     bool linear_filtering;
 };
 
@@ -895,6 +897,7 @@ static void gfx_d3d11_upload_texture(const uint8_t *rgba32_buf, int width, int h
     TextureData *texture_data = &d3d.textures[d3d.current_texture_ids[d3d.current_tile]];
     texture_data->width = width;
     texture_data->height = height;
+    texture_data->hash = fnv1a_hash(rgba32_buf, width * height * 4);
 
     if (texture_data->resource_view.Get() != nullptr) {
         // Free the previous texture in this slot
@@ -1057,13 +1060,15 @@ static void gfx_d3d11_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_t
                 char sizeUniformName[MAX_SHADER_VARIABLE_NAME];
                 snprintf(sizeUniformName, sizeof(sizeUniformName), "uTex%dSize", i);
                 float texSize[2] = { (float)texture_data.width, (float)texture_data.height };
-
                 gfx_d3d11_set_uniform(NULL, sizeUniformName, SHADER_UNIFORM_TYPE_VEC2, texSize, 1);
+
+                char hashUniformName[MAX_SHADER_VARIABLE_NAME];
+                snprintf(hashUniformName, sizeof(hashUniformName), "uTex%dHash", i);
+                gfx_d3d11_set_uniform(NULL, hashUniformName, SHADER_UNIFORM_TYPE_INT, &texture_data.hash, 1);
 
                 char filterUniformName[MAX_SHADER_VARIABLE_NAME];
                 snprintf(filterUniformName, sizeof(filterUniformName), "uTex%dFilter", i);
                 u32 isLinear = texture_data.linear_filtering ? 1 : 0;
-
                 gfx_d3d11_set_uniform(NULL, filterUniformName, SHADER_UNIFORM_TYPE_INT, &isLinear, 1);
             }
         }

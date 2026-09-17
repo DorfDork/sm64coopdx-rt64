@@ -140,6 +140,8 @@ A shader may contain uniforms. As per the GLSL naming convention, uniform variab
 | `uPassTexX` | `sampler2D` | The rendered output texture from frame pass X, where X is the pass index. |
 | `uTex0Size` | `vec2` | The width and height of the primary texture |
 | `uTex1Size` | `vec2` | The width and height of the secondary texture |
+| `uTex0Hash` | `uint` | The hash of the primary texture |
+| `uTex1Hash` | `uint` | The hash of the secondary texture |
 | `uTex0Filter` | `bool` | `true` if the primary texture uses linear filtering |
 | `uTex1Filter` | `bool` | `true` if the secondary texture uses linear filtering |
 | `uFilter` | `int` | The current global filtering mode (`0` = Point, `1` = Linear, `2` = Three-point) |
@@ -215,7 +217,7 @@ Inputs are passed into the vertex shader for further use. Here is a list of inpu
 | Input Name     | Type   | Description |
 | -------------- | ------ | ----------- |
 | `aVtxPos`      | `vec4` | The vertex position in clip space |
-| `aLocalSpace`  | `vec4` | The vertex position in local space. This is where you should use matrices to transform the space you are currently in. For more info on coordinate spaces, go [here](#coordinate-spaces) |
+| `aLocalPos`    | `vec4` | The vertex position in local space. This is where you should use matrices to transform the space you are currently in. For more info on coordinate spaces, go [here](#coordinate-spaces) |
 | `aTexCoord0`   | `vec2` | UV coordinates for the primary texture |
 | `aTexCoord1`   | `vec2` | UV coordinates for the secondary texture |
 | `aLightMap`    | `vec2` | UV coordinates for the light map |

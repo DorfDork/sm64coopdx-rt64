@@ -1026,6 +1026,7 @@ bool DynOS_Tex_GetFromData(const Texture *aTex, struct TextureInfo* aOutTexInfo)
 u32  DynOS_Tex_GetGeneration(void);
 void DynOS_Tex_Override_Set(const char* textureName, struct TextureInfo* aOverrideTexInfo);
 void DynOS_Tex_Override_Reset(const char* textureName);
+u32 DynOS_Tex_Calculate_Hash(const Texture *aTex);
 void DynOS_Tex_ModShutdown();
 
 //

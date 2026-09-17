@@ -11662,7 +11662,7 @@ end
 
 --- @return boolean
 --- Gets if fullbright mode is enabled for shaded materials (`G_LIGHTING`)
-function get_shading_fullbright_enabled()
+function gfx_get_shading_fullbright_enabled()
     -- ...
 end
 
@@ -11673,7 +11673,7 @@ end
 --- This visually corrects rendering on materials such as Mario's emblem.<br>
 --- Useful for using the lighting engine and having entirely your own shading without the game's own systems<br>
 --- and compatibility with most models, not having to used specialized env/prim color approaches for example
-function set_shading_fullbright_enabled(enabled)
+function gfx_set_shading_fullbright_enabled(enabled)
     -- ...
 end
 
@@ -12906,6 +12906,14 @@ end
 --- @return string
 --- Gets the name of the provided texture pointer `tex`
 function get_texture_name(tex)
+    -- ...
+end
+
+--- @param tex Pointer_Texture
+--- @return integer
+--- Calculates a 24-bit hash for the provided texture pointer `tex`<br>
+--- Useful for comparing against the texture hash inputs in custom shaders
+function calculate_texture_hash(tex)
     -- ...
 end
 

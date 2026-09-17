@@ -196,16 +196,12 @@ local function on_fragment_shader_create(cc)
         table.insert(fs, "in float vFogZ;")
     end
 
-    if ccf.used_textures[1] then
-        table.insert(fs, "uniform sampler2D uTex0;")
-        table.insert(fs, "uniform vec2 uTex0Size;")
-        table.insert(fs, "uniform bool uTex0Filter;")
-    end
-
-    if ccf.used_textures[2] then
-        table.insert(fs, "uniform sampler2D uTex1;")
-        table.insert(fs, "uniform vec2 uTex1Size;")
-        table.insert(fs, "uniform bool uTex1Filter;")
+    for t = 0, 1 do
+        if ccf.used_textures[t + 1] then
+            table.insert(fs, string.format("uniform sampler2D uTex%d;", t))
+            table.insert(fs, string.format("uniform vec2 uTex%dSize;", t))
+            table.insert(fs, string.format("uniform bool uTex%dFilter;", t))
+        end
     end
 
     -- 3-point filtering

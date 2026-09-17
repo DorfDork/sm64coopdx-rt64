@@ -73,8 +73,8 @@
 | HOOK_BEFORE_PLAY_MODE_UPDATE | Called before the play mode is ran. Return a number to override the play mode to be ran. | `number` playMode |
 | HOOK_ON_PLAY_MODE_UPDATE | Called after the play mode is ran. Return a number to override the change level. | `number` playMode |
 | HOOK_ON_REFRESH_SHADERS | Called when a shader is refreshed | |
-| HOOK_ON_VERTEX_SHADER_CREATE | Called when a vertex shader is created. Return a string to override the shader | [ColorCombiner](../structs.md#ColorCombiner) cc, `integer` shaderIndex |
-| HOOK_ON_FRAGMENT_SHADER_CREATE | Called when a fragment shader is created. Return a string to override the shader | [ColorCombiner](../structs.md#ColorCombiner) cc, `integer` shaderIndex |
+| HOOK_ON_VERTEX_SHADER_CREATE | Called when a vertex shader is created. Return a string to override the shader | [ColorCombiner](../structs.md#ColorCombiner) cc |
+| HOOK_ON_FRAGMENT_SHADER_CREATE | Called when a fragment shader is created. Return a string to override the shader | [ColorCombiner](../structs.md#ColorCombiner) cc |
 | HOOK_ON_POST_PROCESS_VERTEX_SHADER_CREATE | Called when a post process vertex shader is created. Return a `string` to override the shader | |
 | HOOK_ON_POST_PROCESS_FRAGMENT_SHADER_CREATE | Called when a post process fragment shader is created. Return a `string` to override the shader | |
 | HOOK_BEFORE_DRAW_GEOMETRY | Called before the entire world is drawn | |

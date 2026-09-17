@@ -31,6 +31,7 @@
 #include "game/rumble_init.h"
 #include "game/sound_init.h"
 #include "pc/lua/utils/smlua_audio_utils.h"
+#include "pc/utils/misc.h"
 
 #ifdef DISCORD_SDK
 #include "pc/discord/discord.h"
@@ -774,4 +775,8 @@ const char *get_texture_name(const Texture *tex) {
         return texInfo.name;
     }
     return NULL;
+}
+
+u32 calculate_texture_hash(const Texture *tex) {
+    return dynos_texture_calculate_hash(tex);
 }
