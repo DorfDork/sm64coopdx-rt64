@@ -66,6 +66,7 @@ struct RecordedTexture {
     u32 cms;
     u32 cmt;
     u64 hash;
+    u32 shaderHash;
     std::string pendingName;
 };
 

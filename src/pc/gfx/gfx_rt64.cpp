@@ -269,6 +269,25 @@ static void gfx_rt64_set_uniform_for_specific_shader(struct ShaderUniformBlock *
     }
 }
 
+static void gfx_rt64_set_texture_hash_uniforms(ShaderProgramRT64 *prg) {
+    static const char *const sTexHashUniformNames[2] = { "uTex0Hash", "uTex1Hash" };
+
+    struct Shader *const stages[2] = { prg->vertexShader, prg->fragmentShader };
+    for (int t = 0; t < 2; t++) {
+        if (!prg->usedTextures[t]) { continue; }
+
+        auto recordedIt = RT64.textures.find(RT64.currentTextureIds[t]);
+        if (recordedIt == RT64.textures.end()) { continue; }
+
+        for (struct Shader *shader : stages) {
+            if (shader == nullptr) { continue; }
+            for (int i = 0; i < shader->uniformBlockCount; i++) {
+                gfx_rt64_set_uniform_for_specific_shader(&shader->uniformBlocks[i], sTexHashUniformNames[t], &recordedIt->second.shaderHash, 1);
+            }
+        }
+    }
+}
+
 static void gfx_rt64_request_pick(bool *pick) {
     POINT cursorPos = {};
     GetCursorPos(&cursorPos);
@@ -856,6 +875,7 @@ static void gfx_rt64_draw_triangles_common(const Mat4 &transform, float buf_vbo[
 
     if (gfx_rt64_program_uses_custom_shader(RT64.shaderProgram)) {
         struct Shader *const stages[2] = { RT64.shaderProgram->vertexShader, RT64.shaderProgram->fragmentShader };
+        gfx_rt64_set_texture_hash_uniforms(RT64.shaderProgram);
         gfx_rt64_collect_uniform_blocks(stages, 2, displayListInstance.uniformBlocks, displayListInstance.uniformBlockData);
     }
 

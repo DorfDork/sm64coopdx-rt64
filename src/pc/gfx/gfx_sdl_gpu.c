@@ -9,6 +9,7 @@
 #include "pc/debuglog.h"
 #include "pc/lua/smlua.h"
 #include "pc/mods/mods_utils.h"
+#include "pc/utils/misc.h"
 
 #include "gfx_window_manager.h"
 #include "gfx_rendering_api.h"
@@ -62,6 +63,7 @@ struct TextureData {
     SDL_GPUSampler *sampler;
     u32 width;
     u32 height;
+    u32 hash;
     bool linearFilter;
     u32 cms;
     u32 cmt;
@@ -96,6 +98,7 @@ static u32 sTexturesCapacity = 0;
 static u32 sTexturesCount = 0;
 
 static const char *const sTexSizeUniformNames[MAX_TEXTURES] = { "uTex0Size", "uTex1Size" };
+static const char *const sTexHashUniformNames[MAX_TEXTURES] = { "uTex0Hash", "uTex1Hash" };
 static const char *const sTexFilterUniformNames[MAX_TEXTURES] = { "uTex0Filter", "uTex1Filter" };
 
 static s32 sCurrentTile = 0;
@@ -1011,6 +1014,7 @@ static void gfx_sdl_gpu_upload_texture(const u8 *rgba32_buf, s32 width, s32 heig
 
     textureData->width = (u32)width;
     textureData->height = (u32)height;
+    textureData->hash = fnv1a_hash(rgba32_buf, (size_t)width * height * 4);
 
     if (textureData->texture != NULL) {
         SDL_ReleaseGPUTexture(sGpuDevice, textureData->texture);
@@ -1235,6 +1239,8 @@ static void gfx_sdl_gpu_draw_triangles(f32 buf_vbo[], size_t buf_vbo_len, size_t
         if (textureChanged && textureData != NULL) {
             f32 texSize[2] = { (f32)textureData->width, (f32)textureData->height };
             gfx_sdl_gpu_set_uniform((struct ShaderProgram *)sShaderProgram, sTexSizeUniformNames[i], SHADER_UNIFORM_TYPE_VEC2, texSize, 1);
+
+            gfx_sdl_gpu_set_uniform((struct ShaderProgram *)sShaderProgram, sTexHashUniformNames[i], SHADER_UNIFORM_TYPE_INT, &textureData->hash, 1);
 
             u32 isLinear = textureData->linearFilter ? 1 : 0;
             gfx_sdl_gpu_set_uniform((struct ShaderProgram *)sShaderProgram, sTexFilterUniformNames[i], SHADER_UNIFORM_TYPE_INT, &isLinear, 1);

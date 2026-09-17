@@ -660,20 +660,26 @@ u32 DynOS_Tex_Calculate_Hash(const Texture *aTex) {
     DataNode<TexData> *node = DynOS_Tex_RetrieveNode((void *) aTex);
     if (node) {
         u8 *buffer = DynOS_Tex_ConvertToRGBA32(node->mData->mRawData.begin(), node->mData->mRawData.Count(), node->mData->mRawFormat, node->mData->mRawSize, NULL);
-        return fnv1a_hash(buffer, node->mData->mRawWidth * node->mData->mRawHeight * 4);
+        if (!buffer) { return 0; }
+        u32 hash = fnv1a_hash(buffer, node->mData->mRawWidth * node->mData->mRawHeight * 4);
+        free(buffer);
+        return hash;
     }
 
     // check builtin textures
     const struct TextureInfo* info = DynOS_Builtin_Tex_GetInfoFromData(aTex);
     if (info) {
-        u8 *buffer;
+        u8 *buffer = NULL;
         switch (info->size) {
             case G_IM_SIZ_4b:  buffer = DynOS_Tex_ConvertToRGBA32(info->texture, (info->width * info->height) / 2, info->format, info->size, NULL); break;
             case G_IM_SIZ_8b:  buffer = DynOS_Tex_ConvertToRGBA32(info->texture, info->width * info->height, info->format, info->size, NULL); break;
             case G_IM_SIZ_16b: buffer = DynOS_Tex_ConvertToRGBA32(info->texture, info->width * info->height * 2, info->format, info->size, NULL); break;
             case G_IM_SIZ_32b: buffer = DynOS_Tex_ConvertToRGBA32(info->texture, info->width * info->height * 4, info->format, info->size, NULL); break;
         }
-        return fnv1a_hash(buffer, info->width * info->height * 4);
+        if (!buffer) { return 0; }
+        u32 hash = fnv1a_hash(buffer, info->width * info->height * 4);
+        free(buffer);
+        return hash;
     }
 
     return 0;

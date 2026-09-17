@@ -666,9 +666,18 @@ static void gfx_opengl_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_
     //printf("flushing %d tris\n", buf_vbo_num_tris);
     for (int i = 0; i < MAX_TEXTURES; i++) {
         if (opengl_tex[i]) {
-            glUniform2f(opengl_prg->uniform_locations[i * 3 + 0], opengl_tex[i]->size[0], opengl_tex[i]->size[1]);
-            glUniform1ui(opengl_prg->uniform_locations[i * 3 + 1], opengl_tex[i]->hash);
-            glUniform1i(opengl_prg->uniform_locations[i * 3 + 2], opengl_tex[i]->filter);
+            char sizeUniformName[MAX_SHADER_VARIABLE_NAME];
+            snprintf(sizeUniformName, sizeof(sizeUniformName), "uTex%dSize", i);
+            gfx_opengl_set_uniform(NULL, sizeUniformName, SHADER_UNIFORM_TYPE_VEC2, opengl_tex[i]->size, 1);
+
+            char hashUniformName[MAX_SHADER_VARIABLE_NAME];
+            snprintf(hashUniformName, sizeof(hashUniformName), "uTex%dHash", i);
+            gfx_opengl_set_uniform(NULL, hashUniformName, SHADER_UNIFORM_TYPE_INT, &opengl_tex[i]->hash, 1);
+
+            char filterUniformName[MAX_SHADER_VARIABLE_NAME];
+            snprintf(filterUniformName, sizeof(filterUniformName), "uTex%dFilter", i);
+            u32 isLinear = opengl_tex[i]->filter ? 1 : 0;
+            gfx_opengl_set_uniform(NULL, filterUniformName, SHADER_UNIFORM_TYPE_INT, &isLinear, 1);
         }
     }
 

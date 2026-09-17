@@ -11,6 +11,7 @@ extern "C" {
 #include "goddard/gd_math.h"
 #include "pc/mods/mod.h"
 #include "pc/mods/mods.h"
+#include "pc/utils/misc.h"
 #include "gfx_shader.h"
 }
 
@@ -1199,6 +1200,7 @@ void gfx_rt64_upload_texture(u32 textureKey, const u8 *rgba32Buf, s32 width, s32
     const u64 contentHash = hashStream.hash();
 
     RecordedTexture &recorded = RT64.textures[textureKey];
+    recorded.shaderHash = fnv1a_hash(rgba32Buf, (size_t)(width) * (size_t)(height) * 4);
     gfx_rt64_filter_texture_id(recorded, textureKey, recorded.pendingName, contentHash);
 
     const size_t byteCount = (size_t)(width) * (size_t)(height) * 4;
