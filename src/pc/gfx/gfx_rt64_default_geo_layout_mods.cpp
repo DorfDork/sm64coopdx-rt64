@@ -520,6 +520,8 @@ const RT64DefaultMod gRT64DefaultGeoLayoutMods[] = {
     {
         .name = "idle_water_wave_geo",
         .materialMod = {
+            .selfLightColor = { 178, 178, 178 },
+            .lightGroupMaskBits = 0,
             .shadowCenterSet = true,
             .shadowCenter = 1,
         },
@@ -1324,6 +1326,8 @@ const RT64DefaultMod gRT64DefaultGeoLayoutMods[] = {
         .name = "wave_trail_geo",
         .materialMod = {
             .ignoreNormalFactor = 1,
+            .selfLightColor = { 178, 178, 178 },
+            .lightGroupMaskBits = 0,
             .shadowCenterSet = true,
             .shadowCenter = 1,
         },
