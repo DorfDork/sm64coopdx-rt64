@@ -21,7 +21,9 @@
 #endif
 
 #define MAX_FRAMES_IN_FLIGHT 3
-#define MAX_STORAGE_BUFFER_SIZE 32 * 1024 * 1024
+#define RING_BUFFER_SLOTS (MAX_FRAMES_IN_FLIGHT + 1)
+#define RING_BUFFER_SLOT_SIZE (8 * 1024 * 1024)
+#define MAX_RING_BUFFER_SLOT_SIZE (128 * 1024 * 1024)
 
 #if SDL_VERSION_ATLEAST(3, 4, 0)
 #define VULKAN_API_VERSION_1_3 ((1u << 22) | (3u << 12))
@@ -49,14 +51,13 @@ struct GpuRingBuffer {
     SDL_GPUBuffer *gpuBuffer;
     SDL_GPUTransferBuffer *transferBuffer;
     u8 *mappedData;
+    u32 slotSize;      // The size of a single allocation from frame in flight
+    u32 slot;          // The slot where the frame allocates from
     u32 currentOffset;
-    u32 size;
+    u32 dirtyBegin;    // == currentOffset means there is nothing pending
 };
 
 static struct GpuRingBuffer sVertexRingBuffer = { 0 };
-
-static u32 sVertexDirtyBegin = 0;
-static u32 sVertexDirtyEnd = 0; // == sVertexDirtyBegin means there is nothing pending
 
 struct TextureData {
     SDL_GPUTexture *texture;
@@ -216,13 +217,20 @@ bool gfx_sdl_gpu_is_backend_supported(enum GfxWindowBackend backend) {
     return supported;
 }
 
-static void gfx_sdl_gpu_create_ring_buffer(struct GpuRingBuffer *ringBuffer, u32 size, SDL_GPUBufferUsageFlags usage) {
-    ringBuffer->size = size;
-    ringBuffer->currentOffset = 0;
+static void gfx_sdl_gpu_reset_ring_buffer_slot(struct GpuRingBuffer *ringBuffer, u32 slot) {
+    ringBuffer->slot = slot;
+    ringBuffer->currentOffset = slot * ringBuffer->slotSize;
+    ringBuffer->dirtyBegin = ringBuffer->currentOffset;
+}
+
+static void gfx_sdl_gpu_create_ring_buffer(struct GpuRingBuffer *ringBuffer, u32 slotSize) {
+    u32 size = slotSize * RING_BUFFER_SLOTS;
+    ringBuffer->slotSize = slotSize;
+    gfx_sdl_gpu_reset_ring_buffer_slot(ringBuffer, 0);
 
     // create gpu buffer
     SDL_GPUBufferCreateInfo bufferInfo = {
-        .usage = usage,
+        .usage = SDL_GPU_BUFFERUSAGE_VERTEX,
         .size = size
     };
     ringBuffer->gpuBuffer = SDL_CreateGPUBuffer(sGpuDevice, &bufferInfo);
@@ -239,11 +247,11 @@ static void gfx_sdl_gpu_create_ring_buffer(struct GpuRingBuffer *ringBuffer, u32
     }
 }
 
-static u8 *gfx_sdl_gpu_map_ring_buffer(struct GpuRingBuffer *ringBuffer, bool cycle) {
+static u8 *gfx_sdl_gpu_map_ring_buffer(struct GpuRingBuffer *ringBuffer) {
     if (ringBuffer->mappedData != NULL) { return ringBuffer->mappedData; }
 
     // map transfer buffer to gpu device
-    ringBuffer->mappedData = (u8 *)SDL_MapGPUTransferBuffer(sGpuDevice, ringBuffer->transferBuffer, cycle);
+    ringBuffer->mappedData = (u8 *)SDL_MapGPUTransferBuffer(sGpuDevice, ringBuffer->transferBuffer, false);
     if (!ringBuffer->mappedData) {
         sys_fatal("Failed to map ring buffer: %s", SDL_GetError());
     }
@@ -258,24 +266,14 @@ static void gfx_sdl_gpu_unmap_ring_buffer(struct GpuRingBuffer *ringBuffer) {
     ringBuffer->mappedData = NULL;
 }
 
-static u32 gfx_sdl_gpu_allocate_to_ring_buffer(struct GpuRingBuffer *ringBuffer, u32 bytesNeeded) {
-    // align to 16 bytes
-    u32 alignedBytes = (bytesNeeded + 16 - 1) & ~(16 - 1);
-
-    if (ringBuffer->currentOffset + alignedBytes > ringBuffer->size) {
-        ringBuffer->currentOffset = 0;
-    }
-
-    u32 allocatedOffset = ringBuffer->currentOffset;
-    ringBuffer->currentOffset += alignedBytes;
-
-    return allocatedOffset;
-}
+static void gfx_sdl_gpu_release_ring_buffer(struct GpuRingBuffer *ringBuffer);
 
 static void gfx_sdl_gpu_flush_vertex_uploads(void) {
-    gfx_sdl_gpu_unmap_ring_buffer(&sVertexRingBuffer);
+    struct GpuRingBuffer *ringBuffer = &sVertexRingBuffer;
 
-    if (sVertexDirtyEnd <= sVertexDirtyBegin) { return; }
+    gfx_sdl_gpu_unmap_ring_buffer(ringBuffer);
+
+    if (ringBuffer->currentOffset <= ringBuffer->dirtyBegin) { return; }
 
     if (sUploadCmdBuffer == NULL) {
         sUploadCmdBuffer = SDL_AcquireGPUCommandBuffer(sGpuDevice);
@@ -285,21 +283,55 @@ static void gfx_sdl_gpu_flush_vertex_uploads(void) {
     }
 
     SDL_GPUTransferBufferLocation transferSrc = {
-        .transfer_buffer = sVertexRingBuffer.transferBuffer,
-        .offset = sVertexDirtyBegin
+        .transfer_buffer = ringBuffer->transferBuffer,
+        .offset = ringBuffer->dirtyBegin
     };
 
     SDL_GPUBufferRegion bufferDst = {
-        .buffer = sVertexRingBuffer.gpuBuffer,
-        .offset = sVertexDirtyBegin,
-        .size = sVertexDirtyEnd - sVertexDirtyBegin
+        .buffer = ringBuffer->gpuBuffer,
+        .offset = ringBuffer->dirtyBegin,
+        .size = ringBuffer->currentOffset - ringBuffer->dirtyBegin
     };
 
     SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(sUploadCmdBuffer);
     SDL_UploadToGPUBuffer(copyPass, &transferSrc, &bufferDst, false);
     SDL_EndGPUCopyPass(copyPass);
 
-    sVertexDirtyBegin = sVertexDirtyEnd;
+    ringBuffer->dirtyBegin = ringBuffer->currentOffset;
+}
+
+static bool gfx_sdl_gpu_resize_ring_buffer(struct GpuRingBuffer *ringBuffer, u32 slotBytesNeeded) {
+    u32 slotSize = ringBuffer->slotSize;
+    while (slotSize < slotBytesNeeded) {
+        if (slotSize >= MAX_RING_BUFFER_SLOT_SIZE) { return false; }
+        slotSize *= 2;
+    }
+
+    gfx_sdl_gpu_flush_vertex_uploads();
+
+    u32 slot = ringBuffer->slot;
+    gfx_sdl_gpu_release_ring_buffer(ringBuffer);
+    gfx_sdl_gpu_create_ring_buffer(ringBuffer, slotSize);
+    gfx_sdl_gpu_reset_ring_buffer_slot(ringBuffer, slot);
+
+    LOG_INFO("Resized the ring buffer to %u bytes per frame", slotSize);
+
+    return true;
+}
+
+static bool gfx_sdl_gpu_allocate_to_ring_buffer(struct GpuRingBuffer *ringBuffer, u32 bytesNeeded, u32 *outOffset) {
+    // align to 16 bytes
+    u32 alignedBytes = (bytesNeeded + 16 - 1) & ~(16 - 1);
+    u32 slotBytesNeeded = (ringBuffer->currentOffset - ringBuffer->slot * ringBuffer->slotSize) + alignedBytes;
+
+    if (slotBytesNeeded > ringBuffer->slotSize && !gfx_sdl_gpu_resize_ring_buffer(ringBuffer, slotBytesNeeded)) {
+        return false;
+    }
+
+    *outOffset = ringBuffer->currentOffset;
+    ringBuffer->currentOffset += alignedBytes;
+
+    return true;
 }
 
 static void gfx_sdl_gpu_reset_state(void) {
@@ -1180,23 +1212,10 @@ static void gfx_sdl_gpu_draw_triangles(f32 buf_vbo[], size_t buf_vbo_len, size_t
     u32 offset = 0;
     u32 vboByteSize = (u32)(buf_vbo_len * sizeof(f32));
 
-    if (vboByteSize > sVertexRingBuffer.size) { return; }
-
     if (buf_vbo_len > 0) {
         // allocate new data to vertex ring buffer
-        offset = gfx_sdl_gpu_allocate_to_ring_buffer(&sVertexRingBuffer, vboByteSize);
-
-        bool wrapped = (offset < sVertexDirtyEnd);
-        if (wrapped) {
-            gfx_sdl_gpu_flush_vertex_uploads();
-        }
-
-        memcpy(gfx_sdl_gpu_map_ring_buffer(&sVertexRingBuffer, wrapped) + offset, buf_vbo, vboByteSize);
-
-        if (sVertexDirtyEnd == sVertexDirtyBegin) {
-            sVertexDirtyBegin = offset;
-        }
-        sVertexDirtyEnd = sVertexRingBuffer.currentOffset;
+        if (!gfx_sdl_gpu_allocate_to_ring_buffer(&sVertexRingBuffer, vboByteSize, &offset)) { return; }
+        memcpy(gfx_sdl_gpu_map_ring_buffer(&sVertexRingBuffer) + offset, buf_vbo, vboByteSize);
     }
 
     if (sLastCachedProgram != sShaderProgram) {
@@ -1370,8 +1389,8 @@ static void gfx_sdl_gpu_init(void) {
     // queue swapchain format
     sSwapchainFormat = SDL_GetGPUSwapchainTextureFormat(sGpuDevice, sSdlWindow);
 
-    // create a 32 megabyte vertex ring buffer
-    gfx_sdl_gpu_create_ring_buffer(&sVertexRingBuffer, MAX_STORAGE_BUFFER_SIZE, SDL_GPU_BUFFERUSAGE_VERTEX);
+    // create a vertex ring buffer with a slot for every frame in flight
+    gfx_sdl_gpu_create_ring_buffer(&sVertexRingBuffer, RING_BUFFER_SLOT_SIZE);
 
     gfx_sdl_gpu_create_depth_texture();
 }
@@ -1423,8 +1442,7 @@ static void gfx_sdl_gpu_submit_frame(void) {
 
     sSwapchainTex = NULL;
     sStartedFrame = false;
-    sVertexDirtyBegin = sVertexRingBuffer.currentOffset;
-    sVertexDirtyEnd = sVertexDirtyBegin;
+    gfx_sdl_gpu_reset_ring_buffer_slot(&sVertexRingBuffer, (sVertexRingBuffer.slot + 1) % RING_BUFFER_SLOTS);
     gfx_sdl_gpu_reset_state();
 
     sSwapchainCleared = false;
